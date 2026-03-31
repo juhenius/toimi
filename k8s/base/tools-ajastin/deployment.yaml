@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: toimi-tools-ajastin
+  namespace: apps
+  labels:
+    app: toimi-tools-ajastin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: toimi-tools-ajastin
+  template:
+    metadata:
+      labels:
+        app: toimi-tools-ajastin
+    spec:
+      containers:
+        - name: toimi-tools-ajastin
+          image: localhost:5000/toimi-tools-ajastin:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ConnectionStrings__Ajastin
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: ajastin-connection-string
+            - name: Toimi__OpenAI__ApiKey
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-api-key
+            - name: Toimi__OpenAI__Model
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-model
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5

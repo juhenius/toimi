@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: toimi-tools-muistutin
+  namespace: apps
+  labels:
+    app: toimi-tools-muistutin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: toimi-tools-muistutin
+  template:
+    metadata:
+      labels:
+        app: toimi-tools-muistutin
+    spec:
+      containers:
+        - name: toimi-tools-muistutin
+          image: localhost:5000/toimi-tools-muistutin:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ConnectionStrings__Muistutin
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: muistutin-connection-string
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5

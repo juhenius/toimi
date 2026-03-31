@@ -1,0 +1,7 @@
+bin/
+obj/
+node_modules/
+wwwroot/
+# Kustomize secrets
+**/secrets.env
+!**/secrets.env.example

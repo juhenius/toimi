@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: toimi-tools-muistio
+  namespace: apps
+spec:
+  selector:
+    app: toimi-tools-muistio
+  ports:
+    - port: 80
+      targetPort: 8080

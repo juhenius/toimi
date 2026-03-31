@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: toimi-web
+  namespace: apps
+  labels:
+    app: toimi-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: toimi-web
+  template:
+    metadata:
+      labels:
+        app: toimi-web
+    spec:
+      containers:
+        - name: toimi-web
+          image: localhost:5000/toimi-web:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: TOIMI__OPENAI__APIKEY
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-api-key
+            - name: TOIMI__OPENAI__MODEL
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-model
+            - name: ConnectionStrings__Toimi
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: toimi-connection-string
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5

@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: toimi-web
+  namespace: apps
+  annotations:
+    cert-manager.io/cluster-issuer: lab-paatti-ca-issuer
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - toimi.lab.paatti
+      secretName: toimi-web-tls
+  rules:
+    - host: toimi.lab.paatti
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: toimi-web
+                port:
+                  number: 80

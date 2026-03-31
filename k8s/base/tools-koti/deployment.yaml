@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: toimi-tools-koti
+  namespace: apps
+  labels:
+    app: toimi-tools-koti
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: toimi-tools-koti
+  template:
+    metadata:
+      labels:
+        app: toimi-tools-koti
+    spec:
+      containers:
+        - name: toimi-tools-koti
+          image: localhost:5000/toimi-tools-koti:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: HomeAssistant__BearerToken
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: ha-bearer-token
+            - name: HomeAssistant__BaseUrl
+              value: "http://homeassistant.local:8123"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
