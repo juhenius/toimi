@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Toimi.Notifications;
 using toimi.tools.muistutin.Data;
+using toimi.tools.muistutin.Worker;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,6 +13,12 @@ builder.Services.AddDbContext<MuistutinDbContext>(options =>
     .UseSnakeCaseNamingConvention());
 
 builder.Services.AddScoped<ReminderRepository>();
+
+// Notifications
+var ntfyOptions = builder.Configuration.GetSection("Ntfy").Get<NtfyOptions>() ?? new NtfyOptions();
+builder.Services.AddSingleton(ntfyOptions);
+builder.Services.AddSingleton(new NtfyClient(ntfyOptions));
+builder.Services.AddHostedService<ReminderNotifier>();
 
 builder.Services
   .AddMcpServer(options =>

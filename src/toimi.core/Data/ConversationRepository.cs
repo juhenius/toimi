@@ -28,7 +28,9 @@ public class ConversationRepository(ToimiDbContext dbContext)
   }
 
   public async Task<ConversationMessage> AddMessageAsync(
-    Guid conversationId, string role, string content, string? toolCallsJson = null)
+    Guid conversationId, string role, string content,
+    string? toolCallsJson = null,
+    int? promptTokens = null, int? completionTokens = null, int? totalTokens = null)
   {
     var message = new ConversationMessage
     {
@@ -36,13 +38,15 @@ public class ConversationRepository(ToimiDbContext dbContext)
       Role = role,
       Content = content,
       ToolCallsJson = toolCallsJson,
+      PromptTokens = promptTokens,
+      CompletionTokens = completionTokens,
+      TotalTokens = totalTokens,
     };
 
     dbContext.ConversationMessages.Add(message);
 
     var conversation = await dbContext.Conversations.FindAsync(conversationId);
-    if (conversation is not null)
-      conversation.LastMessageAt = DateTimeOffset.UtcNow;
+    conversation?.LastMessageAt = DateTimeOffset.UtcNow;
 
     await dbContext.SaveChangesAsync();
     return message;
@@ -61,7 +65,11 @@ public class ConversationRepository(ToimiDbContext dbContext)
   public async Task<bool> DeleteAsync(Guid id)
   {
     var conversation = await dbContext.Conversations.FindAsync(id);
-    if (conversation is null) return false;
+    if (conversation is null)
+    {
+      return false;
+    }
+
     dbContext.Conversations.Remove(conversation);
     await dbContext.SaveChangesAsync();
     return true;

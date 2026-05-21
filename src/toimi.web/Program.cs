@@ -20,6 +20,11 @@ if (string.IsNullOrEmpty(toimiConfig.OpenAI.ApiKey))
 
 builder.Services.AddSignalR();
 builder.Services.AddSingleton(toimiConfig);
+builder.Services.AddHttpClient("ajastin", client =>
+{
+  client.BaseAddress = new Uri(builder.Configuration["AjastinApiUrl"]
+    ?? "http://toimi-tools-ajastin.apps.svc.cluster.local");
+});
 
 var toimiConnectionString = builder.Configuration.GetConnectionString("Toimi")
   ?? throw new InvalidOperationException("ConnectionStrings:Toimi is required");
@@ -60,6 +65,23 @@ if (app.Environment.IsDevelopment())
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapGet("/health", () => Results.Ok());
+
+app.MapGet("/api/activity", async (IHttpClientFactory httpFactory, int limit = 20) =>
+{
+  var client = httpFactory.CreateClient("ajastin");
+  try
+  {
+    var response = await client.GetAsync($"/api/runs?limit={Math.Clamp(limit, 1, 100)}");
+    response.EnsureSuccessStatusCode();
+    var json = await response.Content.ReadAsStringAsync();
+    return Results.Content(json, "application/json");
+  }
+  catch (Exception ex)
+  {
+    return Results.Problem($"Failed to fetch activity: {ex.Message}");
+  }
+});
+
 app.MapHub<Toimi.Web.Hubs.ToimiHub>("/toimihub");
 app.MapFallbackToFile("index.html");
 

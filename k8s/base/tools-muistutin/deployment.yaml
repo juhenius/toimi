@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: toimi-tools-muistutin
-          image: localhost:5000/toimi-tools-muistutin:latest
+          image: ${IMAGE_REGISTRY}/toimi-tools-muistutin:latest
           ports:
             - containerPort: 8080
           env:
@@ -26,6 +26,26 @@ spec:
                 secretKeyRef:
                   name: toimi-secrets
                   key: muistutin-connection-string
+            - name: Ntfy__BaseUrl
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: ntfy-base-url
+            - name: Ntfy__Topic
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: ntfy-topic
+            - name: Ntfy__Username
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: ntfy-username
+            - name: Ntfy__Password
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: ntfy-password
           livenessProbe:
             httpGet:
               path: /health

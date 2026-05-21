@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: toimi-web
-          image: localhost:5000/toimi-web:latest
+          image: ${IMAGE_REGISTRY}/toimi-web:latest
           ports:
             - containerPort: 8080
           env:
@@ -27,10 +27,7 @@ spec:
                   name: toimi-secrets
                   key: openai-api-key
             - name: TOIMI__OPENAI__MODEL
-              valueFrom:
-                secretKeyRef:
-                  name: toimi-secrets
-                  key: openai-model
+              value: "${OPENAI_MODEL}"
             - name: ConnectionStrings__Toimi
               valueFrom:
                 secretKeyRef:

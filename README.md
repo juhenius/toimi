@@ -1,161 +1,110 @@
 # Toimi
 
-A personal AI assistant with persistent memory, skills, and the ability to act autonomously. Built as a collection of microservices running on Kubernetes, using the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) to connect an LLM to modular tool servers — each handling a specific domain like memory, scheduling, home automation, or any future capability.
+A self-hostable, single-user AI assistant with persistent semantic memory,
+reusable skills, scheduled automation, reminders, smart-home control, and web
+access. Built as .NET 10 + React microservices that talk over the
+[Model Context Protocol](https://modelcontextprotocol.io/) and run on
+Kubernetes (kind for local dev, k3s for a server).
 
-## What it does
+## What you get
 
-You chat with Toimi through a web interface. Behind the scenes, the AI decides which tools to use based on your request — it can remember things you've told it, follow procedures it has learned, set reminders, run tasks on a schedule, and control smart home devices. New capabilities are added as independent tool servers without changing the core. All tool usage is visible in the UI as collapsible indicators showing what was called, with what arguments, and what came back.
+- **Chat UI** (`toimi.web`) with conversation history and live tool-call
+  visualization, plus a headless scheduled agent (`ajastin`).
+- Six MCP tool servers, each independently deployable. Finnish names —
+  glossary below.
 
-## Architecture
+### Tool glossary
 
-```
-┌─────────────────────────────────────────────────────┐
-│  Web UI (React)                                     │
-│  Chat interface with conversation history,          │
-│  tool call visualization, conversation list         │
-└──────────────────┬──────────────────────────────────┘
-                   │ SignalR WebSocket
-┌──────────────────▼──────────────────────────────────┐
-│  toimi.core (shared .NET library)                   │
-│  LLM client, MCP tool aggregation, system prompt,   │
-│  conversation persistence, tool call notification   │
-└──────────────────┬──────────────────────────────────┘
-                   │ MCP (HTTP)
-┌──────────────────▼──────────────────────────────────┐
-│  Tool servers (each independently deployable)       │
-│                                                     │
-│  muistio    — Long-term semantic memory             │
-│  taidot     — Reusable skill/procedure library      │
-│  muistutin  — Reminders with recurring support      │
-│  ajastin    — Scheduled tasks + autonomous agent    │
-│  koti       — Smart home control via Home Assistant │
-│  ...        — Add any new capability as a tool server│
-└─────────────────────────────────────────────────────┘
-```
+| Tool | Finnish → English | Capability | External dependency |
+|---|---|---|---|
+| `koti` | home | Home Assistant control (entities, services, history, areas) | **Requires a reachable Home Assistant instance + long-lived token** |
+| `muistio` | memo | Semantic long-term memory | PostgreSQL + Qdrant + OpenAI embeddings |
+| `taidot` | skills | Reusable skill/procedure library | Qdrant + OpenAI embeddings |
+| `muistutin` | reminder | One-off & RFC-5545 recurring reminders | PostgreSQL |
+| `ajastin` | timer | Cron-scheduled autonomous agent runs | PostgreSQL |
+| `verkko` | web/net | Web fetch + push notifications | **Notifications require an [ntfy](https://ntfy.sh) server** |
 
-Two things can talk to the AI: the **web UI** (interactive chat) and **ajastin** (runs prompts on a cron schedule). Both use the same shared library, so they have identical capabilities.
+All six are always deployed. `koti` and `verkko` notifications simply error
+when invoked if their external dependency is absent — everything else works.
 
-## Building blocks
+## Prerequisites
 
-### Semantic memory (muistio)
+- A Kubernetes cluster: [kind](https://kind.sigs.k8s.io/) for local dev **or**
+  k3s for a server. The setup scripts install k3s/kind, Traefik, PostgreSQL
+  (Bitnami Helm), Qdrant, Adminer, and a local image registry.
+- `docker`, `kubectl`, `helm`, `envsubst` (gettext:
+  `apt-get install gettext-base` / `brew install gettext`).
+- For a server: `curl`, `helm` on the host.
+- An OpenAI API key. (Optional: a Home Assistant instance for `koti`, an ntfy
+  server for `verkko` notifications.)
+- To build images: .NET 10 SDK and Node.js 24+ are baked into the Docker
+  build stages — you only need Docker locally.
 
-The AI can save and recall facts using vector similarity search. When you tell it "I prefer Celsius" or "the guest wifi password is X", it stores the information in PostgreSQL with rich metadata (source, confidence, expiry) and indexes it in [Qdrant](https://qdrant.tech/) for semantic search. Later, when context is relevant, it searches by meaning — not keywords.
+## Configure
 
-Each memory tracks where it came from (user-stated vs AI-inferred), whether the user has confirmed it, and optionally when it should expire. This prevents memory pollution and supports cleanup of stale information. A REST API enables external memory management and inspection.
-
-This gives the AI persistent knowledge across conversations without stuffing everything into the system prompt.
-
-### Skill repository (taidot)
-
-Skills are saved procedures that teach the AI how to do multi-step tasks. For example, "update the home inventory" is a skill that tells the AI to list all Home Assistant entities, group them by room, and save the result back as a reference document.
-
-Skills are stored in Qdrant with semantic search, so the AI can find relevant skills even with fuzzy queries. A set of standard skills is seeded on startup, and the AI can create new ones when it learns a repeatable procedure.
-
-On every new session, a summary of all available skills is injected into the system prompt — the AI knows what it can do without searching first.
-
-### Smart home control (koti)
-
-Direct integration with [Home Assistant](https://www.home-assistant.io/) via its REST API. The AI can:
-- Query the state of any entity (lights, sensors, switches, climate)
-- List all devices filtered by domain or room/area
-- Call any HA service (turn on lights, set temperature, trigger automations)
-- Retrieve state history for any entity
-
-Area/room assignments are resolved using HA's template API, so the AI understands "turn off the kitchen lights" without needing hardcoded entity mappings.
-
-### Reminders (muistutin)
-
-Create one-time or recurring reminders with full [RFC 5545](https://datatracker.ietf.org/doc/html/rfc5545) recurrence support (daily, weekly on specific days, monthly, yearly). The AI handles the conversion from natural language to cron-like rules.
-
-### Scheduled agent (ajastin)
-
-The AI can schedule itself to run prompts autonomously on a cron schedule. A background worker checks every minute for due schedules, creates a full agent session with access to all tools, runs the prompt, and logs the result.
-
-This enables things like "every morning at 7, check my reminders and give me a briefing" — the AI runs with full tool access and stores the result for later review.
-
-### Conversation persistence
-
-Chat history is saved to PostgreSQL. Conversations survive page refreshes and can be loaded from a conversation list. Each conversation is auto-titled based on the first message.
-
-### Tool call visualization
-
-Every tool call is visible in the chat UI. A collapsible indicator shows the tool name and execution time. Expanding it reveals the arguments sent and the result received. While a tool is running, a pulsing indicator shows it's in progress.
-
-## Tech stack
-
-- **Backend**: .NET 10, ASP.NET Core, SignalR, Entity Framework Core
-- **Frontend**: React 19, TypeScript, Vite, Tailwind CSS v4
-- **AI**: OpenAI GPT-4o (configurable), [Microsoft.Extensions.AI](https://devblogs.microsoft.com/dotnet/introducing-microsoft-extensions-ai-preview/) abstraction
-- **Tool protocol**: [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) over SSE
-- **Vector DB**: Qdrant (semantic memory + skills)
-- **Database**: PostgreSQL (conversations, memories, reminders, schedules)
-- **Infrastructure**: Kubernetes (k3s production, kind local dev), Kustomize, Docker
-
-## Deployment
-
-### Prerequisites
-
-- Kubernetes cluster with nginx ingress
-- PostgreSQL with databases: `toimi`, `muistio`, `muistutin`, `ajastin`
-- Qdrant (collections are created automatically on startup)
-- OpenAI API key
-- Home Assistant instance with a long-lived access token (for koti, optional)
-
-### Building
-
-Each service has its own Dockerfile in the project root. Build context is the toimi directory:
+Everything environment-specific lives in three gitignored files copied from
+tracked templates. **You never edit tracked files.**
 
 ```bash
-docker build -f web.Dockerfile -t your-registry/toimi-web:latest .
-docker build -f tools-muistio.Dockerfile -t your-registry/toimi-tools-muistio:latest .
-docker build -f tools-muistutin.Dockerfile -t your-registry/toimi-tools-muistutin:latest .
-docker build -f tools-taidot.Dockerfile -t your-registry/toimi-tools-taidot:latest .
-docker build -f tools-ajastin.Dockerfile -t your-registry/toimi-tools-ajastin:latest .
-docker build -f tools-koti.Dockerfile -t your-registry/toimi-tools-koti:latest .
+cp config.env.example config.env                 # non-secret: hosts, registry, model
+cp infrastructure/secrets.env.example infrastructure/overlays/<env>/secrets.env
+cp k8s/secrets.env.example          k8s/overlays/<env>/secrets.env
+# <env> = dev (kind) or server (k3s). Edit all three with your values.
 ```
 
-### Kubernetes
+`config.env` keys:
 
-Manifests are in `k8s/` using Kustomize with base/overlay pattern:
+| Key | Meaning |
+|---|---|
+| `TOIMI_HOST` | Ingress host for the chat UI |
+| `ADMINER_HOST` | Ingress host for the Adminer DB UI |
+| `QDRANT_HOST` | Ingress host for the Qdrant dashboard |
+| `IMAGE_REGISTRY` | Registry `deploy.sh` pushes to and pods pull from |
+| `HOMEASSISTANT_BASE_URL` | Home Assistant URL for `koti` |
+| `OPENAI_MODEL` | OpenAI chat model name |
+
+`secrets.env` keys are documented in the two `*.example` files (OpenAI API
+key, Home Assistant token, PostgreSQL password, connection strings, ntfy
+credentials).
+
+## Run it
+
+Local (kind):
 
 ```bash
-# Apply base manifests (adjust image names in overlay first)
-kubectl apply -k k8s/overlays/dev
+scripts/dev-setup.sh           # cluster + infra
+scripts/deploy-all.sh dev      # build, push, deploy all pods
+# add the printed line to /etc/hosts, then open http://$TOIMI_HOST
 ```
 
-Before applying, create a `k8s/overlays/dev/secrets.env` from the template:
+Server (k3s, run on the host after cloning):
 
 ```bash
-cp k8s/secrets.env.example k8s/overlays/dev/secrets.env
-# Edit with real values
+scripts/server-setup.sh        # k3s + infra   (--reset to rebuild)
+scripts/deploy-all.sh server
+# point DNS for the printed hosts at the server IP
 ```
 
-Required secrets (see `k8s/secrets.env.example`):
-- `openai-api-key` — OpenAI API key
-- `openai-model` — LLM model name (e.g. `gpt-4o`)
-- `ha-bearer-token` — Home Assistant long-lived access token
-- `toimi-connection-string` — PostgreSQL connection for conversations
-- `muistio-connection-string` — PostgreSQL connection for memories
-- `muistutin-connection-string` — PostgreSQL connection for reminders
-- `ajastin-connection-string` — PostgreSQL connection for schedules
+Deploy one pod: `scripts/deploy.sh <dev|server> <app>` where `<app>` is a
+`src/` project dir (`web`, `tools.koti`, …).
 
-All services expose `/health` for liveness/readiness probes and listen on port 8080.
+## Layout
 
-EF Core migrations run automatically on startup for services that use PostgreSQL. Qdrant collections are created automatically.
+```
+src/                .NET projects. A dir with a Dockerfile = a pod;
+                     without one = a library (toimi.core, toimi.notifications).
+k8s/                 Kustomize base + dev/server overlays
+infrastructure/      PostgreSQL (Helm), Qdrant, Adminer, registry, namespaces
+scripts/             setup + deploy automation
+```
 
-### Configuration
+## Adding a tool server
 
-MCP server URLs are in `src/toimi.web/appsettings.json`. If your service names or namespace differ from the defaults (`toimi-tools-*.apps.svc.cluster.local`), update them there and rebuild the web image.
+Add `src/toimi.tools.<name>/` (with a `Dockerfile`) and
+`k8s/base/tools-<name>/` (deployment + service + kustomization), list it in
+`k8s/base/kustomization.yaml`, and add its MCP URL to
+`src/toimi.web/appsettings.json`. The deploy scripts auto-discover it.
 
-The Home Assistant URL is configured via `HomeAssistant__BaseUrl` environment variable on the koti deployment (default: `http://homeassistant.local:8123`).
+## License & author
 
-## Author
-
-Jari Helenius
-
-[![LinkedIn][linkedin-shield]][linkedin-url]
-
-<!-- MARKDOWN LINKS & IMAGES -->
-
-[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
-[linkedin-url]: https://linkedin.com/in/jari-helenius-a445478a
+See `LICENSE`. Created by Jari Helenius.

@@ -9,7 +9,7 @@ public static class ToimiClientFactory
   public static (IChatClient Client, ToolCallNotifier Notifier) Create(ToimiConfiguration config)
   {
     var openAiClient = new OpenAI.OpenAIClient(config.OpenAI.ApiKey);
-    IChatClient inner = openAiClient.GetChatClient(config.OpenAI.Model).AsIChatClient();
+    var inner = openAiClient.GetChatClient(config.OpenAI.Model).AsIChatClient();
     var notifier = new ToolCallNotifier(inner);
 
     var client = new ChatClientBuilder(notifier)
@@ -80,7 +80,7 @@ public static class ToimiClientFactory
 
     ## Reminders and scheduling
 
-    Use reminders for things the user wants to be told about later. Use scheduled tasks for repeated agentic work (periodic checks, summaries, monitoring).
+    Use reminders for things the user wants to be told about later. Reminders automatically send push notifications when due — no need to set up separate notifications. Use scheduled tasks for repeated agentic work (periodic checks, summaries, monitoring).
 
     Translate natural language into precise timing. Include enough detail that a future prompt is self-contained. Default timezone is Europe/Helsinki. If timing is ambiguous and high-impact, ask.
 
@@ -118,5 +118,30 @@ public static class ToimiClientFactory
     messages.Add(new(ChatRole.System, context.ToString()));
 
     return messages;
+  }
+
+  /// <summary>
+  /// Updates the current time in the dynamic context system message (index 1).
+  /// Call before each LLM invocation to keep time accurate.
+  /// </summary>
+  public static void RefreshDynamicContext(List<ChatMessage> messages)
+  {
+    if (messages.Count < 2 || messages[1].Role != ChatRole.System)
+    {
+      return;
+    }
+
+    var text = messages[1].Text ?? "";
+    var timePrefix = "Current time: ";
+    var timeLineEnd = text.IndexOf('\n');
+    if (!text.StartsWith(timePrefix, StringComparison.Ordinal) || timeLineEnd < 0)
+    {
+      return;
+    }
+
+    var updatedTime = string.Create(System.Globalization.CultureInfo.InvariantCulture,
+      $"Current time: {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC (Europe/Helsinki is UTC+2 or UTC+3 during DST)");
+    var rest = text[timeLineEnd..];
+    messages[1] = new(ChatRole.System, updatedTime + rest);
   }
 }

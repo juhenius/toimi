@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: toimi-tools-ajastin
-          image: localhost:5000/toimi-tools-ajastin:latest
+          image: ${IMAGE_REGISTRY}/toimi-tools-ajastin:latest
           ports:
             - containerPort: 8080
           env:
@@ -32,10 +32,7 @@ spec:
                   name: toimi-secrets
                   key: openai-api-key
             - name: Toimi__OpenAI__Model
-              valueFrom:
-                secretKeyRef:
-                  name: toimi-secrets
-                  key: openai-model
+              value: "${OPENAI_MODEL}"
           livenessProbe:
             httpGet:
               path: /health

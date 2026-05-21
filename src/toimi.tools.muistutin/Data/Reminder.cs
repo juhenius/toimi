@@ -10,6 +10,8 @@ public class Reminder
   public string? RecurrenceRule { get; set; }
   public DateTimeOffset? DisplayEndUtc { get; set; }
   public bool IsCompleted { get; set; }
+  public DateTimeOffset? NotifiedAt { get; set; }
   public DateTimeOffset CreatedAt { get; set; }
   public ICollection<CompletedOccurrence> CompletedOccurrences { get; set; } = [];
+  public ICollection<NotifiedOccurrence> NotifiedOccurrences { get; set; } = [];
 }

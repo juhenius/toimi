@@ -22,12 +22,16 @@ public class ListEntitiesTool(HomeAssistantClient ha)
     {
       var entityId = entity.GetProperty("entity_id").GetString()!;
       if (prefix is not null && !entityId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+      {
         continue;
+      }
 
       areas.TryGetValue(entityId, out var entityArea);
 
       if (area is not null && !string.Equals(entityArea, area, StringComparison.OrdinalIgnoreCase))
+      {
         continue;
+      }
 
       var state = entity.GetProperty("state").GetString();
       string? friendlyName = null;

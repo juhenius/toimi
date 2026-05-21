@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: toimi-tools-verkko
+  namespace: apps
+  labels:
+    app: toimi-tools-verkko
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: toimi-tools-verkko
+  template:
+    metadata:
+      labels:
+        app: toimi-tools-verkko
+    spec:
+      containers:
+        - name: toimi-tools-verkko
+          image: ${IMAGE_REGISTRY}/toimi-tools-verkko:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: Ntfy__BaseUrl
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: ntfy-base-url
+            - name: Ntfy__Topic
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: ntfy-topic
+            - name: Ntfy__Username
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: ntfy-username
+            - name: Ntfy__Password
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: ntfy-password
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5

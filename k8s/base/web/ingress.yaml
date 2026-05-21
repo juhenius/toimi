@@ -3,16 +3,10 @@ kind: Ingress
 metadata:
   name: toimi-web
   namespace: apps
-  annotations:
-    cert-manager.io/cluster-issuer: lab-paatti-ca-issuer
 spec:
-  ingressClassName: nginx
-  tls:
-    - hosts:
-        - toimi.lab.paatti
-      secretName: toimi-web-tls
+  ingressClassName: traefik
   rules:
-    - host: toimi.lab.paatti
+    - host: ${TOIMI_HOST}
       http:
         paths:
           - path: /

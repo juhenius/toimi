@@ -31,7 +31,10 @@ public class HomeAssistantClient
   {
     var response = await _http.GetAsync($"api/states/{entityId}", ct);
     if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+    {
       return null;
+    }
+
     response.EnsureSuccessStatusCode();
     var json = await response.Content.ReadAsStringAsync(ct);
     return JsonDocument.Parse(json).RootElement;
@@ -62,7 +65,7 @@ public class HomeAssistantClient
     }
 
     var content = new StringContent(
-      System.Text.Encoding.UTF8.GetString(doc.ToArray()),
+      Encoding.UTF8.GetString(doc.ToArray()),
       Encoding.UTF8, "application/json");
 
     var response = await _http.PostAsync($"api/services/{domain}/{service}", content, ct);
@@ -97,7 +100,9 @@ public class HomeAssistantClient
     {
       var parts = line.Split('|', 2);
       if (parts.Length == 2 && !string.IsNullOrEmpty(parts[1]))
+      {
         areas[parts[0]] = parts[1];
+      }
     }
 
     return areas;

@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: toimi-tools-taidot
-          image: localhost:5000/toimi-tools-taidot:latest
+          image: ${IMAGE_REGISTRY}/toimi-tools-taidot:latest
           ports:
             - containerPort: 8080
           env:

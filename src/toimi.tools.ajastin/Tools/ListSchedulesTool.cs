@@ -14,20 +14,18 @@ public class ListSchedulesTool(ScheduleRepository repository)
     var schedules = await repository.GetAllAsync();
     var list = schedules.ToList();
 
-    if (list.Count == 0)
-    {
-      return "No schedules found.";
-    }
-
-    return JsonSerializer.Serialize(list.Select(s => new
-    {
-      s.Id,
-      s.Name,
-      s.CronExpression,
-      s.Prompt,
-      s.Enabled,
-      LastRunAt = s.LastRunAt?.ToString("o"),
-      CreatedAt = s.CreatedAt.ToString("o"),
-    }));
+    return list.Count == 0
+      ? "No schedules found."
+      : JsonSerializer.Serialize(list.Select(s => new
+      {
+        s.Id,
+        s.Name,
+        s.CronExpression,
+        RunAt = s.RunAt?.ToString("o"),
+        s.Prompt,
+        s.Enabled,
+        LastRunAt = s.LastRunAt?.ToString("o"),
+        CreatedAt = s.CreatedAt.ToString("o"),
+      }));
   }
 }

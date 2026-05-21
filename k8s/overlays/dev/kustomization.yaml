@@ -11,23 +11,3 @@ secretGenerator:
       - secrets.env
     options:
       disableNameSuffixHash: true
-
-images:
-  - name: localhost:5000/toimi-web
-    newName: localhost:5000/toimi-web
-    newTag: latest
-  - name: localhost:5000/toimi-tools-koti
-    newName: localhost:5000/toimi-tools-koti
-    newTag: latest
-  - name: localhost:5000/toimi-tools-muistio
-    newName: localhost:5000/toimi-tools-muistio
-    newTag: latest
-  - name: localhost:5000/toimi-tools-muistutin
-    newName: localhost:5000/toimi-tools-muistutin
-    newTag: latest
-  - name: localhost:5000/toimi-tools-taidot
-    newName: localhost:5000/toimi-tools-taidot
-    newTag: latest
-  - name: localhost:5000/toimi-tools-ajastin
-    newName: localhost:5000/toimi-tools-ajastin
-    newTag: latest

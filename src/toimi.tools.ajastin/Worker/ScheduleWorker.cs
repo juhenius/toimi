@@ -40,8 +40,15 @@ public partial class ScheduleWorker(
 
     foreach (var schedule in schedules)
     {
-      if (ct.IsCancellationRequested) break;
-      if (!IsDue(schedule, now)) continue;
+      if (ct.IsCancellationRequested)
+      {
+        break;
+      }
+
+      if (!IsDue(schedule, now))
+      {
+        continue;
+      }
 
       LogRunningSchedule(logger, schedule.Name);
       await RunSchedule(schedule, repository, ct);
@@ -50,6 +57,18 @@ public partial class ScheduleWorker(
 
   private static bool IsDue(Schedule schedule, DateTimeOffset now)
   {
+    // One-time schedule: run at specific time
+    if (schedule.RunAt.HasValue)
+    {
+      return schedule.LastRunAt is null && schedule.RunAt.Value <= now;
+    }
+
+    // Cron schedule: check next occurrence
+    if (string.IsNullOrEmpty(schedule.CronExpression))
+    {
+      return false;
+    }
+
     var cron = CronExpression.Parse(schedule.CronExpression);
     var lastRun = schedule.LastRunAt?.UtcDateTime ?? schedule.CreatedAt.UtcDateTime;
     var nextOccurrence = cron.GetNextOccurrence(lastRun, inclusive: false);
@@ -74,6 +93,11 @@ public partial class ScheduleWorker(
       run.Success = true;
 
       schedule.LastRunAt = run.StartedAt;
+      if (schedule.RunAt.HasValue)
+      {
+        schedule.Enabled = false; // One-time schedule: disable after running
+      }
+
       await repository.UpdateAsync(schedule);
     }
     catch (Exception ex)
@@ -99,6 +123,10 @@ public partial class ScheduleWorker(
     var messages = ToimiClientFactory.CreateInitialMessages(skillSummary);
 
     messages.Add(new(ChatRole.User, prompt));
+
+    // Update current time and compact context if needed
+    ToimiClientFactory.RefreshDynamicContext(messages);
+    await ContextManager.CompactIfNeeded(messages, client, ct);
 
     // Use non-streaming GetResponseAsync for headless execution
     var response = await client.GetResponseAsync(messages, options, ct);

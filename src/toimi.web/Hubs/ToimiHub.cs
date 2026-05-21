@@ -101,6 +101,10 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
     // Save user message to DB
     await _repository.AddMessageAsync(session.ConversationId, "user", message);
 
+    // Update current time and compact context if needed
+    ToimiClientFactory.RefreshDynamicContext(session.Messages);
+    await ContextManager.CompactIfNeeded(session.Messages, session.ChatClient, Context.ConnectionAborted);
+
     try
     {
       var fullResponse = new StringBuilder();
@@ -129,12 +133,20 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
       session.Messages.Add(new(ChatRole.Assistant, responseText));
 
       // Serialize tool calls JSON
-      string? toolCallsJson = toolCallEvents.Count > 0
+      var toolCallsJson = toolCallEvents.Count > 0
         ? JsonSerializer.Serialize(toolCallEvents)
         : null;
 
+      // Estimate token usage (streaming doesn't provide exact counts)
+      var estimatedPromptTokens = session.Messages.Sum(m => m.Text?.Length ?? 0) / 4;
+      var estimatedCompletionTokens = responseText.Length / 4;
+      var estimatedTotalTokens = estimatedPromptTokens + estimatedCompletionTokens;
+
       // Save assistant message to DB
-      await _repository.AddMessageAsync(session.ConversationId, "assistant", responseText, toolCallsJson);
+      await _repository.AddMessageAsync(session.ConversationId, "assistant", responseText, toolCallsJson,
+        promptTokens: estimatedPromptTokens,
+        completionTokens: estimatedCompletionTokens,
+        totalTokens: estimatedTotalTokens);
 
       // Auto-title: set title on first exchange
       if (session.Messages.Count(m => m.Role == ChatRole.User) == 1)
@@ -199,6 +211,8 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
         case ToolResultEvent tr:
           toolCallEvents?.Add(new { type = "result", tr.CallId, tr.Result, tr.DurationMs });
           await Clients.Caller.SendAsync("ToolCallEnd", tr.CallId, tr.Result, tr.DurationMs);
+          break;
+        default:
           break;
       }
     }

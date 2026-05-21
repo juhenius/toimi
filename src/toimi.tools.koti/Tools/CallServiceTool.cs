@@ -28,7 +28,7 @@ public class CallServiceTool(HomeAssistantClient ha)
       }
     }
 
-    var result = await ha.CallServiceAsync(domain, service, entityId, parsedData);
+    _ = await ha.CallServiceAsync(domain, service, entityId, parsedData);
     return "Service called successfully.";
   }
 }

@@ -45,11 +45,14 @@ public class McpToolAggregator : IAsyncDisposable
   public async Task<string?> CallToolAsync(string toolName, Dictionary<string, object?>? arguments = null, CancellationToken ct = default)
   {
     var tool = _tools.OfType<AIFunction>().FirstOrDefault(t => t.Name == toolName);
-    if (tool is null) return null;
+    if (tool is null)
+    {
+      return null;
+    }
 
     var args = arguments is not null
       ? new AIFunctionArguments(arguments)
-      : new AIFunctionArguments();
+      : [];
 
     var result = await tool.InvokeAsync(args, ct);
     return result?.ToString();

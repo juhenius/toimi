@@ -6,6 +6,7 @@ public class MuistutinDbContext(DbContextOptions<MuistutinDbContext> options) : 
 {
   public DbSet<Reminder> Reminders => Set<Reminder>();
   public DbSet<CompletedOccurrence> CompletedOccurrences => Set<CompletedOccurrence>();
+  public DbSet<NotifiedOccurrence> NotifiedOccurrences => Set<NotifiedOccurrence>();
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {

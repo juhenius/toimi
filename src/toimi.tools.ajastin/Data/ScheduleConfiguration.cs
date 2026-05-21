@@ -18,8 +18,7 @@ public class ScheduleConfiguration : IEntityTypeConfiguration<Schedule>
     builder.HasIndex(s => s.Name)
       .IsUnique();
 
-    builder.Property(s => s.CronExpression)
-      .IsRequired();
+    // CronExpression or RunAt — one must be set (validated in tool, not DB)
 
     builder.Property(s => s.Prompt)
       .IsRequired();

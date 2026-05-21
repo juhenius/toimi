@@ -42,4 +42,29 @@ using (var scope = app.Services.CreateScope())
 app.MapMcp();
 app.MapGet("/health", () => Results.Ok());
 
+// REST API for run history
+app.MapGet("/api/runs", async (AjastinDbContext db, int limit = 20) =>
+{
+  var runs = await db.ScheduleRuns
+    .Include(r => r.Schedule)
+    .OrderByDescending(r => r.StartedAt)
+    .Take(Math.Clamp(limit, 1, 100))
+    .Select(r => new
+    {
+      r.Id,
+      r.ScheduleId,
+      ScheduleName = r.Schedule.Name,
+      StartedAt = r.StartedAt.ToString("o"),
+      CompletedAt = r.CompletedAt != null ? r.CompletedAt.Value.ToString("o") : null,
+      DurationMs = r.CompletedAt != null ? (long)(r.CompletedAt.Value - r.StartedAt).TotalMilliseconds : (long?)null,
+      r.Response,
+      r.ToolCallsJson,
+      r.Success,
+      r.Error,
+    })
+    .ToListAsync();
+
+  return Results.Ok(runs);
+});
+
 app.Run();

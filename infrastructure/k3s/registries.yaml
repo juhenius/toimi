@@ -1,0 +1,11 @@
+---
+# k3s registry mirrors — copied to /etc/rancher/k3s/registries.yaml.
+# Endpoint forces IPv4 (127.0.0.1) because k3s CNI portmap registers
+# the registry's hostPort on IPv4 only; resolving "localhost" picks ::1
+# first and fails. The mirror key matches the IMAGE_REGISTRY value
+# from config.env (default localhost:5000); change both together if you
+# point pods at a different registry.
+mirrors:
+  "localhost:5000":
+    endpoint:
+      - "http://127.0.0.1:5000"

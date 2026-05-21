@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Text.Json;
 using ModelContextProtocol.Server;
 using toimi.tools.koti.HomeAssistant;
 
@@ -13,9 +12,6 @@ public class GetEntityStateTool(HomeAssistantClient ha)
     [Description("Entity ID (e.g. 'light.living_room', 'sensor.temperature', 'switch.tv')")] string entityId)
   {
     var state = await ha.GetStateAsync(entityId);
-    if (state is null)
-      return "Entity not found.";
-
-    return state.Value.ToString();
+    return state is null ? "Entity not found." : state.Value.ToString();
   }
 }

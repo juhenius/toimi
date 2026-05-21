@@ -1,0 +1,28 @@
+auth:
+  # postgresPassword is set via --set in setup scripts, sourced from secrets.env
+  database: "app"
+
+initdbScripts:
+  create-databases.sql: |
+    CREATE DATABASE muistio;
+    CREATE DATABASE muistutin;
+    CREATE DATABASE ajastin;
+    CREATE DATABASE toimi;
+
+primary:
+  persistence:
+    enabled: true
+    size: 10Gi
+
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
+  service:
+    type: ClusterIP
+    ports:
+      postgresql: 5432

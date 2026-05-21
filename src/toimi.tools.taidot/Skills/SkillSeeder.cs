@@ -9,12 +9,13 @@ namespace toimi.tools.taidot.Skills;
 /// available tools. When a new tool server is added, review existing skills
 /// and add new ones that leverage the new capabilities.
 ///
-/// Available tool servers and their tools (as of 2026-03-24):
-/// - muistio: SaveMemory, RecallMemory, ForgetMemory, ListMemories
+/// Available tool servers and their tools (as of 2026-04-01):
+/// - muistio: SaveMemory, RecallMemory, UpdateMemory, ForgetMemory, ListMemories
 /// - muistutin: CreateReminder, ListReminders, CompleteReminder, DeleteReminder
 /// - taidot: SaveSkill, GetSkill, FindSkill, ListSkills, DeleteSkill
 /// - ajastin: CreateSchedule, ListSchedules, DeleteSchedule, EnableSchedule, DisableSchedule
 /// - koti: GetEntityState, ListEntities (with area filter), CallService, GetHistory (Home Assistant REST API)
+/// - verkko: FetchUrl (fetch URL, extract text from HTML/JSON, 5-min cache), SendNotification (ntfy push notifications)
 /// </summary>
 public class SkillSeeder(SkillRepository repository, EmbeddingService embeddings)
 {
@@ -65,24 +66,35 @@ public class SkillSeeder(SkillRepository repository, EmbeddingService embeddings
       3. Ask for timezone if not obvious (default to Europe/Helsinki)
       4. Use CreateReminder with the ISO 8601 UTC datetime and recurrence rule
       5. Confirm the schedule to the user in their local time
+
+      Note: Reminders automatically send push notifications when due. No need to set up separate notifications or schedules for reminder delivery.
       """,
       ["reminder", "recurring"]
     ),
     (
-      "schedule-recurring-task",
-      "Create a scheduled agent task that runs on a cron schedule",
+      "schedule-task",
+      "Create a scheduled agent task — recurring (cron) or one-time (specific datetime)",
       """
-      When the user wants something to run automatically on a schedule:
+      When the user wants something to run on a schedule or at a specific time:
+
+      For RECURRING tasks:
       1. Determine the cron expression from the user's description:
          - "every morning at 7" → 0 7 * * *
          - "every hour" → 0 * * * *
          - "every Monday at 9" → 0 9 * * 1
          - "every day at midnight" → 0 0 * * *
       2. Note: cron times are in UTC. Convert from user's timezone (Europe/Helsinki = UTC+2/+3)
-      3. Write a clear, self-contained prompt that the agent will execute
-      4. The prompt should be specific — the agent running it has no conversation context
-      5. Use CreateSchedule with the name, cron expression, and prompt
-      6. Confirm the schedule to the user, showing next run time in their timezone
+      3. Use CreateSchedule with name, prompt, and cronExpression
+
+      For ONE-TIME tasks:
+      1. Convert the user's desired time to UTC ISO 8601 format
+      2. Use CreateSchedule with name, prompt, and runAt
+      3. One-time schedules auto-disable after running
+
+      For both:
+      - Write a clear, self-contained prompt — the agent running it has no conversation context
+      - The prompt should specify exactly what to do, including which tools to use
+      - Confirm the schedule to the user, showing the run time in their timezone
       """,
       ["schedule", "automation"]
     ),
@@ -164,6 +176,96 @@ public class SkillSeeder(SkillRepository repository, EmbeddingService embeddings
       8. Report what was cleaned up: expired count, stale count, conflicts resolved
       """,
       ["memory", "maintenance", "cleanup"]
+    ),
+    (
+      "monitor-url",
+      "Set up monitoring for a URL — check periodically for changes and report when something changes",
+      """
+      When the user wants to monitor a URL for changes (price drops, package tracking, status pages, etc.):
+      1. Use FetchUrl to get the current content of the URL
+      2. Use SaveMemory to store the current state with:
+         - category: "monitor"
+         - tags: descriptive (e.g. "package,tracking" or "price,product-name")
+         - source: "system"
+         - content: a concise summary of the current state (not the full page)
+      3. Use CreateSchedule to set up periodic checking:
+         - name: descriptive (e.g. "monitor-package-12345")
+         - cron: choose frequency based on context (hourly for tracking, daily for prices)
+         - prompt: "Use FetchUrl to check [URL]. Use RecallMemory with tags '[tags]' to get the previous state. Compare them. If anything meaningful changed, report the change and send a notification with SendNotification. Update the memory with the new state using UpdateMemory."
+      4. Confirm to the user: what's being monitored, how often, what to look for
+      """,
+      ["monitoring", "automation", "fetch"]
+    ),
+    (
+      "manage-list",
+      "Manage markdown checklist lists stored in memory (shopping lists, packing lists, todo lists, etc.)",
+      """
+      Lists are stored as markdown checklists in memory with category "list".
+      Each list is a single memory entry with the list name as a tag.
+
+      To ADD an item to a list:
+      1. Use RecallMemory with query "[list name] list" and category "list"
+      2. If found: use UpdateMemory with the memory ID and new content (add "- [ ] item")
+      3. If not found: create a new list with SaveMemory:
+         - content: "# [List name]\n- [ ] item"
+         - category: "list"
+         - tags: the list name (e.g. "shopping", "packing")
+         - source: "user"
+
+      To SHOW a list:
+      1. Use RecallMemory with the list name and category "list"
+      2. Present the markdown to the user
+
+      To CHECK OFF an item:
+      1. Recall the list to get the ID and content
+      2. Use UpdateMemory with the ID, changing "- [ ] item" to "- [x] item"
+
+      To REMOVE an item:
+      1. Recall the list, use UpdateMemory with the line removed
+
+      To CLEAR completed items:
+      1. Recall the list, use UpdateMemory with all "- [x]" lines removed
+
+      To DELETE an entire list:
+      1. Use ForgetMemory to remove it
+
+      To LIST all lists:
+      1. Use ListMemories with category "list"
+      """,
+      ["list", "checklist", "todo", "shopping"]
+    ),
+    (
+      "manage-journal",
+      "Manage a personal journal/notes stored in memory",
+      """
+      Journal entries are stored as memories with category "journal".
+      Each entry is tagged with the date (e.g. "2026-04-03").
+
+      To ADD a journal entry:
+      1. Use SaveMemory with:
+         - content: the journal entry text, prefixed with the date (e.g. "2026-04-03: Had a productive day...")
+         - category: "journal"
+         - tags: the date (e.g. "2026-04-03")
+         - source: "user"
+
+      To RECALL recent entries:
+      1. Use ListMemories with category "journal" to browse recent entries
+      2. Or use RecallMemory with a query to find entries about a specific topic
+
+      To RECALL entries from a specific date:
+      1. Use RecallMemory with the date and category "journal"
+
+      To SUMMARIZE a period:
+      1. Use ListMemories with category "journal" to get all entries
+      2. Summarize the entries for the requested period
+
+      To DELETE an entry:
+      1. Find the entry via RecallMemory or ListMemories
+      2. Use ForgetMemory to remove it
+
+      When the user shares something personal, reflective, or diary-like, suggest saving it as a journal entry.
+      """,
+      ["journal", "notes", "diary"]
     ),
   ];
 

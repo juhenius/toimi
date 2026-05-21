@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: toimi-tools-muistio
-          image: localhost:5000/toimi-tools-muistio:latest
+          image: ${IMAGE_REGISTRY}/toimi-tools-muistio:latest
           ports:
             - containerPort: 8080
           env:

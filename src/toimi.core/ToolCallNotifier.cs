@@ -11,10 +11,13 @@ public record ToolResultEvent(string CallId, string Result, long DurationMs);
 
 public class ToolCallNotifier(IChatClient inner) : DelegatingChatClient(inner)
 {
-  private readonly Dictionary<string, Stopwatch> _timers = new();
+  private readonly Dictionary<string, Stopwatch> _timers = [];
   private readonly ConcurrentQueue<object> _events = new();
 
-  public bool TryDequeueEvent(out object? evt) => _events.TryDequeue(out evt);
+  public bool TryDequeueEvent(out object? evt)
+  {
+    return _events.TryDequeue(out evt);
+  }
 
   public override async Task<ChatResponse> GetResponseAsync(
       IEnumerable<ChatMessage> messages,

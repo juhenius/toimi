@@ -35,5 +35,10 @@ public class ReminderConfiguration : IEntityTypeConfiguration<Reminder>
       .WithOne(co => co.Reminder)
       .HasForeignKey(co => co.ReminderId)
       .OnDelete(DeleteBehavior.Cascade);
+
+    builder.HasMany(r => r.NotifiedOccurrences)
+      .WithOne(n => n.Reminder)
+      .HasForeignKey(n => n.ReminderId)
+      .OnDelete(DeleteBehavior.Cascade);
   }
 }

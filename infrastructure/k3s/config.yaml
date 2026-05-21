@@ -1,0 +1,5 @@
+---
+# k3s server config — copied to /etc/rancher/k3s/config.yaml by server-setup.sh.
+# All bundled components kept enabled (traefik, servicelb, local-storage,
+# metrics-server, coredns, network-policy). To disable any, add a `disable:` list.
+write-kubeconfig-mode: "0644"

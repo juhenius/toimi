@@ -1,0 +1,20 @@
+extends: default
+
+rules:
+  indentation:
+    spaces: 2
+  line-length:
+    max: 200
+  truthy:
+    allowed-values: ['true', 'false', 'yes', 'no']
+  document-start: disable
+  comments:
+    min-spaces-from-content: 1
+
+ignore:
+  - .worktrees/
+  - .playwright-mcp/
+  - '**/bin/'
+  - '**/obj/'
+  - '**/node_modules/'
+  - samples/

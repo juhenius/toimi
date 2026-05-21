@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: toimi-tools-koti
-          image: localhost:5000/toimi-tools-koti:latest
+          image: ${IMAGE_REGISTRY}/toimi-tools-koti:latest
           ports:
             - containerPort: 8080
           env:
@@ -27,7 +27,7 @@ spec:
                   name: toimi-secrets
                   key: ha-bearer-token
             - name: HomeAssistant__BaseUrl
-              value: "http://homeassistant.local:8123"
+              value: "${HOMEASSISTANT_BASE_URL}"
           livenessProbe:
             httpGet:
               path: /health
