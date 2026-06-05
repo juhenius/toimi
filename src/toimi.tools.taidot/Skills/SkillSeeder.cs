@@ -267,6 +267,23 @@ public class SkillSeeder(SkillRepository repository, EmbeddingService embeddings
       """,
       ["journal", "notes", "diary"]
     ),
+    (
+      "use-displays",
+      "Push content to user-owned web displays (e.g. wall-mounted iPads, kitchen tablets) registered with ruutu.",
+      """
+      Displays are physical screens (often an old iPad or wall-mounted tablet) you can push content to.
+      Workflow:
+      1. List displays with DisplayList. Each has an identifier (e.g. 'kitchen'), a tier (modern/legacy, auto-detected), and an online/offline status.
+      2. List available content shapes with DisplayListTemplates. Each template has a name, description, and JSON Schema for its data.
+      3. Push the current scene with DisplayShow(identifier, template, dataJson). The data must match the template's schema.
+      4. Push transient cards with DisplayOverlay(identifier, template, dataJson). Overlays stack LIFO; the user must tap to dismiss. The 'notification' template is the common choice.
+      5. Reset to idle with DisplayClear(identifier).
+      Composite scenes: layout templates split_horizontal, split_vertical, and stack accept nested {template, data} blocks; the renderer composes them automatically.
+      Authoring new templates: DisplayCreateTemplate requires both modern_html AND legacy_html variants. Legacy tier targets iOS Safari 9 (no flex/grid, no CSS variables, no WebP, no @import/@font-face — use tables, floats, system fonts). Modern tier is permissive. The server lints both before saving; iterate until the linter passes.
+      Tap-back: when a user taps a checkbox or dismisses an overlay, a tap event is recorded. Use DisplayGetEvents(identifier, sinceUtc) to pull them when relevant (e.g. during an in-progress routine to track progress). v1 does NOT auto-trigger sessions on taps — you must query.
+      """,
+      ["displays", "ruutu", "ui", "iPad", "templates"]
+    ),
   ];
 
   public async Task SeedAsync(CancellationToken ct = default)

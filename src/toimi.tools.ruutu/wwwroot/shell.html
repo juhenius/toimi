@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Toimi - __IDENTIFIER__</title>
+  <link rel="stylesheet" href="/ruutu/static/shell.css">
+</head>
+<body>
+  <div id="scene"></div>
+  <div id="overlay-wrap"><div id="overlay"></div></div>
+  <div id="disconnected">disconnected</div>
+
+  <script>
+  (function(){
+    var ID = "__IDENTIFIER__";
+    var API = "/ruutu/api/displays/" + encodeURIComponent(ID);
+    var scene = document.getElementById("scene");
+    var overlayWrap = document.getElementById("overlay-wrap");
+    var overlay = document.getElementById("overlay");
+    var disconnected = document.getElementById("disconnected");
+    var es = null;
+    var sceneIntervals = [];
+
+    function testStyle(prop, val) {
+      var el = document.createElement("div");
+      try { el.style[prop] = val; return el.style[prop] === val; } catch (e) { return false; }
+    }
+
+    function detectCaps() {
+      return {
+        flexbox: testStyle("display","flex"),
+        cssGrid: !!(window.CSS && window.CSS.supports && window.CSS.supports("display","grid")),
+        fetch:   typeof window.fetch === "function",
+        promise: typeof window.Promise === "function",
+        viewportWidth: window.innerWidth || document.documentElement.clientWidth,
+        viewportHeight: window.innerHeight || document.documentElement.clientHeight,
+        userAgent: navigator.userAgent
+      };
+    }
+
+    function xhrPost(url, payload, onSuccess) {
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", url, true);
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4 && onSuccess) onSuccess(xhr.status, xhr.responseText);
+      };
+      xhr.send(JSON.stringify(payload));
+    }
+
+    function postEvent(type, target, value) {
+      if (!type) return;
+      xhrPost(API + "/events", { type: type, target: target || null, value: value || null });
+    }
+
+    function connectStream() {
+      if (typeof EventSource === "undefined") {
+        disconnected.innerHTML = "browser does not support live updates";
+        disconnected.className = "show";
+        return;
+      }
+      try { es = new EventSource(API + "/stream"); } catch (e) { return; }
+
+      es.addEventListener("scene", function(ev) {
+        var d = JSON.parse(ev.data);
+        clearTimers(sceneIntervals);
+        scene.innerHTML = d.html;
+        startClocksIn(scene, sceneIntervals);
+      });
+      es.addEventListener("overlay", function(ev) {
+        var d = JSON.parse(ev.data);
+        overlay.innerHTML = d.html;
+        overlayWrap.className = "show";
+      });
+      es.addEventListener("overlay_clear", function() {
+        overlay.innerHTML = "";
+        overlayWrap.className = "";
+      });
+      es.addEventListener("clear", function() {
+        overlay.innerHTML = "";
+        overlayWrap.className = "";
+      });
+      es.addEventListener("heartbeat", function() { disconnected.className = ""; });
+      es.onopen = function() { disconnected.className = ""; };
+      es.onerror = function() { disconnected.className = "show"; };
+    }
+
+    function applyOptimisticUpdate(el) {
+      var tap = el.getAttribute("data-tap");
+      if (tap === "dismiss") {
+        overlay.innerHTML = "";
+        overlayWrap.className = "";
+      } else if (tap === "check") {
+        el.style.opacity = "0.55";
+      }
+    }
+
+    document.addEventListener("click", function(e) {
+      var el = e.target;
+      while (el && el !== document.body && !el.getAttribute("data-tap")) el = el.parentNode;
+      if (!el || el === document.body) return;
+      postEvent(el.getAttribute("data-tap"), el.getAttribute("data-target"), el.getAttribute("data-value"));
+      applyOptimisticUpdate(el);
+    });
+
+    /* Client-side clock tick. Templates with [data-clock] get updated once per second.
+       Intervals are pushed onto the given array so the caller can clearTimers() before
+       swapping innerHTML — otherwise replaced DOM nodes leak setInterval callbacks. */
+    function clearTimers(intervals) {
+      for (var i = 0; i < intervals.length; i++) clearInterval(intervals[i]);
+      intervals.length = 0;
+    }
+    function startClocksIn(root, intervals) {
+      var elements = root.querySelectorAll ? root.querySelectorAll("[data-clock]") : [];
+      for (var i = 0; i < elements.length; i++) {
+        intervals.push(tickClock(elements[i]));
+      }
+    }
+    function tickClock(host) {
+      var format = host.getAttribute("data-clock") || "24h";
+      function render() {
+        var now = new Date();
+        var hh = now.getHours();
+        var mm = now.getMinutes();
+        var ampm = "";
+        if (format === "12h") {
+          ampm = hh >= 12 ? " PM" : " AM";
+          hh = hh % 12; if (hh === 0) hh = 12;
+        }
+        var t = (hh < 10 ? "0" : "") + hh + ":" + (mm < 10 ? "0" : "") + mm + ampm;
+        var d = now.toDateString();
+        var te = host.querySelector("[data-clock-time]");
+        var de = host.querySelector("[data-clock-date]");
+        if (te) te.innerHTML = t;
+        if (de) de.innerHTML = d;
+      }
+      render();
+      return setInterval(render, 1000);
+    }
+
+    /* Bootstrap: post capabilities, then open stream. */
+    xhrPost(API + "/capabilities", detectCaps(), function(status) {
+      if (status >= 200 && status < 300) connectStream();
+      else disconnected.innerHTML = "setup failed";
+    });
+  })();
+  </script>
+</body>
+</html>

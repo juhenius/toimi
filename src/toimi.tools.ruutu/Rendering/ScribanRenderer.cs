@@ -1,0 +1,105 @@
+using System.Text.Json;
+using Scriban;
+using Scriban.Runtime;
+
+namespace toimi.tools.ruutu.Rendering;
+
+public static class ScribanRenderer
+{
+  private const int MaxDepth = 3;
+
+  public static Task<string> RenderAsync(
+    string templateName, JsonElement data, string tier,
+    IRenderTemplateSource source, CancellationToken ct = default)
+  {
+    return RenderInternalAsync(templateName, data, tier, source, 0, ct);
+  }
+
+  private static async Task<string> RenderInternalAsync(
+    string name, JsonElement data, string tier,
+    IRenderTemplateSource source, int depth, CancellationToken ct)
+  {
+    if (depth > MaxDepth)
+      throw new RenderException($"Template recursion exceeded max depth of {MaxDepth} (at '{name}')");
+
+    var body = await source.GetAsync(name, ct);
+    if (body is null)
+      throw new RenderException($"Template '{name}' not found");
+
+    var html = tier == "legacy" ? body.LegacyHtml : body.ModernHtml;
+    if (string.IsNullOrEmpty(html))
+      throw new RenderException($"Template '{name}' has no '{tier}' variant");
+
+    var enriched = await EnrichDataWithSlotsAsync(data, tier, source, depth, ct);
+
+    Template template;
+    try { template = Template.Parse(html); }
+    catch (Exception ex) { throw new RenderException($"Template '{name}' parse error: {ex.Message}", ex); }
+    if (template.HasErrors)
+      throw new RenderException($"Template '{name}' parse error: {string.Join("; ", template.Messages)}");
+
+    var scriptObj = new ScriptObject();
+    foreach (var (k, v) in enriched) scriptObj[k] = v;
+    var context = new TemplateContext { StrictVariables = false };
+    context.PushGlobal(scriptObj);
+
+    try { return template.Render(context); }
+    catch (Exception ex) { throw new RenderException($"Template '{name}' render error: {ex.Message}", ex); }
+  }
+
+  private static async Task<Dictionary<string, object?>> EnrichDataWithSlotsAsync(
+    JsonElement data, string tier, IRenderTemplateSource source, int depth, CancellationToken ct)
+  {
+    var result = new Dictionary<string, object?>();
+    if (data.ValueKind != JsonValueKind.Object) return result;
+
+    foreach (var prop in data.EnumerateObject())
+    {
+      result[prop.Name] = JsonToScalar(prop.Value);
+
+      if (IsSlotRef(prop.Value, out var subName, out var subData))
+      {
+        var subHtml = await RenderInternalAsync(subName!, subData, tier, source, depth + 1, ct);
+        result[$"{prop.Name}_html"] = subHtml;
+      }
+      else if (prop.Value.ValueKind == JsonValueKind.Array)
+      {
+        var rendered = new List<string>();
+        var anySlot = false;
+        foreach (var item in prop.Value.EnumerateArray())
+        {
+          if (IsSlotRef(item, out var iName, out var iData))
+          {
+            anySlot = true;
+            rendered.Add(await RenderInternalAsync(iName!, iData, tier, source, depth + 1, ct));
+          }
+        }
+        if (anySlot) result[$"{prop.Name}_html"] = rendered;
+      }
+    }
+    return result;
+  }
+
+  private static bool IsSlotRef(JsonElement v, out string? name, out JsonElement data)
+  {
+    name = null; data = default;
+    if (v.ValueKind != JsonValueKind.Object) return false;
+    if (!v.TryGetProperty("template", out var tEl) || tEl.ValueKind != JsonValueKind.String) return false;
+    if (!v.TryGetProperty("data", out var dEl)) return false;
+    name = tEl.GetString();
+    data = dEl;
+    return !string.IsNullOrEmpty(name);
+  }
+
+  private static object? JsonToScalar(JsonElement v) => v.ValueKind switch
+  {
+    JsonValueKind.String => v.GetString(),
+    JsonValueKind.Number => v.TryGetInt64(out var n) ? n : v.GetDouble(),
+    JsonValueKind.True => true,
+    JsonValueKind.False => false,
+    JsonValueKind.Null => null,
+    JsonValueKind.Array => v.EnumerateArray().Select(JsonToScalar).ToList(),
+    JsonValueKind.Object => v.EnumerateObject().ToDictionary(p => p.Name, p => JsonToScalar(p.Value)),
+    _ => null
+  };
+}

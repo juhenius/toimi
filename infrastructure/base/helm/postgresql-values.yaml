@@ -8,6 +8,7 @@ initdbScripts:
     CREATE DATABASE muistutin;
     CREATE DATABASE ajastin;
     CREATE DATABASE toimi;
+    CREATE DATABASE ruutu;
 
 primary:
   persistence:

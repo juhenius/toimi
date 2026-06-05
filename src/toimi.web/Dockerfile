@@ -19,6 +19,7 @@ COPY src/toimi.tools.koti/toimi.tools.koti.csproj src/toimi.tools.koti/
 COPY src/toimi.tools.muistio/toimi.tools.muistio.csproj src/toimi.tools.muistio/
 COPY src/toimi.tools.muistutin/toimi.tools.muistutin.csproj src/toimi.tools.muistutin/
 COPY src/toimi.tools.taidot/toimi.tools.taidot.csproj src/toimi.tools.taidot/
+COPY src/toimi.tools.ruutu/toimi.tools.ruutu.csproj src/toimi.tools.ruutu/
 RUN dotnet restore src/toimi.web/toimi.web.csproj
 
 COPY src/ src/

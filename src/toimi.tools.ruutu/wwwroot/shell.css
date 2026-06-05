@@ -1,0 +1,10 @@
+/* Minimal reset + utilities. Legacy-tier safe. */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; background: #f5f3ef; font-family: -apple-system, Helvetica, Arial, sans-serif; color: #222; }
+#scene, #overlay-wrap { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+#overlay-wrap { background: rgba(0,0,0,0.45); z-index: 10; display: none; }
+#overlay-wrap.show { display: block; }
+#overlay { width: 100%; height: 100%; }
+#disconnected { position: fixed; top: 12px; right: 12px; background: rgba(200,60,60,0.85); color: #fff; padding: 6px 10px; font-size: 11px; border-radius: 4px; z-index: 100; display: none; }
+#disconnected.show { display: block; }
+[data-tap] { cursor: pointer; }

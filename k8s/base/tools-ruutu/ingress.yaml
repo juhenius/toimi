@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: toimi-tools-ruutu
+  namespace: apps
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: ${TOIMI_HOST}
+      http:
+        paths:
+          - path: /ruutu
+            pathType: Prefix
+            backend:
+              service:
+                name: toimi-tools-ruutu
+                port:
+                  number: 80

@@ -128,7 +128,7 @@ echo "Waiting for PostgreSQL..."
 kubectl rollout status statefulset/postgresql --namespace data --timeout=120s
 
 echo "Ensuring databases exist..."
-for DB_NAME in muistio muistutin ajastin toimi; do
+for DB_NAME in muistio muistutin ajastin toimi ruutu; do
   kubectl exec -n data svc/postgresql -- env PGPASSWORD="$PG_PASSWORD" \
     psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q 1 || \
     kubectl exec -n data svc/postgresql -- env PGPASSWORD="$PG_PASSWORD" \
