@@ -6,63 +6,139 @@ namespace Toimi.Core;
 
 public class McpToolAggregator : IAsyncDisposable
 {
-  private readonly List<McpClient> _clients = [];
-  private readonly List<HttpClient> _httpClients = [];
-  private readonly List<AITool> _tools = [];
+  private readonly Dictionary<string, ServerConnection> _connections = new();
+  private readonly Dictionary<string, SemaphoreSlim> _reconnectLocks = new();
+  private readonly List<AITool> _wrappedTools = new();
+
+  private sealed record ServerConnection(
+    McpServerOptions Options,
+    McpClient Client,
+    HttpClient? HttpClient,
+    Dictionary<string, AIFunction> Tools);
 
   public async Task ConnectAllAsync(IList<McpServerOptions> servers, CancellationToken cancellationToken = default)
   {
     foreach (var server in servers)
     {
-      try
+      var connection = await ConnectOneAsync(server, cancellationToken);
+      if (connection is null) continue;
+      foreach (var tool in connection.Tools.Values)
       {
-        var client = server.Transport switch
-        {
-          McpTransportType.Http => await ConnectHttpAsync(server, cancellationToken),
-          McpTransportType.Stdio => await ConnectStdioAsync(server, cancellationToken),
-          _ => throw new ArgumentException($"Unknown transport type: {server.Transport}")
-        };
-
-        _clients.Add(client);
-
-        var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
-        _tools.AddRange(tools);
-
-        Console.WriteLine($"  [{server.Name}] Connected, {tools.Count} tools discovered.");
-      }
-      catch (Exception ex)
-      {
-        Console.Error.WriteLine($"  [{server.Name}] Failed to connect: {ex.Message}");
+        _wrappedTools.Add(new ResilientMcpTool(this, server.Name, tool));
       }
     }
   }
 
   public IList<AITool> GetAllTools()
   {
-    return _tools;
+    return _wrappedTools;
   }
 
   public async Task<string?> CallToolAsync(string toolName, Dictionary<string, object?>? arguments = null, CancellationToken ct = default)
   {
-    var tool = _tools.OfType<AIFunction>().FirstOrDefault(t => t.Name == toolName);
-    if (tool is null)
-    {
-      return null;
-    }
+    var tool = _wrappedTools.OfType<AIFunction>().FirstOrDefault(t => t.Name == toolName);
+    if (tool is null) return null;
 
-    var args = arguments is not null
-      ? new AIFunctionArguments(arguments)
-      : [];
-
+    var args = arguments is not null ? new AIFunctionArguments(arguments) : [];
     var result = await tool.InvokeAsync(args, ct);
     return result?.ToString();
   }
 
-  private async Task<McpClient> ConnectHttpAsync(McpServerOptions server, CancellationToken cancellationToken)
+  /// <summary>
+  /// Tears down the existing connection for <paramref name="serverName"/> and rebuilds it.
+  /// Returns the freshly-discovered tool with the given name, or null if reconnect failed
+  /// or the tool no longer exists on the server. Concurrent callers for the same server
+  /// are serialized so we don't open multiple replacement connections.
+  /// </summary>
+  internal async Task<AIFunction?> ReconnectAndGetToolAsync(string serverName, string toolName, AIFunction staleInner, CancellationToken ct)
   {
-    var httpClient = new HttpClient();
-    _httpClients.Add(httpClient);
+    var sem = GetReconnectLock(serverName);
+    await sem.WaitAsync(ct);
+    try
+    {
+      // If a parallel caller already swapped the underlying tool, just return it — no need to reconnect again.
+      if (_connections.TryGetValue(serverName, out var current) &&
+          current.Tools.TryGetValue(toolName, out var existing) &&
+          !ReferenceEquals(existing, staleInner))
+      {
+        return existing;
+      }
 
+      if (!_connections.TryGetValue(serverName, out var stale))
+      {
+        return null;
+      }
+
+      var options = stale.Options;
+      try { await stale.Client.DisposeAsync(); } catch { /* best-effort cleanup */ }
+      stale.HttpClient?.Dispose();
+      _connections.Remove(serverName);
+
+      var fresh = await ConnectOneAsync(options, ct);
+      if (fresh is null) return null;
+      return fresh.Tools.TryGetValue(toolName, out var tool) ? tool : null;
+    }
+    finally
+    {
+      sem.Release();
+    }
+  }
+
+  private SemaphoreSlim GetReconnectLock(string serverName)
+  {
+    lock (_reconnectLocks)
+    {
+      if (!_reconnectLocks.TryGetValue(serverName, out var sem))
+      {
+        sem = new SemaphoreSlim(1, 1);
+        _reconnectLocks[serverName] = sem;
+      }
+      return sem;
+    }
+  }
+
+  private async Task<ServerConnection?> ConnectOneAsync(McpServerOptions server, CancellationToken cancellationToken)
+  {
+    try
+    {
+      McpClient client;
+      HttpClient? httpClient = null;
+
+      switch (server.Transport)
+      {
+        case McpTransportType.Http:
+          httpClient = new HttpClient();
+          client = await ConnectHttpAsync(server, httpClient, cancellationToken);
+          break;
+        case McpTransportType.Stdio:
+          client = await ConnectStdioAsync(server, cancellationToken);
+          break;
+        default:
+          throw new ArgumentException($"Unknown transport type: {server.Transport}");
+      }
+
+      var rawTools = await client.ListToolsAsync(cancellationToken: cancellationToken);
+      var toolMap = new Dictionary<string, AIFunction>();
+      foreach (var t in rawTools.OfType<AIFunction>())
+      {
+        toolMap[t.Name] = t;
+      }
+
+      var connection = new ServerConnection(server, client, httpClient, toolMap);
+      _connections[server.Name] = connection;
+
+      Console.WriteLine($"  [{server.Name}] Connected, {toolMap.Count} tools discovered.");
+      return connection;
+    }
+    catch (Exception ex)
+    {
+      Console.Error.WriteLine($"  [{server.Name}] Failed to connect: {ex.Message}");
+      return null;
+    }
+  }
+
+  private static async Task<McpClient> ConnectHttpAsync(McpServerOptions server, HttpClient httpClient, CancellationToken cancellationToken)
+  {
     var transportOptions = new HttpClientTransportOptions
     {
       Endpoint = new Uri(server.Url!)
@@ -98,14 +174,17 @@ public class McpToolAggregator : IAsyncDisposable
 
   public async ValueTask DisposeAsync()
   {
-    foreach (var client in _clients)
+    foreach (var conn in _connections.Values)
     {
-      await client.DisposeAsync();
+      try { await conn.Client.DisposeAsync(); } catch { /* best-effort */ }
+      conn.HttpClient?.Dispose();
     }
+    _connections.Clear();
 
-    foreach (var httpClient in _httpClients)
+    lock (_reconnectLocks)
     {
-      httpClient.Dispose();
+      foreach (var sem in _reconnectLocks.Values) sem.Dispose();
+      _reconnectLocks.Clear();
     }
 
     GC.SuppressFinalize(this);
