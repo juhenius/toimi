@@ -7,4 +7,5 @@ public record SkillEntry(
     string Instructions,
     string[] Tags,
     DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
     float? Score = null);

@@ -17,7 +17,7 @@ namespace toimi.tools.taidot.Skills;
 /// - koti: GetEntityState, ListEntities (with area filter), CallService, GetHistory (Home Assistant REST API)
 /// - verkko: FetchUrl (fetch URL, extract text from HTML/JSON, 5-min cache), SendNotification (ntfy push notifications)
 /// </summary>
-public class SkillSeeder(SkillRepository repository, EmbeddingService embeddings)
+public class SkillSeeder(ISkillStore store, EmbeddingService embeddings)
 {
   private static readonly (string Name, string Description, string Instructions, string[] Tags)[] StandardSkills =
   [
@@ -288,11 +288,16 @@ public class SkillSeeder(SkillRepository repository, EmbeddingService embeddings
 
   public async Task SeedAsync(CancellationToken ct = default)
   {
+    var existing = await store.ListAllAsync(ct);
+    var byName = existing.ToDictionary(e => e.Name, StringComparer.OrdinalIgnoreCase);
+
     foreach (var (name, description, instructions, tags) in StandardSkills)
     {
       var embeddingText = $"{description} {instructions}";
       var embedding = await embeddings.GenerateEmbeddingAsync(embeddingText);
-      await repository.UpsertAsync(name, description, instructions.Trim(), tags, embedding, ct);
+      var id = byName.TryGetValue(name, out var found) ? found.Id : Guid.NewGuid();
+      var createdAt = found?.CreatedAt ?? DateTimeOffset.UtcNow;
+      await store.UpsertPointAsync(id, name, description, instructions.Trim(), tags, embedding, createdAt, ct);
     }
   }
 }

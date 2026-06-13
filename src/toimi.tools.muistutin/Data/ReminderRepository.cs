@@ -8,6 +8,7 @@ public class ReminderRepository(MuistutinDbContext dbContext)
   {
     reminder.Id = Guid.NewGuid();
     reminder.CreatedAt = DateTimeOffset.UtcNow;
+    reminder.UpdatedAt = DateTimeOffset.UtcNow;
 
     dbContext.Reminders.Add(reminder);
     await dbContext.SaveChangesAsync();
@@ -44,6 +45,7 @@ public class ReminderRepository(MuistutinDbContext dbContext)
     if (reminder != null)
     {
       reminder.IsCompleted = true;
+      reminder.UpdatedAt = DateTimeOffset.UtcNow;
       await dbContext.SaveChangesAsync();
     }
   }

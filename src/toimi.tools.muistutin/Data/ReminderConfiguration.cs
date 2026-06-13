@@ -27,6 +27,9 @@ public class ReminderConfiguration : IEntityTypeConfiguration<Reminder>
     builder.Property(r => r.CreatedAt)
       .HasDefaultValueSql("now()");
 
+    builder.Property(r => r.UpdatedAt)
+      .HasDefaultValueSql("now()");
+
     builder.HasIndex(r => new { r.DateTimeUtc, r.DisplayEndUtc })
       .HasDatabaseName("idx_reminders_active_range")
       .HasFilter("NOT is_completed");

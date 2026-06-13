@@ -8,6 +8,7 @@ public class ScheduleRepository(AjastinDbContext dbContext)
   {
     schedule.Id = Guid.NewGuid();
     schedule.CreatedAt = DateTimeOffset.UtcNow;
+    schedule.UpdatedAt = DateTimeOffset.UtcNow;
 
     dbContext.Schedules.Add(schedule);
     await dbContext.SaveChangesAsync();
@@ -55,6 +56,7 @@ public class ScheduleRepository(AjastinDbContext dbContext)
 
   public async Task<Schedule> UpdateAsync(Schedule schedule)
   {
+    schedule.UpdatedAt = DateTimeOffset.UtcNow;
     dbContext.Schedules.Update(schedule);
     await dbContext.SaveChangesAsync();
 

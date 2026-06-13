@@ -136,6 +136,12 @@ namespace toimi.tools.muistutin.Migrations
                         .HasColumnType("text")
                         .HasColumnName("title");
 
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
                     b.HasKey("Id")
                         .HasName("pk_reminders");
 

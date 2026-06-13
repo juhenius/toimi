@@ -10,6 +10,8 @@ var qdrantHost = builder.Configuration["Qdrant:Host"] ?? "localhost";
 var qdrantPort = int.Parse(builder.Configuration["Qdrant:Port"] ?? "6334", System.Globalization.CultureInfo.InvariantCulture);
 builder.Services.AddSingleton(new QdrantClient(qdrantHost, qdrantPort));
 builder.Services.AddSingleton<SkillRepository>();
+builder.Services.AddSingleton<ISkillStore>(sp => sp.GetRequiredService<SkillRepository>());
+builder.Services.AddSingleton<SkillAdminRepository>();
 
 // OpenAI embeddings
 var openAiApiKey = builder.Configuration["OpenAI:ApiKey"]
@@ -35,13 +37,19 @@ builder.Services
 
 var app = builder.Build();
 
-var skillRepo = app.Services.GetRequiredService<SkillRepository>();
-await skillRepo.EnsureCollectionAsync();
+var skillRepo = app.Services.GetService<SkillRepository>();
+if (skillRepo is not null)
+{
+  await skillRepo.EnsureCollectionAsync();
+}
 
-var seeder = new SkillSeeder(skillRepo, app.Services.GetRequiredService<EmbeddingService>());
+var seeder = new SkillSeeder(
+    app.Services.GetRequiredService<ISkillStore>(),
+    app.Services.GetRequiredService<EmbeddingService>());
 await seeder.SeedAsync();
 
 app.MapMcp();
 app.MapGet("/health", () => Results.Ok());
+toimi.tools.taidot.Admin.AdminEndpoints.MapAdminEndpoints(app);
 
 app.Run();

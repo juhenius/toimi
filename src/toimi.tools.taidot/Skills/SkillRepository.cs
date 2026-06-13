@@ -5,7 +5,7 @@ using Qdrant.Client.Grpc;
 
 namespace toimi.tools.taidot.Skills;
 
-public class SkillRepository(QdrantClient qdrant)
+public class SkillRepository(QdrantClient qdrant) : ISkillStore
 {
   private const string CollectionName = "skills";
   private const uint VectorSize = 1536;
@@ -45,6 +45,7 @@ public class SkillRepository(QdrantClient qdrant)
       ["description"] = description,
       ["instructions"] = instructions,
       ["created_at"] = DateTimeOffset.UtcNow.ToString("o"),
+      ["updated_at"] = DateTimeOffset.UtcNow.ToString("o"),
     };
 
     if (tags.Length > 0)
@@ -128,6 +129,57 @@ public class SkillRepository(QdrantClient qdrant)
     return true;
   }
 
+  // ISkillStore methods
+
+  public async Task<IReadOnlyList<SkillEntry>> ListAllAsync(CancellationToken ct = default)
+  {
+    var response = await qdrant.ScrollAsync(
+        CollectionName,
+        limit: 1000,
+        cancellationToken: ct);
+    return [.. response.Result.Select(r => ToSkillEntry(r.Id, r.Payload))];
+  }
+
+  public async Task<SkillEntry?> GetByIdAsync(Guid id, CancellationToken ct = default)
+  {
+    var filter = new Filter();
+    filter.Must.Add(Conditions.HasId(id));
+    var response = await qdrant.ScrollAsync(
+        CollectionName,
+        filter: filter,
+        limit: 1,
+        cancellationToken: ct);
+    var point = response.Result.FirstOrDefault();
+    return point is null ? null : ToSkillEntry(point.Id, point.Payload);
+  }
+
+  public async Task<bool> DeleteByIdAsync(Guid id, CancellationToken ct = default)
+  {
+    var existing = await GetByIdAsync(id, ct);
+    if (existing is null) return false;
+    await qdrant.DeleteAsync(CollectionName, id, cancellationToken: ct);
+    return true;
+  }
+
+  public async Task UpsertPointAsync(Guid id, string name, string description, string instructions,
+      string[] tags, float[] embedding, DateTimeOffset createdAt, CancellationToken ct = default)
+  {
+    var payload = new Dictionary<string, Value>
+    {
+      ["name"] = name,
+      ["description"] = description,
+      ["instructions"] = instructions,
+      ["created_at"] = createdAt.ToString("o"),
+      ["updated_at"] = DateTimeOffset.UtcNow.ToString("o"),
+    };
+    if (tags.Length > 0) payload["tags"] = tags;
+
+    var point = new PointStruct { Id = id, Vectors = embedding };
+    foreach (var kvp in payload) point.Payload[kvp.Key] = kvp.Value;
+
+    await qdrant.UpsertAsync(CollectionName, [point], cancellationToken: ct);
+  }
+
   private async Task<Guid?> FindByNameAsync(string name, CancellationToken ct)
   {
     var filter = new Filter();
@@ -186,6 +238,10 @@ public class SkillRepository(QdrantClient qdrant)
         ? DateTimeOffset.Parse(dtV.StringValue, CultureInfo.InvariantCulture)
         : DateTimeOffset.MinValue;
 
-    return new SkillEntry(id, name, description, instructions, entryTags, createdAt, score);
+    var updatedAt = payload.TryGetValue("updated_at", out var uV)
+        ? DateTimeOffset.Parse(uV.StringValue, CultureInfo.InvariantCulture)
+        : createdAt;
+
+    return new SkillEntry(id, name, description, instructions, entryTags, createdAt, updatedAt, score);
   }
 }

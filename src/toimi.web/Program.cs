@@ -20,11 +20,20 @@ if (string.IsNullOrEmpty(toimiConfig.OpenAI.ApiKey))
 
 builder.Services.AddSignalR();
 builder.Services.AddSingleton(toimiConfig);
-builder.Services.AddHttpClient("ajastin", client =>
+
+var adminToolsOptions = builder.Configuration.GetSection("Toimi:Admin").Get<Toimi.Web.Admin.AdminToolsOptions>()
+  ?? new Toimi.Web.Admin.AdminToolsOptions();
+builder.Services.AddSingleton(adminToolsOptions);
+
+foreach (var tool in adminToolsOptions.Tools)
 {
-  client.BaseAddress = new Uri(builder.Configuration["AjastinApiUrl"]
-    ?? "http://toimi-tools-ajastin.apps.svc.cluster.local");
-});
+  builder.Services.AddHttpClient($"admin-{tool}", client =>
+  {
+    var overrideUrl = builder.Configuration[$"Toimi:Admin:Urls:{tool}"];
+    client.BaseAddress = new Uri(
+      overrideUrl ?? $"http://toimi-tools-{tool}.apps.svc.cluster.local");
+  });
+}
 
 var toimiConnectionString = builder.Configuration.GetConnectionString("Toimi")
   ?? throw new InvalidOperationException("ConnectionStrings:Toimi is required");
@@ -68,7 +77,7 @@ app.MapGet("/health", () => Results.Ok());
 
 app.MapGet("/api/activity", async (IHttpClientFactory httpFactory, int limit = 20) =>
 {
-  var client = httpFactory.CreateClient("ajastin");
+  var client = httpFactory.CreateClient("admin-ajastin");
   try
   {
     var response = await client.GetAsync($"/api/runs?limit={Math.Clamp(limit, 1, 100)}");
@@ -82,6 +91,7 @@ app.MapGet("/api/activity", async (IHttpClientFactory httpFactory, int limit = 2
   }
 });
 
+Toimi.Web.Admin.AdminEndpoints.MapAdminEndpoints(app);
 app.MapHub<Toimi.Web.Hubs.ToimiHub>("/toimihub");
 app.MapFallbackToFile("index.html");
 

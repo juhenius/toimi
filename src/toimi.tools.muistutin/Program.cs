@@ -37,10 +37,14 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
   var dbContext = scope.ServiceProvider.GetRequiredService<MuistutinDbContext>();
-  await dbContext.Database.MigrateAsync();
+  if (dbContext.Database.IsRelational())
+  {
+    await dbContext.Database.MigrateAsync();
+  }
 }
 
 app.MapMcp();
 app.MapGet("/health", () => Results.Ok());
+toimi.tools.muistutin.Admin.AdminEndpoints.MapAdminEndpoints(app);
 
 app.Run();

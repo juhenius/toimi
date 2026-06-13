@@ -588,3 +588,5 @@ src/toimi.web/wwwroot/
 
 # Brainstorm session artifacts (mockups, server state)
 /.superpowers/
+/.sandbox/
+/mise.toml

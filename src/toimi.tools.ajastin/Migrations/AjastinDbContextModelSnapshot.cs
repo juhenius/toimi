@@ -64,6 +64,12 @@ namespace toimi.tools.ajastin.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("run_at");
 
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
                     b.HasKey("Id")
                         .HasName("pk_schedules");
 

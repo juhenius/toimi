@@ -36,11 +36,15 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
   var dbContext = scope.ServiceProvider.GetRequiredService<AjastinDbContext>();
-  await dbContext.Database.MigrateAsync();
+  if (dbContext.Database.IsRelational())
+  {
+    await dbContext.Database.MigrateAsync();
+  }
 }
 
 app.MapMcp();
 app.MapGet("/health", () => Results.Ok());
+toimi.tools.ajastin.Admin.AdminEndpoints.MapAdminEndpoints(app);
 
 // REST API for run history
 app.MapGet("/api/runs", async (AjastinDbContext db, int limit = 20) =>

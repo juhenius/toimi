@@ -29,6 +29,9 @@ public class ScheduleConfiguration : IEntityTypeConfiguration<Schedule>
     builder.Property(s => s.CreatedAt)
       .HasDefaultValueSql("now()");
 
+    builder.Property(s => s.UpdatedAt)
+      .HasDefaultValueSql("now()");
+
     builder.HasMany(s => s.Runs)
       .WithOne(r => r.Schedule)
       .HasForeignKey(r => r.ScheduleId)

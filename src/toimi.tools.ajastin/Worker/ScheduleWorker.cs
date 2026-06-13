@@ -93,6 +93,7 @@ public partial class ScheduleWorker(
       run.Success = true;
 
       schedule.LastRunAt = run.StartedAt;
+      schedule.UpdatedAt = DateTimeOffset.UtcNow;
       if (schedule.RunAt.HasValue)
       {
         schedule.Enabled = false; // One-time schedule: disable after running

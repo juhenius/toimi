@@ -10,5 +10,6 @@ public class Schedule
   public bool Enabled { get; set; }
   public DateTimeOffset? LastRunAt { get; set; }
   public DateTimeOffset CreatedAt { get; set; }
+  public DateTimeOffset UpdatedAt { get; set; }
   public ICollection<ScheduleRun> Runs { get; set; } = [];
 }

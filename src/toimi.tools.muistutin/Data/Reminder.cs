@@ -12,6 +12,7 @@ public class Reminder
   public bool IsCompleted { get; set; }
   public DateTimeOffset? NotifiedAt { get; set; }
   public DateTimeOffset CreatedAt { get; set; }
+  public DateTimeOffset UpdatedAt { get; set; }
   public ICollection<CompletedOccurrence> CompletedOccurrences { get; set; } = [];
   public ICollection<NotifiedOccurrence> NotifiedOccurrences { get; set; } = [];
 }
