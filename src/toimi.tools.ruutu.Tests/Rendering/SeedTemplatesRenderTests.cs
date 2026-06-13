@@ -45,6 +45,7 @@ public class SeedTemplatesRenderTests
   [InlineData("split_vertical", """{"top":{"template":"splash","data":{}},"bottom":{"template":"splash","data":{}}}""")]
   [InlineData("stack", """{"items":[]}""")]
   [InlineData("stack", """{"items":[{"template":"splash","data":{}},{"template":"splash","data":{}}]}""")]
+  [InlineData("webview", """{"url":"https://x.test/a"}""")]
   public async Task Seeded_template_renders_in_modern_tier(string templateName, string dataJson)
   {
     var data = JsonDocument.Parse(dataJson).RootElement;
@@ -65,6 +66,7 @@ public class SeedTemplatesRenderTests
   [InlineData("split_vertical", """{"top":{"template":"splash","data":{}},"bottom":{"template":"splash","data":{}}}""")]
   [InlineData("stack", """{"items":[]}""")]
   [InlineData("stack", """{"items":[{"template":"splash","data":{}},{"template":"splash","data":{}}]}""")]
+  [InlineData("webview", """{"url":"https://x.test/a"}""")]
   public async Task Seeded_template_renders_in_legacy_tier(string templateName, string dataJson)
   {
     var data = JsonDocument.Parse(dataJson).RootElement;
@@ -80,7 +82,8 @@ public class SeedTemplatesRenderTests
     var covered = new HashSet<string>
     {
       "splash", "clock", "message", "notification", "todo_list", "weather",
-      "calendar_day", "reminders", "split_horizontal", "split_vertical", "stack"
+      "calendar_day", "reminders", "split_horizontal", "split_vertical", "stack",
+      "webview"
     };
     var seeded = SeedTemplates.All.Select(t => t.Name).ToHashSet();
     Assert.Equal(seeded, covered);

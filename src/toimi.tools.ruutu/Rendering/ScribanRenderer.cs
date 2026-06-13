@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using Scriban;
 using Scriban.Runtime;
@@ -13,6 +15,64 @@ public static class ScribanRenderer
     IRenderTemplateSource source, CancellationToken ct = default)
   {
     return RenderInternalAsync(templateName, data, tier, source, 0, ct);
+  }
+
+  /// <summary>
+  /// Template filter: returns the URL only if it is an absolute https URL with a
+  /// public, externally-routable host, HTML-escaped for safe use in an attribute.
+  /// Anything else (other schemes, loopback/private/internal hosts, malformed,
+  /// null) collapses to "about:blank" so it can never break out of the attribute
+  /// or aim a display's browser at the local network.
+  /// </summary>
+  public static string SafeUrl(string? input)
+  {
+    if (string.IsNullOrWhiteSpace(input)) return "about:blank";
+    if (!Uri.TryCreate(input, UriKind.Absolute, out var uri)) return "about:blank";
+    if (!string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase)) return "about:blank";
+    if (uri.IsLoopback) return "about:blank";
+
+    var host = uri.DnsSafeHost;
+    if (string.IsNullOrEmpty(host)) return "about:blank";
+
+    if (IPAddress.TryParse(host, out var ip))
+    {
+      if (IsPrivate(ip)) return "about:blank";
+    }
+    else if (!host.Contains('.'))
+    {
+      // Single-label hostname (e.g. "router", "localhost") — not externally routable.
+      return "about:blank";
+    }
+
+    return WebUtility.HtmlEncode(uri.AbsoluteUri);
+  }
+
+  private static bool IsPrivate(IPAddress ip)
+  {
+    if (IPAddress.IsLoopback(ip)) return true;
+
+    if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+    {
+      if (ip.IsIPv6LinkLocal) return true;
+      var b6 = ip.GetAddressBytes();
+      if ((b6[0] & 0xFE) == 0xFC) return true;                    // fc00::/7 unique-local
+      if (ip.IsIPv4MappedToIPv6) return IsPrivate(ip.MapToIPv4()); // unwrap ::ffff:a.b.c.d
+      return false;
+    }
+
+    if (ip.AddressFamily == AddressFamily.InterNetwork)
+    {
+      var b = ip.GetAddressBytes();
+      return b[0] == 0                                  // 0.0.0.0/8 (unspecified; localhost on some OSes)
+          || b[0] == 10                                 // 10/8
+          || b[0] == 127                                // 127/8 loopback
+          || (b[0] == 100 && b[1] >= 64 && b[1] <= 127) // 100.64/10 CGNAT (RFC 6598)
+          || (b[0] == 169 && b[1] == 254)               // 169.254/16 link-local
+          || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)  // 172.16/12
+          || (b[0] == 192 && b[1] == 168);              // 192.168/16
+    }
+
+    return false;
   }
 
   private static async Task<string> RenderInternalAsync(
@@ -40,6 +100,7 @@ public static class ScribanRenderer
 
     var scriptObj = new ScriptObject();
     foreach (var (k, v) in enriched) scriptObj[k] = v;
+    scriptObj.Import("safe_url", (Func<string?, string>)SafeUrl);
     var context = new TemplateContext { StrictVariables = false };
     context.PushGlobal(scriptObj);
 

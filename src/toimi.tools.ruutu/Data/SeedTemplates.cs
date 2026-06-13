@@ -457,6 +457,35 @@ public static class SeedTemplates
           {{ for it in items_html }}<tr><td>{{ it }}</td></tr>{{ end }}
         </table>
         """
+    ),
+    // sandbox="allow-scripts allow-same-origin" is intentional: the embedded page
+    // must run its own scripts and use its own cookies/storage to function (e.g. a
+    // tracking page). The "escape the sandbox" risk of this token combination only
+    // applies to SAME-ORIGIN framed content; here `url` is validated by safe_url
+    // (https-only, internal hosts blocked) so the page is always cross-origin to the
+    // display shell, where `frameElement` is null and it cannot reach the parent.
+    new(
+      Name: "webview",
+      Description: "Embed an external web page (e.g. a parcel-tracking page) in a sandboxed iframe. Provide an https `url`; an optional `title` shows a header bar. Works on modern and legacy displays. Note: sites that forbid framing (X-Frame-Options / CSP frame-ancestors) will appear blank.",
+      SchemaJson: """
+        {
+          "type": "object",
+          "properties": {
+            "url":   { "type": "string", "description": "https URL to embed" },
+            "title": { "type": "string", "description": "optional header label" }
+          },
+          "required": ["url"],
+          "additionalProperties": false
+        }
+        """,
+      ModernHtml: """
+        {{ if title }}<div style="height:40px;background:#222;color:#fff;font:500 15px -apple-system,Helvetica,Arial,sans-serif;line-height:40px;padding:0 14px;overflow:hidden;white-space:nowrap">{{ title | html.escape }}</div>{{ end }}
+        <iframe src="{{ url | safe_url }}" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" style="display:block;width:100%;height:{{ if title }}calc(100% - 40px){{ else }}100%{{ end }};border:0;background:#fff"></iframe>
+        """,
+      LegacyHtml: """
+        {{ if title }}<div style="height:40px;background:#222;color:#fff;font:500 15px -apple-system,Helvetica,Arial,sans-serif;line-height:40px;padding:0 14px;overflow:hidden;white-space:nowrap">{{ title | html.escape }}</div>{{ end }}
+        <iframe src="{{ url | safe_url }}" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" style="display:block;width:100%;height:{{ if title }}calc(100% - 40px){{ else }}100%{{ end }};border:0;background:#fff"></iframe>
+        """
     )
   ];
 }
