@@ -24,9 +24,10 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
 
       var tools = aggregator.GetAllTools();
       var skillSummary = await aggregator.CallToolAsync("list_skills");
+      var typeCatalog = await aggregator.CallToolAsync("list_types");
       var (toimiClient, notifier) = ToimiClientFactory.Create(_config);
       var toimiOptions = ToimiClientFactory.CreateRequestOptions(tools);
-      var messages = ToimiClientFactory.CreateInitialMessages(skillSummary);
+      var messages = ToimiClientFactory.CreateInitialMessages(skillSummary, typeCatalog);
 
       // Check for conversationId query parameter
       var conversationIdParam = Context.GetHttpContext()?.Request.Query["conversationId"].ToString();
@@ -64,7 +65,7 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
       }
 
       Sessions[Context.ConnectionId] = new ToimiSession(
-        aggregator, toimiClient, notifier, toimiOptions, messages, skillSummary, conversationId);
+        aggregator, toimiClient, notifier, toimiOptions, messages, skillSummary, typeCatalog, conversationId);
 
       await Clients.Caller.SendAsync("Connected", tools.Count);
     }
@@ -186,7 +187,7 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
     }
 
     var newConversation = await _repository.CreateAsync();
-    var messages = ToimiClientFactory.CreateInitialMessages(session.SkillSummary);
+    var messages = ToimiClientFactory.CreateInitialMessages(session.SkillSummary, session.TypeCatalog);
 
     // Replace the session with a new conversation
     Sessions[Context.ConnectionId] = session with
@@ -235,5 +236,6 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
     ChatOptions ChatOptions,
     List<ChatMessage> Messages,
     string? SkillSummary,
+    string? TypeCatalog,
     Guid ConversationId);
 }

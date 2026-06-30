@@ -9,23 +9,22 @@ Kubernetes (kind for local dev, k3s for a server).
 ## What you get
 
 - **Chat UI** (`toimi.web`) with conversation history and live tool-call
-  visualization, plus a headless scheduled agent (`ajastin`).
-- Six MCP tool servers, each independently deployable. Finnish names —
-  glossary below.
+  visualization.
+- A small set of MCP tool servers, each independently deployable. Finnish
+  names — glossary below.
 
 ### Tool glossary
 
 | Tool | Finnish → English | Capability | External dependency |
 |---|---|---|---|
+| `tietue` | record | Generic typed-entity engine — long-term memory, skills, reminders, and scheduled/autonomous agent runs as runtime-defined types with semantic search, time-anchored triggers, and a handler ladder (notify → sandboxed script → agent run) | PostgreSQL + Qdrant + OpenAI |
 | `koti` | home | Home Assistant control (entities, services, history, areas) | **Requires a reachable Home Assistant instance + long-lived token** |
-| `muistio` | memo | Semantic long-term memory | PostgreSQL + Qdrant + OpenAI embeddings |
-| `taidot` | skills | Reusable skill/procedure library | Qdrant + OpenAI embeddings |
-| `muistutin` | reminder | One-off & RFC-5545 recurring reminders | PostgreSQL |
-| `ajastin` | timer | Cron-scheduled autonomous agent runs | PostgreSQL |
 | `verkko` | web/net | Web fetch + push notifications | **Notifications require an [ntfy](https://ntfy.sh) server** |
+| `ruutu` | screen | Display/dashboard surfaces (embed web pages on a display) | PostgreSQL |
 
-All six are always deployed. `koti` and `verkko` notifications simply error
-when invoked if their external dependency is absent — everything else works.
+`koti` and `verkko` notifications simply error when invoked if their external
+dependency is absent — everything else works. (`tietue` consolidated four
+former servers — memory, skills, reminders, scheduling; see `CLAUDE.md`.)
 
 ## Prerequisites
 
@@ -100,7 +99,11 @@ scripts/             setup + deploy automation
 
 ## Adding a tool server
 
-Add `src/toimi.tools.<name>/` (with a `Dockerfile`) and
+Most new *capabilities* are now a `tietue` type (a JSON-Schema type +
+behaviors + triggers/handlers), defined at runtime — no new pod. Add a whole
+new tool server only for a genuinely external integration (like `koti`/`verkko`).
+
+To add one: create `src/toimi.tools.<name>/` (with a `Dockerfile`) and
 `k8s/base/tools-<name>/` (deployment + service + kustomization), list it in
 `k8s/base/kustomization.yaml`, and add its MCP URL to
 `src/toimi.web/appsettings.json`. The deploy scripts auto-discover it.

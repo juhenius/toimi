@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: toimi-tools-tietue
+  namespace: apps
+  labels:
+    app: toimi-tools-tietue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: toimi-tools-tietue
+  template:
+    metadata:
+      labels:
+        app: toimi-tools-tietue
+    spec:
+      containers:
+        - name: toimi-tools-tietue
+          image: ${IMAGE_REGISTRY}/toimi-tools-tietue:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ConnectionStrings__Tietue
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: tietue-connection-string
+            - name: OpenAI__ApiKey
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-api-key
+            - name: Qdrant__Host
+              value: qdrant.data.svc.cluster.local
+            - name: Qdrant__Port
+              value: "6334"
+            - name: Ntfy__BaseUrl
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: ntfy-base-url
+            - name: Ntfy__Topic
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: ntfy-topic
+            - name: Ntfy__Username
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: ntfy-username
+            - name: Ntfy__Password
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: ntfy-password
+            - name: Toimi__OpenAI__ApiKey
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-api-key
+            - name: Toimi__OpenAI__Model
+              value: "${OPENAI_MODEL}"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5

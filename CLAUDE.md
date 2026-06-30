@@ -14,6 +14,7 @@ k8s/base|overlays      Kustomize; overlays = secretGenerator only
 infrastructure/        PostgreSQL (Helm), Qdrant, Adminer, registry, namespaces
 scripts/               dev-setup.sh, server-setup.sh, deploy.sh, deploy-all.sh, lint.sh
 config.env(.example)   non-secret per-env values (gitignored real file)
+docs/superpowers/      design specs + phase implementation plans (e.g. the tietue effort)
 ```
 
 ## Pods (1:1:1 convention)
@@ -23,6 +24,53 @@ config.env(.example)   non-secret per-env values (gitignored real file)
 (`toimi.tools.koti` → `toimi-tools-koti`). `toimi.core` and
 `toimi.notifications` are libraries (no Dockerfile, not deployed).
 
+Deployable pods: **tietue, koti, verkko, ruutu** (tool servers) + **toimi.web**.
+
+> **History:** `tietue` is a generic entity engine that replaced four
+> single-purpose servers — `muistio` (memory), `taidot` (skills),
+> `muistutin` (reminders), `ajastin` (scheduled agent runs). They were
+> deleted in the consolidation; their functions are now tietue *types +
+> behaviors + triggers + handlers*. See `docs/superpowers/` for the design
+> study and the six phase plans. Don't recreate them as separate servers.
+
+**tietue — Generic typed-entity engine (the core data + behavior store).**
+- Owns: arbitrary user/AI-defined types, entity CRUD, semantic search,
+  time-anchored triggers, a scheduler, and the handlers triggers fire.
+  Functionally subsumes memory, skills, reminders, and scheduled agent runs.
+- **Model:** `Entity { Id, Type, Data (jsonb, validated against the type's
+  JSON Schema), Tags }`; `TypeDefinition { Name, JsonSchema, Behaviors,
+  DefaultTriggers }`; `Trigger { EntityId, Schedule (one-shot `{at}` or
+  recurring `{start,rrule,tz}`), HandlerKind+Config, NextFireAt }`;
+  `EntityEvent` (unified occurrence/run/observation log, unique on
+  `(entity, occurrence, kind)`).
+- **Declarative behaviors** (passive, per-type): `SemanticIndex` (embed
+  configured fields → Qdrant on save, semantic `search`), `UniqueName`
+  (reject a second entity of the type sharing a keyed field — pre-check plus a
+  `unique_keys` DB unique index; config `{"field":"<name>"}`, default `name`),
+  and `Expiry` (`{"field":"<dateField>","prompt"?:"..."}` — provisions a
+  one-shot trigger at that time that deletes the entity, or, when a `prompt` is
+  set, runs an agent that deletes it or pushes the date forward).
+- **Handlers** (reactive, fired by the scheduler — a cost ladder):
+  deterministic native `notify` (ntfy) / `set-field`; sandboxed `script`
+  (Jint, capability-gated, no CLR/IO); `message` (a full headless agent run
+  via `toimi.core`). `script` can `escalate` to a `message` run.
+- **Seeded standard types** (`TypeSeeder`, idempotent): `memory` +
+  `skill` (SemanticIndex), `reminder` (default notify trigger from
+  `dueAt`/`rrule`), `schedule` (default message/agent trigger from
+  `prompt`/`startAt`/`rrule`).
+- **MCP surface:** `define_type`/`list_types`/`get_type`/`delete_type`;
+  `create`/`get`/`update`/`delete`/`list`/`search`;
+  `set_trigger`/`update_trigger`/`delete_trigger`/`list_triggers`;
+  `complete_occurrence`; `activate`.
+- Extend when: adding a native handler, a declarative behavior, a seeded
+  type, or an MCP verb over entities/triggers. A new *capability* the agent
+  needs is usually a new type + handler/behavior here, NOT a new pod.
+- New tool server only for a genuinely external integration (see koti/verkko).
+- Storage: `tietue` PostgreSQL DB (jsonb) + one Qdrant collection per
+  semantically-indexed type. Hosts the `TriggerWorker` scheduler loop and
+  (for `message`/`activate`) a `toimi.core` agent session reaching all MCP
+  servers.
+
 **koti — Home Assistant integration.**
 - Owns: entity state, service calls, history, area resolution against a
   Home Assistant instance.
@@ -30,38 +78,6 @@ config.env(.example)   non-secret per-env values (gitignored real file)
   queries, state subscriptions).
 - New tool server when: integrating a different home platform (HomeKit,
   Hue directly) — koti is HA-specific.
-
-**muistio — Long-term semantic memory (facts the AI should recall across sessions).**
-- Owns: durable user-stated/inferred facts with source/confidence/expiry;
-  hybrid PostgreSQL + Qdrant search.
-- Extend when: adding memory metadata, recall ranking, or new retrieval
-  modes.
-- NOT for: ephemeral conversation context (that's `ContextManager` in
-  core) or procedural how-tos (that's `taidot`).
-
-**taidot — Reusable procedural knowledge (skills / how-tos).**
-- Owns: AI-authored and seeded multi-step procedures; Qdrant semantic
-  search; standard-skill seeding.
-- Extend when: adding skill metadata, lifecycle, or search behavior.
-- NOT for: factual recall (that's `muistio`) — taidot is the inverse:
-  procedures, not facts.
-
-**muistutin — User-facing time-anchored reminders.**
-- Owns: one-off and RFC 5545 recurring reminders, notification dispatch
-  on due times.
-- Extend when: adding recurrence patterns, notification routing, or
-  completion semantics.
-- Distinct from `ajastin`: muistutin notifies the user; ajastin runs
-  autonomous agent sessions.
-
-**ajastin — Autonomous agent runs on a cron schedule.**
-- Owns: schedule storage + the `ScheduleWorker` headless agent loop
-  that invokes the full `toimi.core` stack (LLM + all MCP tools) on
-  schedule, logging results to `schedule_runs`.
-- Extend when: adding scheduling features, run-result handling, or new
-  trigger types.
-- Note: ajastin owns the headless agent loop. A new tool the agent
-  invokes is a separate domain tool server, not an ajastin extension.
 
 **verkko — External-world access (web fetch + push notifications).**
 - Owns: HTTP fetch with HTML extraction; ntfy push notifications.
@@ -71,8 +87,14 @@ config.env(.example)   non-secret per-env values (gitignored real file)
   (e.g., a dedicated email tool deserves its own server, not a verkko
   extension).
 
+**ruutu — Display/dashboard surfaces (embed external web pages on a display).**
+- Owns: dashboard/webview templates seeded into its DB; rendering surfaces.
+- Extend when: adding display/template behavior.
+
 **toimi.web — Transport only (SignalR hub + React UI).**
-- Owns: SignalR transport, React chat UI, conversation streaming.
+- Owns: SignalR transport, React chat UI, conversation streaming, and the
+  federated `/admin` panel (proxies to surviving servers' admin endpoints —
+  see `Toimi:Admin:Tools`, currently `tietue`).
 - Extend when: adding UI features or SignalR events that surface what
   `toimi.core` already does.
 - NEVER put AI logic here. A new transport (CLI, Telegram bot) is a new
@@ -82,14 +104,14 @@ config.env(.example)   non-secret per-env values (gitignored real file)
 - Owns: LLM client factory (with `ToolCallNotifier`), MCP tool
   aggregation (`McpToolAggregator`), conversation persistence
   (`ToimiDbContext`), context-window management (`ContextManager`),
-  system-prompt + skill-injection assembly.
-- Extend when: adding cross-cutting behavior used by both `toimi.web`
-  and `ajastin` (e.g., a new system-prompt enrichment step, a different
-  summarization strategy).
-- NEVER tool-specific code — tool logic belongs in the appropriate
-  `toimi.tools.<x>` project.
+  system-prompt assembly + catalog injection (`ToimiClientFactory`).
+- Extend when: adding cross-cutting behavior used by multiple agent hosts
+  (`toimi.web` and tietue's agent runner) — e.g. a new system-prompt
+  enrichment step or a different summarization strategy.
+- NEVER tool-specific code — tool logic belongs in a `toimi.tools.<x>` project.
 
-`toimi.notifications` — `ntfy` client library used by `verkko`.
+`toimi.notifications` — `ntfy` client library, used by `verkko` and by
+tietue's `notify` handler.
 
 ## Configuration model
 
@@ -102,11 +124,39 @@ config.env(.example)   non-secret per-env values (gitignored real file)
 - Manifests carry `${VAR}` placeholders. Rendering pipeline (scripts only):
   `kubectl kustomize <overlay> | envsubst '<allowlist>' | kubectl apply -f -`.
   envsubst uses an explicit allowlist so secret/`$` content is never touched.
-- MCP server URLs in `src/toimi.web/appsettings.json` are cluster-internal
-  (`*.apps.svc.cluster.local`) — not env-specific, not parameterized.
+- MCP server URLs are cluster-internal (`*.apps.svc.cluster.local/sse`) —
+  configured in `src/toimi.web/appsettings.json` (`Toimi:McpServers`) AND in
+  `src/toimi.tools.tietue/appsettings.json` (the agent runner's `Toimi:McpServers`,
+  which includes tietue itself so an agent run can self-schedule). Not
+  env-specific, not parameterized.
 
 ## Key Patterns
 
+- **Generic entity engine** — instead of one server per data kind, tietue
+  stores typed entities (jsonb `Data` + per-type JSON Schema). New kinds of
+  data are *types* (a schema + behaviors + default triggers), definable at
+  runtime via `define_type` — no new pod/deploy.
+- **Declarative semantic index** — a type's `SemanticIndex` behavior embeds
+  configured fields to a per-type Qdrant collection on save; `search` rolls up
+  results by entity. One embedding pipeline for all semantically-indexed types.
+- **Triggers + scheduler** — `TriggerWorker` (1-min loop) → `SchedulerTick`
+  scans due triggers (`Enabled && NextFireAt <= now`), dispatches the handler,
+  records an `EntityEvent`, and recomputes `NextFireAt` (RFC 5545 via `Ical.Net`)
+  or disables one-shots. Firing is idempotent (unique `(entity,occurrence,kind)`);
+  a `complete` event suppresses an occurrence; a throwing handler is isolated
+  (recorded as `error`, trigger still advances).
+- **Handler cost ladder** — deterministic native (`notify`/`set-field`) →
+  sandboxed `script` → `message` (full agent run); `script` may `escalate` to
+  an agent. The agent run reuses the `toimi.core` stack and reaches all MCP
+  tools (including tietue's own), so entities **self-schedule** via `set_trigger`.
+- **Copy-down default triggers** — `TriggerProvisioner` stamps a type's
+  `DefaultTriggers` onto each new entity at create, resolving `Data` fields
+  (e.g. a `reminder`'s `dueAt`/`rrule` → a concrete notify trigger).
+- **Sandboxed scripts** — the `script` handler runs AI-authored JS in `Jint`
+  (no CLR/IO; timeout + statement + memory + recursion caps) as a pure
+  `data → effects` function; the host applies only the effects the script's
+  capability grant allows (`setField`/`notify`/`trigger`/`escalate`). Global
+  `Scripts:Enabled` kill switch.
 - **Thin web transport** — all AI logic lives in `toimi.core`; `toimi.web` is
   transport only so future transports (CLI, Telegram) inherit the same
   experience.
@@ -122,21 +172,13 @@ config.env(.example)   non-secret per-env values (gitignored real file)
   drains the queue during streaming and sends SignalR events; the React UI
   renders collapsible indicators showing tool name, duration, arguments, and
   result.
-- **Skill injection** — on session start, `list_skills` is called via MCP and
-  the result is appended to the system prompt so the AI sees its full skill
-  catalog without searching first.
-- **Standard skill seeding** — `SkillSeeder` in `taidot` upserts standard
-  skills on startup (idempotent). When you add a new tool server, also add a
-  seeded skill that teaches the AI how to use it.
-- **Scheduled agent** — `ajastin`'s `ScheduleWorker` checks cron schedules
-  every minute, creates a full agent session via `toimi.core` (LLM + all
-  MCP tools), runs the configured prompt, and logs results to
-  `schedule_runs`.
+- **Catalog injection** — on session start the host calls `list_types` (and,
+  if present, `list_skills`) via MCP and appends the result to the system
+  prompt, so the AI sees the available types/skills without searching first.
+  Null results degrade gracefully (the section is omitted).
 - **Home automation areas** — `koti` uses the Home Assistant template API
   (`area_name()`) to resolve entity-to-room mappings; `ListEntities`
   supports area filtering so the AI doesn't need hardcoded entity maps.
-- **Recurrence handling** — `muistutin` uses `Ical.Net` for RFC 5545
-  recurrence expansion with timezone-aware scheduling.
 
 ## Deployment
 
@@ -148,15 +190,23 @@ raw `kubectl apply -k` (it skips envsubst).
 
 ## Conventions
 
-- `.editorconfig`: 2-space indent, file-scoped C# namespaces, IDE0005 = error.
+- `.editorconfig`: 2-space indent, file-scoped C# namespaces. `dotnet format`
+  enforces (as errors) IDE0005 (unused usings), IDE0022 (block bodies),
+  IDE0046 (use conditional expression), and whitespace — run
+  `dotnet format <csproj>` and verify `--verify-no-changes` exits 0 before
+  committing (the apply step does not always auto-fix IDE0046).
 - `.yamllint.yaml`: 2-space indent, 200-char lines.
 - `scripts/lint.sh [--fix]`: dotnet format + yamllint + shellcheck.
 - Commits: `<type>(<scope>): <subject>` (feat, fix, docs, refactor, chore).
-- Adding a DB: add to `infrastructure/base/helm/postgresql-values.yaml` and
-  the DB-creation loop in `scripts/dev-setup.sh`.
+- Adding a DB: add to `infrastructure/base/helm/postgresql-values.yaml`, the
+  DB-creation loop in `scripts/dev-setup.sh`, and (for server installs)
+  `scripts/server-setup.sh`. Active DBs: `tietue`, `toimi`, `ruutu`.
+- Storing JSON as jsonb across providers: map a `string?` column
+  `.HasColumnType("jsonb")` (works under the EF in-memory test provider and
+  Npgsql); keep cross-entity relationships as real FK columns, not in jsonb.
 
 ## Service DNS
 
 `<service>.<namespace>.svc.cluster.local` —
 `postgresql.data:5432`, `qdrant.data:6334`,
-`toimi-tools-<x>.apps`, `toimi-web.apps`.
+`toimi-tools-<x>.apps` (tietue, koti, verkko, ruutu), `toimi-web.apps`.

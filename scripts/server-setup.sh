@@ -104,12 +104,6 @@ sudo k3s kubectl rollout status deployment/registry --namespace infra --timeout=
 echo "Waiting for PostgreSQL..."
 sudo k3s kubectl rollout status statefulset/postgresql --namespace data --timeout=120s
 
-echo "Ensuring muistio database exists..."
-sudo k3s kubectl exec -n data svc/postgresql -- env PGPASSWORD="$PG_PASSWORD" \
-  psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'muistio'" | grep -q 1 || \
-  sudo k3s kubectl exec -n data svc/postgresql -- env PGPASSWORD="$PG_PASSWORD" \
-  psql -U postgres -c "CREATE DATABASE muistio;"
-
 # --- Check secrets ---
 if [ ! -f "$ROOT_DIR/k8s/overlays/server/secrets.env" ]; then
   echo ""

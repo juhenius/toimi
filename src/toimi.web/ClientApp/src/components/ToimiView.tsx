@@ -3,7 +3,6 @@ import { useToimi } from '../hooks/useToimi.ts'
 import { MessageList } from './MessageList.tsx'
 import { ToimiInput } from './ToimiInput.tsx'
 import { ConversationList } from './ConversationList.tsx'
-import { ActivityList } from './ActivityList.tsx'
 
 export function ToimiView() {
   const { messages, isStreaming, connectionStatus, toolCount, sendMessage,
@@ -15,7 +14,6 @@ export function ToimiView() {
         <h1 className="text-lg font-semibold">Toimi</h1>
         <div className="flex items-center gap-3 text-sm">
           <Link to="/admin" className="text-zinc-400 hover:text-zinc-100">Admin</Link>
-          <ActivityList />
           <ConversationList
             conversations={conversations}
             currentConversationId={currentConversationId}

@@ -315,7 +315,7 @@ public static class SeedTemplates
     ),
     new(
       Name: "reminders",
-      Description: "Upcoming reminders, time-ordered. AI populates from muistutin.",
+      Description: "Upcoming reminders, time-ordered. AI populates from tietue reminders.",
       SchemaJson: """
         {
           "type": "object",

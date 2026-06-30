@@ -4,9 +4,7 @@ auth:
 
 initdbScripts:
   create-databases.sql: |
-    CREATE DATABASE muistio;
-    CREATE DATABASE muistutin;
-    CREATE DATABASE ajastin;
+    CREATE DATABASE tietue;
     CREATE DATABASE toimi;
     CREATE DATABASE ruutu;
 

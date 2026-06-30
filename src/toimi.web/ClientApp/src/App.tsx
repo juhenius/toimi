@@ -2,11 +2,10 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { ToimiView } from './components/ToimiView.tsx'
 import { AdminLayout } from './admin/AdminLayout.tsx'
 import { DashboardPage } from './admin/DashboardPage.tsx'
-import { MemoriesPage } from './admin/MemoriesPage.tsx'
-import { RemindersPage } from './admin/RemindersPage.tsx'
-import { SchedulesPage } from './admin/SchedulesPage.tsx'
-import { ScheduleDetailPage } from './admin/ScheduleDetailPage.tsx'
-import { SkillsPage } from './admin/SkillsPage.tsx'
+import { DataPage } from './admin/DataPage.tsx'
+import { EntityDetailPage } from './admin/EntityDetailPage.tsx'
+import { TypesPage } from './admin/TypesPage.tsx'
+import { TypeDetailPage } from './admin/TypeDetailPage.tsx'
 
 export default function App() {
   return (
@@ -15,11 +14,10 @@ export default function App() {
         <Route path="/" element={<ToimiView />} />
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<DashboardPage />} />
-          <Route path="muistio" element={<MemoriesPage />} />
-          <Route path="muistutin" element={<RemindersPage />} />
-          <Route path="ajastin" element={<SchedulesPage />} />
-          <Route path="ajastin/:id" element={<ScheduleDetailPage />} />
-          <Route path="taidot" element={<SkillsPage />} />
+          <Route path="data" element={<DataPage />} />
+          <Route path="data/:id" element={<EntityDetailPage />} />
+          <Route path="types" element={<TypesPage />} />
+          <Route path="types/:name" element={<TypeDetailPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

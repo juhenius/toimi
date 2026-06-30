@@ -75,21 +75,6 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapGet("/health", () => Results.Ok());
 
-app.MapGet("/api/activity", async (IHttpClientFactory httpFactory, int limit = 20) =>
-{
-  var client = httpFactory.CreateClient("admin-ajastin");
-  try
-  {
-    var response = await client.GetAsync($"/api/runs?limit={Math.Clamp(limit, 1, 100)}");
-    response.EnsureSuccessStatusCode();
-    var json = await response.Content.ReadAsStringAsync();
-    return Results.Content(json, "application/json");
-  }
-  catch (Exception ex)
-  {
-    return Results.Problem($"Failed to fetch activity: {ex.Message}");
-  }
-});
 
 Toimi.Web.Admin.AdminEndpoints.MapAdminEndpoints(app);
 app.MapHub<Toimi.Web.Hubs.ToimiHub>("/toimihub");

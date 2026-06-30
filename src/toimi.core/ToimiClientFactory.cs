@@ -74,6 +74,10 @@ public static class ToimiClientFactory
 
     When memory is relevant, retrieve it before asking the user to repeat themselves.
 
+    ## Creating and updating data
+
+    Before creating an entity, check whether a matching one already exists: search or list by its natural identifier (for example a url or title) and reuse or update that entity instead of creating a duplicate. This matters most across turns — when a later request refers to something you created earlier (for example "set up a price watcher for that item"), find the existing entity and act on it rather than creating a new one.
+
     ## Skills policy
 
     Skills are reusable procedures. When a relevant skill exists, prefer using it over reinventing the workflow. Follow the skill faithfully while adapting to the current situation. If you discover a repeatable procedure, consider suggesting it be saved as a skill.
@@ -100,7 +104,7 @@ public static class ToimiClientFactory
     """;
 
   // Dynamic context injected per session.
-  public static List<ChatMessage> CreateInitialMessages(string? skillSummary = null)
+  public static List<ChatMessage> CreateInitialMessages(string? skillSummary = null, string? typeCatalog = null)
   {
     var messages = new List<ChatMessage> { new(ChatRole.System, SystemPrompt) };
 
@@ -113,6 +117,13 @@ public static class ToimiClientFactory
       context.AppendLine();
       context.AppendLine("Available skills (use GetSkill for full instructions):");
       context.AppendLine(skillSummary);
+    }
+
+    if (!string.IsNullOrEmpty(typeCatalog))
+    {
+      context.AppendLine();
+      context.AppendLine("Available data types (use create/search/list with these type names; data must match the JSON schema):");
+      context.AppendLine(typeCatalog);
     }
 
     messages.Add(new(ChatRole.System, context.ToString()));

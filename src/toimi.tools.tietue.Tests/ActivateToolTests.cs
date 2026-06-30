@@ -1,0 +1,64 @@
+using System.Text.Json.Nodes;
+using toimi.tools.tietue.Entities;
+using toimi.tools.tietue.Events;
+using toimi.tools.tietue.Scheduling;
+using toimi.tools.tietue.Tools;
+using toimi.tools.tietue.Types;
+using toimi.tools.tietue.Validation;
+using Xunit;
+
+namespace toimi.tools.tietue.Tests;
+
+public class ActivateToolTests
+{
+  private const string Schema = /*lang=json,strict*/ """{"type":"object","properties":{"name":{"type":"string"}}}""";
+
+  private static async Task<(EntityRepository entities, FakeAgentRunner runner, EntityEventStore events, TriggerRepository triggers, Guid entityId)> SetupAsync(Data.TietueDbContext db)
+  {
+    await new TypeRepository(db).DefineAsync("task", Schema);
+    var entities = new EntityRepository(db, new SchemaValidator());
+    var e = await entities.CreateAsync("task", JsonNode.Parse("""{"name":"x"}"""), []);
+    return (entities, new FakeAgentRunner(), new EntityEventStore(db), new TriggerRepository(db), e.Id);
+  }
+
+  [Fact]
+  public async Task Activate_now_runs_agent_and_records_event()
+  {
+    using var db = TestDb.New();
+    var (entities, runner, events, triggers, id) = await SetupAsync(db);
+    var tool = new ActivateTool(entities, runner, events, triggers);
+
+    var result = await tool.Activate(id.ToString(), "do the thing", null);
+
+    var (Entity, Prompt) = Assert.Single(runner.Runs);
+    Assert.Equal("do the thing", Prompt);
+    Assert.Contains("ok", result);
+  }
+
+  [Fact]
+  public async Task Activate_with_when_schedules_a_message_trigger()
+  {
+    using var db = TestDb.New();
+    var (entities, runner, events, triggers, id) = await SetupAsync(db);
+    var tool = new ActivateTool(entities, runner, events, triggers);
+
+    var result = await tool.Activate(id.ToString(), "later thing", "2026-07-01T09:00:00Z");
+
+    Assert.Empty(runner.Runs);
+    var t = Assert.Single(await triggers.ListByEntityAsync(id));
+    Assert.Equal("message", t.HandlerKind);
+    Assert.Contains("later thing", t.HandlerConfig);
+  }
+
+  [Fact]
+  public async Task Activate_unknown_entity_returns_message()
+  {
+    using var db = TestDb.New();
+    var (entities, runner, events, triggers, _) = await SetupAsync(db);
+    var tool = new ActivateTool(entities, runner, events, triggers);
+
+    var result = await tool.Activate(Guid.NewGuid().ToString(), "x", null);
+
+    Assert.Contains("not found", result);
+  }
+}

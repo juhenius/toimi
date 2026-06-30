@@ -19,7 +19,7 @@ command -v envsubst >/dev/null || { echo "ERROR: envsubst not installed (gettext
 if [ $# -lt 2 ]; then
   echo "Usage: $0 <dev|server> <app>"
   echo "  <app> = a src/ project dir name, with or without the 'toimi.' prefix"
-  echo "  Examples: $0 dev web   |   $0 server tools.koti   |   $0 dev toimi.tools.muistio"
+  echo "  Examples: $0 dev web   |   $0 server tools.koti   |   $0 dev toimi.tools.tietue"
   exit 1
 fi
 

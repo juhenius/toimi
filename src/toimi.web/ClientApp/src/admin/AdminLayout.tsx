@@ -2,10 +2,8 @@ import { Link, NavLink, Outlet } from 'react-router-dom'
 
 const links = [
   { to: '/admin', label: 'Dashboard', end: true },
-  { to: '/admin/muistio', label: 'Memories' },
-  { to: '/admin/muistutin', label: 'Reminders' },
-  { to: '/admin/ajastin', label: 'Schedules' },
-  { to: '/admin/taidot', label: 'Skills' },
+  { to: '/admin/data', label: 'Data' },
+  { to: '/admin/types', label: 'Types' },
 ]
 
 export function AdminLayout() {

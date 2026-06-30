@@ -4,9 +4,6 @@ kind: Kustomization
 resources:
   - web
   - tools-koti
-  - tools-muistio
-  - tools-muistutin
   - tools-ruutu
-  - tools-taidot
-  - tools-ajastin
   - tools-verkko
+  - tools-tietue
