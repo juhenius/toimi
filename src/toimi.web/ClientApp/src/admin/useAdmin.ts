@@ -14,6 +14,7 @@ export function useAdminList<T>(tool: string, path: string) {
       setData(await resp.json() as T)
     } finally { setLoading(false) }
   }, [tool, path])
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void reload() }, [reload])
   return { data, error, loading, reload }
 }
