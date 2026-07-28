@@ -8,6 +8,15 @@ builder.Services.AddHttpClient<WebFetcher>(client =>
 {
   client.Timeout = TimeSpan.FromSeconds(15);
   client.DefaultRequestHeaders.UserAgent.ParseAdd("Toimi/1.0 (personal assistant)");
+})
+.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+  // SSRF guard: validates every connection (incl. redirect targets) against private ranges.
+  ConnectCallback = UrlGuard.GuardedConnectAsync,
+  // A proxy would bypass the guard (only the proxy address gets validated).
+  UseProxy = false,
+  // Bounds DNS + connect inside the callback; the default is infinite.
+  ConnectTimeout = TimeSpan.FromSeconds(10)
 });
 builder.Services.AddSingleton<FetchCache>();
 

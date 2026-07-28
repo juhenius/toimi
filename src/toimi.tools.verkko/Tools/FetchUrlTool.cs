@@ -18,6 +18,11 @@ public class FetchUrlTool(WebFetcher fetcher, FetchCache cache)
       return "Invalid URL. Must be an absolute URL starting with http:// or https://";
     }
 
+    if (UrlGuard.IsBlockedHost(uri.DnsSafeHost))
+    {
+      return $"Blocked URL: '{uri.DnsSafeHost}' is a private or internal host.";
+    }
+
     if (!skipCache)
     {
       var cached = cache.Get(url);
@@ -34,7 +39,10 @@ public class FetchUrlTool(WebFetcher fetcher, FetchCache cache)
     }
     catch (HttpRequestException ex)
     {
-      return $"HTTP error fetching {url}: {ex.Message}";
+      var reason = ex.InnerException is { Message.Length: > 0 } inner && !ex.Message.Contains(inner.Message)
+        ? $"{ex.Message} ({inner.Message})"
+        : ex.Message;
+      return $"HTTP error fetching {url}: {reason}";
     }
     catch (TaskCanceledException)
     {
