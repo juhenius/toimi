@@ -1,11 +1,14 @@
 using Toimi.Core.Configuration;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
 
 namespace Toimi.Core;
 
-public class McpToolAggregator : IAsyncDisposable
+public class McpToolAggregator(ILogger? logger = null) : IAsyncDisposable
 {
+  private readonly ILogger _logger = logger ?? NullLogger.Instance;
   private readonly Dictionary<string, ServerConnection> _connections = [];
   private readonly Dictionary<string, SemaphoreSlim> _reconnectLocks = [];
   private readonly List<AITool> _wrappedTools = [];
@@ -28,7 +31,7 @@ public class McpToolAggregator : IAsyncDisposable
 
       foreach (var tool in connection.Tools.Values)
       {
-        _wrappedTools.Add(new ResilientMcpTool(this, server.Name, tool));
+        _wrappedTools.Add(new ResilientMcpTool(this, server.Name, tool, _logger));
       }
     }
   }
@@ -133,12 +136,15 @@ public class McpToolAggregator : IAsyncDisposable
       var connection = new ServerConnection(server, client, httpClient, toolMap);
       _connections[server.Name] = connection;
 
-      Console.WriteLine($"  [{server.Name}] Connected, {toolMap.Count} tools discovered.");
+      if (_logger.IsEnabled(LogLevel.Information))
+      {
+        _logger.LogInformation("MCP server {Server} connected, {ToolCount} tools discovered.", server.Name, toolMap.Count);
+      }
       return connection;
     }
     catch (Exception ex)
     {
-      Console.Error.WriteLine($"  [{server.Name}] Failed to connect: {ex.Message}");
+      _logger.LogWarning(ex, "MCP server {Server} failed to connect.", server.Name);
       return null;
     }
   }

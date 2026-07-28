@@ -9,7 +9,7 @@ using Microsoft.Extensions.AI;
 
 namespace Toimi.Web.Hubs;
 
-public class ToimiHub(ToimiConfiguration config, ConversationRepository repository) : Hub
+public class ToimiHub(ToimiConfiguration config, ConversationRepository repository, ILogger<ToimiHub> logger) : Hub
 {
   private static readonly ConcurrentDictionary<string, ToimiSession> Sessions = new();
   private readonly ToimiConfiguration _config = config;
@@ -19,7 +19,7 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
   {
     try
     {
-      var aggregator = new McpToolAggregator();
+      var aggregator = new McpToolAggregator(logger);
       await aggregator.ConnectAllAsync(_config.McpServers);
 
       var tools = aggregator.GetAllTools();

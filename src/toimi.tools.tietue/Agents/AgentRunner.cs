@@ -6,7 +6,7 @@ using toimi.tools.tietue.Data;
 
 namespace toimi.tools.tietue.Agents;
 
-public class AgentRunner(ToimiConfiguration config) : IAgentRunner
+public class AgentRunner(ToimiConfiguration config, ILogger<AgentRunner>? logger = null) : IAgentRunner
 {
   public async Task<AgentRunResult> RunAsync(Entity entity, string prompt, CancellationToken ct = default)
   {
@@ -17,7 +17,7 @@ public class AgentRunner(ToimiConfiguration config) : IAgentRunner
 
     try
     {
-      await using var aggregator = new McpToolAggregator();
+      await using var aggregator = new McpToolAggregator(logger);
       await aggregator.ConnectAllAsync(config.McpServers, token);
       var tools = aggregator.GetAllTools();
 
@@ -51,6 +51,12 @@ public class AgentRunner(ToimiConfiguration config) : IAgentRunner
     catch (OperationCanceledException) when (!ct.IsCancellationRequested)
     {
       return new AgentRunResult(false, "", null, $"Agent run timed out after {config.AgentRunTimeoutSeconds}s.");
+    }
+    catch (OperationCanceledException)
+    {
+      // Genuine caller cancellation (e.g. pod shutdown): propagate so the occurrence
+      // is not recorded as handled and the run is retried after restart.
+      throw;
     }
     catch (Exception ex)
     {

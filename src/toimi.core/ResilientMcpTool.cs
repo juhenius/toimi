@@ -2,6 +2,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 
 namespace Toimi.Core;
@@ -17,7 +18,7 @@ namespace Toimi.Core;
 /// the chat client sees a stable description that updates transparently
 /// after a reconnect.
 /// </summary>
-internal sealed class ResilientMcpTool(McpToolAggregator aggregator, string serverName, AIFunction initialInner) : AIFunction
+internal sealed class ResilientMcpTool(McpToolAggregator aggregator, string serverName, AIFunction initialInner, ILogger logger) : AIFunction
 {
   private AIFunction _inner = initialInner;
   private readonly string _toolName = initialInner.Name;
@@ -45,16 +46,19 @@ internal sealed class ResilientMcpTool(McpToolAggregator aggregator, string serv
     catch (Exception ex) when (IsTransportFault(ex))
 #pragma warning restore CA1031
     {
-      Console.Error.WriteLine($"  [{serverName}] Tool '{_toolName}' failed with transport error, reconnecting: {ex.Message}");
+      logger.LogWarning(ex, "MCP tool {Tool} on {Server} failed with transport error, reconnecting.", _toolName, serverName);
       var fresh = await aggregator.ReconnectAndGetToolAsync(serverName, _toolName, staleInner, cancellationToken);
       if (fresh is null)
       {
-        Console.Error.WriteLine($"  [{serverName}] Reconnect failed; surfacing original error for '{_toolName}'.");
+        logger.LogWarning("Reconnect to {Server} failed; surfacing original error for {Tool}.", serverName, _toolName);
         throw;
       }
 
       _inner = fresh;
-      Console.WriteLine($"  [{serverName}] Reconnected; retrying '{_toolName}'.");
+      if (logger.IsEnabled(LogLevel.Information))
+      {
+        logger.LogInformation("Reconnected to {Server}; retrying {Tool}.", serverName, _toolName);
+      }
       return await fresh.InvokeAsync(arguments, cancellationToken);
     }
   }
