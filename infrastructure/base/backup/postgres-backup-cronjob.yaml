@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: data
+spec:
+  schedule: "0 2 * * *"
+  timeZone: Europe/Helsinki
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: pg-dump
+              image: postgres:17-alpine
+              env:
+                - name: PGHOST
+                  value: postgresql.data.svc.cluster.local
+                - name: PGUSER
+                  value: postgres
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgresql
+                      key: postgres-password
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  mkdir -p /backups/postgres
+                  DATE=$(date +%F)
+                  for DB in tietue toimi ruutu; do
+                    echo "Dumping $DB..."
+                    pg_dump -Fc -d "$DB" -f "/backups/postgres/$DB-$DATE.dump"
+                  done
+                  find /backups/postgres -name '*.dump' -mtime +14 -delete
+                  echo "Done. Current backups:"
+                  ls -lh /backups/postgres
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: backups

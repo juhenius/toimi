@@ -260,6 +260,8 @@ Generated_Code/
 # because we have git ;-)
 _UpgradeReport_Files/
 Backup*/
+# Backup*/ matches case-insensitively; keep the k8s backup manifests tracked.
+!infrastructure/base/backup/
 UpgradeLog*.XML
 UpgradeLog*.htm
 ServiceFabricBackup/

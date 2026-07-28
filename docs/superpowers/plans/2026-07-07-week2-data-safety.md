@@ -21,7 +21,7 @@ Today `SchedulerTick` runs the handler and only afterwards records the `EntityEv
 - Modify: `src/toimi.tools.tietue/Scheduling/SchedulerTick.cs` (the handler-dispatch block)
 - Test: `src/toimi.tools.tietue.Tests/ClaimThenRunTests.cs` (new)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `src/toimi.tools.tietue.Tests/ClaimThenRunTests.cs`. Mirror the setup helpers used by `SchedulerTickTests.cs` in the same directory (`TestDb`, `FakeNotifier`, `TypeRepository`, `EntityRepository`, `TriggerRepository`, `HandlerRegistry`); check that file first and match signatures exactly.
 
@@ -142,12 +142,12 @@ public class ClaimThenRunTests
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `dotnet test src/toimi.tools.tietue.Tests --filter ClaimThenRunTests`
 Expected: `Fresh_started_claim_...` and `Stale_started_claim_...` FAIL against current behavior (the first because today a pre-existing event advances the trigger AND is treated as handled with no distinction; the stale test because there's no re-claim). The other two may pass — that's fine; they pin behavior that must survive.
 
-- [ ] **Step 3: Add claim/finalize to `EntityEventStore`**
+- [x] **Step 3: Add claim/finalize to `EntityEventStore`**
 
 In `src/toimi.tools.tietue/Events/EntityEventStore.cs`, keep all existing members and add:
 
@@ -233,7 +233,7 @@ public enum ClaimResult
 
 `OccurrenceHandledAsync` becomes unused by the tick after Step 4 — grep the repo; if nothing else references it, delete it (its behavior is subsumed by `TryClaimAsync`). Keep `RecordAsync`/`HasEventAsync`/`CompleteAsync` (used by `complete_occurrence` and tests).
 
-- [ ] **Step 4: Rework the dispatch block in `SchedulerTick.RunDueAsync`**
+- [x] **Step 4: Rework the dispatch block in `SchedulerTick.RunDueAsync`**
 
 Replace the body of the `foreach (var trigger in due)` loop's handling section. The current block (from `var deletedDuringHandling = false;` through the end of the `if (entity is not null && ...)` block) becomes:
 
@@ -301,12 +301,12 @@ Replace the body of the `foreach (var trigger in due)` loop's handling section. 
 
 Add `using toimi.tools.tietue.Events;` if not already present (it is). Leave everything after this block (the `deletedDuringHandling` continue + trigger advancement) exactly as-is.
 
-- [ ] **Step 5: Run the full tietue suite**
+- [x] **Step 5: Run the full tietue suite**
 
 Run: `dotnet test src/toimi.tools.tietue.Tests`
 Expected: all pass, including the pre-existing `SchedulerTickTests` (fires-once semantics are preserved: a terminal event → `AlreadyHandled`) and `SchedulerTickLockTests`. If an existing test asserted `OccurrenceHandledAsync` behavior directly, update it to use `TryClaimAsync` semantics instead — behavior pinned must stay equivalent.
 
-- [ ] **Step 6: Format check and commit**
+- [x] **Step 6: Format check and commit**
 
 ```bash
 dotnet format src/toimi.tools.tietue/toimi.tools.tietue.csproj --verify-no-changes
@@ -330,7 +330,7 @@ git commit -m "feat(tietue): claim-then-run occurrence handling so crashes delay
 - Create: EF migration `AddIndexOutbox`
 - Test: `src/toimi.tools.tietue.Tests/SemanticOutboxTests.cs` (new)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 First read `src/toimi.tools.tietue.Tests/` for how semantic-index behavior is currently tested (there is likely a fake `ISemanticIndex` — reuse it; if not, the fake below). Create `src/toimi.tools.tietue.Tests/SemanticOutboxTests.cs`:
 
@@ -473,12 +473,12 @@ public class SemanticOutboxTests
 
 Note: `TypeRepository.DefineAsync` signature — check the real one (it accepted `(name, schema)` in older tests; behaviors may be a further parameter or a separate call). Adapt the setup to reality; the asserted behavior stays. Same for the exact `Behaviors` JSON shape — copy the shape used by `TypeSeeder`/existing semantic tests.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `dotnet test src/toimi.tools.tietue.Tests --filter SemanticOutboxTests`
 Expected: FAIL to compile (`SemanticOutbox`, `db.IndexOutbox` don't exist).
 
-- [ ] **Step 3: Add the entity, configuration, and DbSet**
+- [x] **Step 3: Add the entity, configuration, and DbSet**
 
 Create `src/toimi.tools.tietue/Data/IndexOutbox.cs`:
 
@@ -525,7 +525,7 @@ In `src/toimi.tools.tietue/Data/TietueDbContext.cs` add:
   public DbSet<IndexOutbox> IndexOutbox => Set<IndexOutbox>();
 ```
 
-- [ ] **Step 4: Create `SemanticOutbox`**
+- [x] **Step 4: Create `SemanticOutbox`**
 
 Create `src/toimi.tools.tietue/Semantic/SemanticOutbox.cs`:
 
@@ -619,7 +619,7 @@ public class SemanticOutbox(TietueDbContext db, ISemanticIndex index, ILogger<Se
 
 (`TypeDefinition.Behaviors` — check the property's actual type; if it's a `string?` this compiles as-is, adapt if it's a JsonDocument.)
 
-- [ ] **Step 5: Rewire `EntityRepository`**
+- [x] **Step 5: Rewire `EntityRepository`**
 
 In `src/toimi.tools.tietue/Entities/EntityRepository.cs`:
 
@@ -659,7 +659,7 @@ with `IndexOutbox? indexOp = null;` declared before the block (add `using toimi.
 
 Replace the post-save dispatcher block with the `DrainAsync` block.
 
-- [ ] **Step 6: Trim `BehaviorDispatcher` and update registration**
+- [x] **Step 6: Trim `BehaviorDispatcher` and update registration**
 
 In `src/toimi.tools.tietue/Behaviors/BehaviorDispatcher.cs`: delete `OnEntitySavedAsync` and `OnEntityDeletedAsync` (search stays). First `grep -rn "OnEntitySavedAsync\|OnEntityDeletedAsync" src/` — if seeders or tools call them, route those callers through `SemanticOutbox.Enqueue` + `DrainAsync` instead (same pattern as the repository) and note it in your report.
 
@@ -669,7 +669,7 @@ In `src/toimi.tools.tietue/Program.cs`, next to the `BehaviorDispatcher` registr
 builder.Services.AddScoped<toimi.tools.tietue.Semantic.SemanticOutbox>();
 ```
 
-- [ ] **Step 7: Generate the migration**
+- [x] **Step 7: Generate the migration**
 
 ```bash
 dotnet tool install --global dotnet-ef 2>/dev/null || true
@@ -678,12 +678,12 @@ dotnet ef migrations add AddIndexOutbox --project src/toimi.tools.tietue
 
 Inspect the generated migration: it must create only the `index_outbox` table (+ index on `created_at`). If it contains unrelated changes, STOP and report — the model snapshot may have drifted.
 
-- [ ] **Step 8: Run the full tietue suite**
+- [x] **Step 8: Run the full tietue suite**
 
 Run: `dotnet test src/toimi.tools.tietue.Tests`
 Expected: all pass. Existing tests that constructed `EntityRepository(db, validator, dispatcher, ...)` with a `BehaviorDispatcher` for indexing assertions must be updated to pass a `SemanticOutbox` instead; the semantic-search tests (via `BehaviorDispatcher.SearchAsync`) are unaffected.
 
-- [ ] **Step 9: Format check and commit**
+- [x] **Step 9: Format check and commit**
 
 ```bash
 dotnet format src/toimi.tools.tietue/toimi.tools.tietue.csproj --verify-no-changes
@@ -701,7 +701,7 @@ git commit -m "feat(tietue): enqueue Qdrant index ops in an outbox committed ato
 - Modify: `src/toimi.tools.tietue/Program.cs` (hosted service)
 - Test: `src/toimi.tools.tietue.Tests/OutboxWorkerTests.cs` (new)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 The worker loop itself is a thin `BackgroundService` shell (mirroring `TriggerWorker`); put the drainable logic in a testable `RunOnceAsync`. Create `src/toimi.tools.tietue.Tests/OutboxWorkerTests.cs`:
 
@@ -837,12 +837,12 @@ public class OutboxWorkerTests
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `dotnet test src/toimi.tools.tietue.Tests --filter OutboxWorkerTests`
 Expected: FAIL to compile (`OutboxWorker` doesn't exist).
 
-- [ ] **Step 3: Implement `OutboxWorker`**
+- [x] **Step 3: Implement `OutboxWorker`**
 
 Create `src/toimi.tools.tietue/Semantic/OutboxWorker.cs`:
 
@@ -930,7 +930,7 @@ public class OutboxWorker(IServiceScopeFactory scopeFactory, ILogger<OutboxWorke
 }
 ```
 
-- [ ] **Step 4: Register the worker**
+- [x] **Step 4: Register the worker**
 
 In `src/toimi.tools.tietue/Program.cs`, next to the `TriggerWorker` registration:
 
@@ -938,7 +938,7 @@ In `src/toimi.tools.tietue/Program.cs`, next to the `TriggerWorker` registration
 builder.Services.AddHostedService<toimi.tools.tietue.Semantic.OutboxWorker>();
 ```
 
-- [ ] **Step 5: Run tests, format, commit**
+- [x] **Step 5: Run tests, format, commit**
 
 ```bash
 dotnet test src/toimi.tools.tietue.Tests
@@ -958,7 +958,7 @@ git commit -m "feat(tietue): retry failed index ops with a background outbox wor
 - Modify: `src/toimi.tools.tietue/Admin/AdminEndpoints.cs` (outbox + reconcile endpoints)
 - Test: `src/toimi.tools.tietue.Tests/ReconcileTests.cs` (new)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Reconcile logic goes in a testable static helper so the endpoint stays thin. Create `src/toimi.tools.tietue.Tests/ReconcileTests.cs`:
 
@@ -1033,12 +1033,12 @@ public class ReconcileTests
 
 (Adapt `DefineAsync` signature as in Task 2.)
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `dotnet test src/toimi.tools.tietue.Tests --filter ReconcileTests`
 Expected: FAIL to compile (`ListIdsAsync`, `SemanticReconciler` don't exist).
 
-- [ ] **Step 3: Extend `ISemanticIndex` and `QdrantSemanticIndex`**
+- [x] **Step 3: Extend `ISemanticIndex` and `QdrantSemanticIndex`**
 
 Add to `src/toimi.tools.tietue/Semantic/ISemanticIndex.cs`:
 
@@ -1077,7 +1077,7 @@ Implement in `src/toimi.tools.tietue/Semantic/QdrantSemanticIndex.cs`:
 
 The exact `ScrollAsync` signature/response shape depends on the `Qdrant.Client` version in the csproj — check it and adapt (the response carries a result list and a next-page offset; the loop shape stays). Any test fake of `ISemanticIndex` elsewhere in the suite now needs the new member — add a trivial `Task.FromResult<IReadOnlyList<Guid>>([])` implementation there.
 
-- [ ] **Step 4: Create `SemanticReconciler` and the endpoints**
+- [x] **Step 4: Create `SemanticReconciler` and the endpoints**
 
 Create `src/toimi.tools.tietue/Semantic/SemanticReconciler.cs`:
 
@@ -1161,7 +1161,7 @@ In `src/toimi.tools.tietue/Admin/AdminEndpoints.cs`, inside `MapAdminEndpoints` 
 
 (Adjust namespace qualifiers/usings to match the file's existing imports.)
 
-- [ ] **Step 5: Run tests, format, commit**
+- [x] **Step 5: Run tests, format, commit**
 
 ```bash
 dotnet test src/toimi.tools.tietue.Tests
@@ -1183,7 +1183,7 @@ git commit -m "feat(tietue): admin outbox status and Qdrant reconcile endpoint"
 - Modify: `src/toimi.web/Hubs/ToimiHub.cs` (capture UsageContent)
 - Test: `src/toimi.tools.tietue.Tests/MessageHandlerTests.cs` (extend), `src/toimi.tools.tietue.Tests/FakeAgentRunner.cs` (extend)
 
-- [ ] **Step 1: Extend `AgentRunResult` and the fake (failing test first)**
+- [x] **Step 1: Extend `AgentRunResult` and the fake (failing test first)**
 
 In `src/toimi.tools.tietue.Tests/MessageHandlerTests.cs`, add a test (adapt to the file's existing setup helpers — read it first):
 
@@ -1214,7 +1214,7 @@ In `src/toimi.tools.tietue.Tests/MessageHandlerTests.cs`, add a test (adapt to t
 
 Run `dotnet test src/toimi.tools.tietue.Tests --filter MessageHandlerTests` — FAIL to compile (no such constructor parameters).
 
-- [ ] **Step 2: Extend the result record and producers**
+- [x] **Step 2: Extend the result record and producers**
 
 `src/toimi.tools.tietue/Agents/IAgentRunner.cs`:
 
@@ -1246,7 +1246,7 @@ and return `new AgentRunResult(true, responseText, toolCallsJson, null, promptTo
 
 Update `FakeAgentRunner` (in tests) so callers can set a canned result including usage (give it a `NextResult` property if it doesn't have one; keep its existing behavior for other tests).
 
-- [ ] **Step 3: Capture real usage in `ToimiHub`**
+- [x] **Step 3: Capture real usage in `ToimiHub`**
 
 In `src/toimi.web/Hubs/ToimiHub.cs` `SendMessage`, inside the streaming loop's `foreach (var content in update.Contents)`, add a branch (with `UsageDetails? usage = null;` declared before the `await foreach`):
 
@@ -1277,7 +1277,7 @@ with:
 
 and pass `promptTokens`/`completionTokens`/`totalTokens` to `AddMessageAsync`. (`UsageContent`/`UsageDetails` are in `Microsoft.Extensions.AI`, already imported.)
 
-- [ ] **Step 4: Add config properties**
+- [x] **Step 4: Add config properties**
 
 In `src/toimi.core/Configuration/ToimiOptions.cs`, add to `ToimiConfiguration`:
 
@@ -1292,7 +1292,7 @@ In `src/toimi.core/Configuration/ToimiOptions.cs`, add to `ToimiConfiguration`:
   public decimal TokenPriceOutputPer1M { get; set; } = 10.00m;
 ```
 
-- [ ] **Step 5: Run all tests, format, commit**
+- [x] **Step 5: Run all tests, format, commit**
 
 ```bash
 dotnet build toimi.sln && dotnet test toimi.sln
@@ -1316,7 +1316,7 @@ git commit -m "feat: record real token usage from LLM responses in web and agent
 
 Both endpoints load the last 30 days of rows and aggregate in C# — provider-agnostic (works under EF InMemory in tests) and trivially fast at single-user volume. Do NOT use raw SQL or jsonb operators here.
 
-- [ ] **Step 1: Write the failing web test**
+- [x] **Step 1: Write the failing web test**
 
 Read `src/toimi.web.Tests/` for the existing test style (`AggregatorTests` / `InitialMessagesTests`), then create `src/toimi.web.Tests/UsageEndpointTests.cs`. Test the aggregation logic directly (extract it into a testable static, `UsageReport.Build`):
 
@@ -1353,7 +1353,7 @@ public class UsageEndpointTests
 
 Check `ConversationMessage`'s required members (`Role`, `Content` are required; `CreatedAt` may be set by default — adapt the object initializers to compile). Run: FAIL (no `UsageReport`).
 
-- [ ] **Step 2: Implement `UsageReport` + the web endpoint**
+- [x] **Step 2: Implement `UsageReport` + the web endpoint**
 
 In `src/toimi.web/Admin/AdminEndpoints.cs` (same file, new types at the bottom):
 
@@ -1392,7 +1392,7 @@ And in `MapAdminEndpoints`, before the catch-all forward route:
 
 (Use normal `using` imports instead of fully-qualified names — shown qualified here only for unambiguity. Route note: the literal `/api/admin/usage` outranks the `/api/admin/{tool}/{**path}` template in ASP.NET routing, same as the existing `/api/admin/summary`.)
 
-- [ ] **Step 3: tietue agent-usage endpoint (failing test first)**
+- [x] **Step 3: tietue agent-usage endpoint (failing test first)**
 
 Extend `src/toimi.tools.tietue.Tests/AdminEndpointsTests.cs` (read it first; follow its harness) with a test seeding `EntityEvent` rows of kind `message` whose `Result` JSON includes `promptTokens`/`completionTokens`, calling `/admin/usage`, and asserting the daily sums. Then in `src/toimi.tools.tietue/Admin/AdminEndpoints.cs` add:
 
@@ -1422,7 +1422,7 @@ Extend `src/toimi.tools.tietue.Tests/AdminEndpointsTests.cs` (read it first; fol
     });
 ```
 
-- [ ] **Step 4: React Usage page**
+- [x] **Step 4: React Usage page**
 
 Create `src/toimi.web/ClientApp/src/admin/UsagePage.tsx` (follow the visual/style conventions of `DashboardPage.tsx` — read it first and reuse its table/card classes):
 
@@ -1497,7 +1497,7 @@ Wire the route in `src/toimi.web/ClientApp/src/App.tsx` under the `/admin` layou
 
 and add a nav link in `AdminLayout.tsx` following its existing nav-item pattern.
 
-- [ ] **Step 5: Verify, format, commit**
+- [x] **Step 5: Verify, format, commit**
 
 ```bash
 dotnet test toimi.sln
@@ -1521,7 +1521,7 @@ git commit -m "feat(admin): usage dashboard with real token counts and estimated
 - Modify: `src/toimi.tools.tietue/Agents/AgentRunner.cs` — budget wiring
 - Modify: `toimi.sln`
 
-- [ ] **Step 1: Create the test project**
+- [x] **Step 1: Create the test project**
 
 Create `src/toimi.core.Tests/toimi.core.Tests.csproj`:
 
@@ -1589,7 +1589,7 @@ public sealed class FakeChatClient : IChatClient
 
 (Adapt to the exact `IChatClient` members of the referenced Microsoft.Extensions.AI version — the compiler will tell you.)
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Create `src/toimi.core.Tests/ContextManagerTests.cs`:
 
@@ -1686,7 +1686,7 @@ public class ContextManagerTests
 
 (Check `FunctionCallContent`/`FunctionResultContent` constructor signatures in the installed Microsoft.Extensions.AI and adapt.) Run: FAIL to compile (`ContextBudget`, new `CompactIfNeeded` signature).
 
-- [ ] **Step 3: Implement `ContextBudget`**
+- [x] **Step 3: Implement `ContextBudget`**
 
 Create `src/toimi.core/ContextBudget.cs`:
 
@@ -1737,7 +1737,7 @@ public class ContextBudget
 }
 ```
 
-- [ ] **Step 4: Rework `ContextManager`**
+- [x] **Step 4: Rework `ContextManager`**
 
 Replace `src/toimi.core/ContextManager.cs` with:
 
@@ -1846,7 +1846,7 @@ public static class ContextManager
 
 Note the old public members `EstimateTokens`/const `MaxEstimatedTokens` are gone — grep for callers (`ToimiHub`, `AgentRunner` call only `CompactIfNeeded`; fix any others).
 
-- [ ] **Step 5: Wire the budget into both hosts**
+- [x] **Step 5: Wire the budget into both hosts**
 
 `ToimiSession` (find its definition; it's constructed in `ToimiHub.OnConnectedAsync`): add a `ContextBudget Budget` member initialized to `new()`.
 
@@ -1872,7 +1872,7 @@ Note the old public members `EstimateTokens`/const `MaxEstimatedTokens` are gone
 
 (a fresh single-call run has no anchor to exploit; passing null keeps the chars/4 fallback).
 
-- [ ] **Step 6: Run everything, format, commit**
+- [x] **Step 6: Run everything, format, commit**
 
 ```bash
 dotnet build toimi.sln && dotnet test toimi.sln
@@ -1891,11 +1891,11 @@ git commit -m "feat(core): anchor context estimates to real usage and keep tool 
 **Files:**
 - Modify: `src/toimi.tools.ruutu/toimi.tools.ruutu.csproj:18`
 
-- [ ] **Step 1: Bump the package**
+- [x] **Step 1: Bump the package**
 
 Change `<PackageReference Include="Scriban" Version="5.12.1" />` to `Version="7.2.5"`.
 
-- [ ] **Step 2: Build and test**
+- [x] **Step 2: Build and test**
 
 ```bash
 dotnet build src/toimi.tools.ruutu/toimi.tools.ruutu.csproj
@@ -1906,7 +1906,7 @@ Expected: build clean (fix compile breaks in `ScribanRenderer.cs` if the 6.x/7.x
 
 **If any test fails with changed rendering OUTPUT (not a compile error): STOP and report BLOCKED with the diff — template-visible behavior changes must be surfaced, not papered over.**
 
-- [ ] **Step 3: Confirm the advisories are gone**
+- [x] **Step 3: Confirm the advisories are gone**
 
 ```bash
 dotnet list src/toimi.tools.ruutu/toimi.tools.ruutu.csproj package --vulnerable
@@ -1914,7 +1914,7 @@ dotnet list src/toimi.tools.ruutu/toimi.tools.ruutu.csproj package --vulnerable
 
 Expected: no Scriban entries.
 
-- [ ] **Step 4: Format, commit**
+- [x] **Step 4: Format, commit**
 
 ```bash
 dotnet format src/toimi.tools.ruutu/toimi.tools.ruutu.csproj --verify-no-changes
@@ -1937,7 +1937,7 @@ git commit -m "chore(ruutu): upgrade Scriban to 7.2.5 to clear security advisori
 
 Context: Postgres runs as Helm release `postgresql` in namespace `data`; its password lives in the chart-created Secret `postgresql`, key `postgres-password`. Qdrant REST is `qdrant.data.svc.cluster.local:6333`. yamllint rules: 2-space indent, 200-char lines.
 
-- [ ] **Step 1: Create the manifests**
+- [x] **Step 1: Create the manifests**
 
 `infrastructure/base/backup/pvc.yaml`:
 
@@ -2077,7 +2077,7 @@ resources:
 
 In `infrastructure/base/kustomization.yaml`, add `- backup` to `resources`.
 
-- [ ] **Step 2: Lint**
+- [x] **Step 2: Lint**
 
 ```bash
 yamllint -c .yamllint.yaml infrastructure/base/backup/
@@ -2085,7 +2085,7 @@ yamllint -c .yamllint.yaml infrastructure/base/backup/
 
 Expected: clean. (`kubectl kustomize` is unavailable locally — the CI yaml job and the next real deploy validate structure; note this in your report.)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add infrastructure/base/backup infrastructure/base/kustomization.yaml
@@ -2100,7 +2100,7 @@ git commit -m "feat(infra): nightly Postgres dumps and Qdrant snapshots to a loc
 - Create: `scripts/verify-backup.sh`
 - Create: `docs/ops/disaster-recovery.md`
 
-- [ ] **Step 1: Write `scripts/verify-backup.sh`**
+- [x] **Step 1: Write `scripts/verify-backup.sh`**
 
 Follow the conventions of the existing scripts (`set -euo pipefail`, `SCRIPT_DIR`/`ROOT_DIR` preamble, reads `infrastructure/overlays/<env>/secrets.env` — see `scripts/dev-setup.sh:103` for the password-sourcing pattern):
 
@@ -2167,7 +2167,7 @@ This script cannot be run in this dev environment (no kubectl/cluster) — the d
 
 Make it executable: `chmod +x scripts/verify-backup.sh`.
 
-- [ ] **Step 2: Verify with shellcheck (via docker if not installed, else skip note)**
+- [x] **Step 2: Verify with shellcheck (via docker if not installed, else skip note)**
 
 ```bash
 shellcheck scripts/verify-backup.sh || echo "shellcheck unavailable locally — CI will check"
@@ -2175,7 +2175,7 @@ shellcheck scripts/verify-backup.sh || echo "shellcheck unavailable locally — 
 
 If shellcheck is unavailable locally, rely on CI — but re-read the script carefully for quoting bugs first (the JSON `--overrides` quoting is the risky part).
 
-- [ ] **Step 3: Write the runbook**
+- [x] **Step 3: Write the runbook**
 
 Create `docs/ops/disaster-recovery.md`:
 
@@ -2220,7 +2220,7 @@ Run `scripts/verify-backup.sh <env>` monthly. It restores the newest dump of eac
 database into a scratch `<db>_verify` database, asserts tables exist, and drops it.
 ```
 
-- [ ] **Step 4: Lint and commit**
+- [x] **Step 4: Lint and commit**
 
 ```bash
 bash scripts/lint.sh
@@ -2232,7 +2232,7 @@ git commit -m "docs(ops): restore-verification script and disaster-recovery runb
 
 ## Final verification (after all tasks)
 
-- [ ] Run the full suite:
+- [x] Run the full suite:
 
 ```bash
 bash scripts/lint.sh && dotnet test toimi.sln
@@ -2240,5 +2240,5 @@ cd src/toimi.web/ClientApp && npm run lint && npm run build
 ```
 Expected: lint passed, all tests green (roughly 300+ across 5 test projects now), frontend clean.
 
-- [ ] `git status` clean; commits follow `<type>(<scope>): <subject>`.
-- [ ] Report the deploy note to the user: tietue needs `scripts/deploy.sh <env> toimi.tools.tietue` (new migration + workers), web and infra need their deploys, and the first backup run can be forced with `kubectl create job --from=cronjob/postgres-backup manual-backup-test -n data`.
+- [x] `git status` clean; commits follow `<type>(<scope>): <subject>`.
+- [x] Report the deploy note to the user: tietue needs `scripts/deploy.sh <env> toimi.tools.tietue` (new migration + workers), web and infra need their deploys, and the first backup run can be forced with `kubectl create job --from=cronjob/postgres-backup manual-backup-test -n data`.

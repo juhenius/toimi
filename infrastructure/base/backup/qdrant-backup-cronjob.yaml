@@ -1,0 +1,56 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: qdrant-backup
+  namespace: data
+spec:
+  schedule: "30 2 * * *"
+  timeZone: Europe/Helsinki
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: qdrant-snapshot
+              # alpine + apk keeps us on an official image; the k3s node has egress.
+              image: alpine:3.20
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  apk add --no-cache curl jq >/dev/null
+                  QDRANT=http://qdrant.data.svc.cluster.local:6333
+                  DATE=$(date +%F)
+                  mkdir -p /backups/qdrant
+                  COLLECTIONS=$(curl -sf "$QDRANT/collections" | jq -r '.result.collections[].name')
+                  if [ -z "$COLLECTIONS" ]; then
+                    echo "ERROR: could not list Qdrant collections (Qdrant down or none exist)" >&2
+                    exit 1
+                  fi
+                  for COLLECTION in $COLLECTIONS; do
+                    echo "Snapshotting $COLLECTION..."
+                    NAME=$(curl -sf -X POST "$QDRANT/collections/$COLLECTION/snapshots" | jq -r '.result.name')
+                    if [ -z "$NAME" ] || [ "$NAME" = "null" ]; then
+                      echo "ERROR: snapshot creation for $COLLECTION returned no name" >&2
+                      exit 1
+                    fi
+                    curl -sf "$QDRANT/collections/$COLLECTION/snapshots/$NAME" \
+                      -o "/backups/qdrant/$COLLECTION-$DATE.snapshot"
+                    curl -sf -X DELETE "$QDRANT/collections/$COLLECTION/snapshots/$NAME" >/dev/null
+                  done
+                  find /backups/qdrant -name '*.snapshot' -mtime +7 -delete
+                  echo "Done. Current snapshots:"
+                  ls -lh /backups/qdrant
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: backups
