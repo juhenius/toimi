@@ -112,11 +112,11 @@ public class EntityRepositoryTests
     using var _ = db;
     const string defaultTriggers = /*lang=json,strict*/ """[{"when":{"atField":"dueAt"},"handler":{"kind":"notify"}}]""";
     await new TypeRepository(db).DefineAsync("event", /*lang=json,strict*/ """{"type":"object","properties":{"title":{"type":"string"},"dueAt":{"type":"string"}}}""", defaultTriggersJson: defaultTriggers);
-    var repo = new EntityRepository(db, new SchemaValidator(), provisioner: new TriggerProvisioner(new TriggerRepository(db)));
+    var repo = new EntityRepository(db, new SchemaValidator(), provisioner: new TriggerProvisioner(new TriggerRepository(db, TestConfig.Default)));
 
     var e = await repo.CreateAsync("event", JsonNode.Parse("""{"title":"Meeting","dueAt":"2026-06-20T09:00:00Z"}"""), []);
 
-    var triggers = await new TriggerRepository(db).ListByEntityAsync(e.Id);
+    var triggers = await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(e.Id);
     var t = Assert.Single(triggers);
     Assert.Equal("notify", t.HandlerKind);
   }

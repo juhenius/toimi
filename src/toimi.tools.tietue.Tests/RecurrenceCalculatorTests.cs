@@ -49,4 +49,19 @@ public class RecurrenceCalculatorTests
     var next = RecurrenceCalculator.NextOccurrenceAfter(Start, "FREQ=DAILY;UNTIL=20260603T090000Z", new(2026, 6, 3, 9, 0, 0, TimeSpan.Zero));
     Assert.Null(next);
   }
+
+  [Fact]
+  public void Daily_rule_in_a_timezone_keeps_wall_clock_across_dst()
+  {
+    // 2026-03-29 Helsinki springs forward (EET+2 -> EEST+3).
+    var start = new DateTimeOffset(2026, 3, 27, 9, 0, 0, TimeSpan.FromHours(2)); // 09:00 local, 07:00Z
+    var beforeDst = RecurrenceCalculator.NextOccurrenceAfter(
+      start, "FREQ=DAILY", new DateTimeOffset(2026, 3, 27, 12, 0, 0, TimeSpan.Zero), "Europe/Helsinki");
+    var afterDst = RecurrenceCalculator.NextOccurrenceAfter(
+      start, "FREQ=DAILY", new DateTimeOffset(2026, 3, 29, 12, 0, 0, TimeSpan.Zero), "Europe/Helsinki");
+
+    // Wall-clock stays 09:00 Helsinki; the UTC instant shifts by the DST hour.
+    Assert.Equal(new DateTimeOffset(2026, 3, 28, 7, 0, 0, TimeSpan.Zero), beforeDst!.Value.ToUniversalTime());
+    Assert.Equal(new DateTimeOffset(2026, 3, 30, 6, 0, 0, TimeSpan.Zero), afterDst!.Value.ToUniversalTime());
+  }
 }

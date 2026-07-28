@@ -32,12 +32,12 @@ public class SchedulerTickTests
     using var _ = db;
     var e = await repo.CreateAsync("reminder", JsonNode.Parse("""{"title":"Call"}"""), []);
     var handlerConfig = /*lang=json,strict*/ """{"titleTemplate":"{title}"}""";
-    await new TriggerRepository(db).CreateAsync(e.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "notify", handlerConfig, new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
+    await new TriggerRepository(db, TestConfig.Default).CreateAsync(e.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "notify", handlerConfig, new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
 
     await tick.RunDueAsync(new DateTimeOffset(2026, 6, 1, 9, 1, 0, TimeSpan.Zero), default);
 
     Assert.Single(notifier.Sent);
-    var trigger = (await new TriggerRepository(db).ListByEntityAsync(e.Id))[0];
+    var trigger = (await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(e.Id))[0];
     Assert.False(trigger.Enabled);
     Assert.Null(trigger.NextFireAt);
     Assert.True(await new EntityEventStore(db).HasEventAsync(e.Id, new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), "notify"));
@@ -50,11 +50,11 @@ public class SchedulerTickTests
     using var _ = db;
     var e = await repo.CreateAsync("reminder", JsonNode.Parse("""{"title":"Standup"}"""), []);
     var handlerConfig = /*lang=json,strict*/ """{"titleTemplate":"{title}"}""";
-    await new TriggerRepository(db).CreateAsync(e.Id, /*lang=json,strict*/ """{"start":"2026-06-01T09:00:00Z","rrule":"FREQ=DAILY"}""", "notify", handlerConfig, new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
+    await new TriggerRepository(db, TestConfig.Default).CreateAsync(e.Id, /*lang=json,strict*/ """{"start":"2026-06-01T09:00:00Z","rrule":"FREQ=DAILY"}""", "notify", handlerConfig, new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
 
     await tick.RunDueAsync(new DateTimeOffset(2026, 6, 1, 9, 1, 0, TimeSpan.Zero), default);
 
-    var trigger = (await new TriggerRepository(db).ListByEntityAsync(e.Id))[0];
+    var trigger = (await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(e.Id))[0];
     Assert.True(trigger.Enabled);
     Assert.Equal(new DateTimeOffset(2026, 6, 2, 9, 0, 0, TimeSpan.Zero), trigger.NextFireAt);
   }
@@ -67,7 +67,7 @@ public class SchedulerTickTests
     var e = await repo.CreateAsync("reminder", JsonNode.Parse("""{"title":"Skip me"}"""), []);
     var occ = new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero);
     var handlerConfig = /*lang=json,strict*/ """{"titleTemplate":"{title}"}""";
-    await new TriggerRepository(db).CreateAsync(e.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "notify", handlerConfig, new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
+    await new TriggerRepository(db, TestConfig.Default).CreateAsync(e.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "notify", handlerConfig, new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
     await new EntityEventStore(db).CompleteAsync(e.Id, occ);
 
     await tick.RunDueAsync(new DateTimeOffset(2026, 6, 1, 9, 1, 0, TimeSpan.Zero), default);
@@ -94,13 +94,13 @@ public class SchedulerTickTests
     var e = await repo.CreateAsync("reminder", JsonNode.Parse("""{"title":"x"}"""), []);
     var registry = new HandlerRegistry([new ThrowingHandler()]);
     var tick = new SchedulerTick(db, registry, new EntityEventStore(db));
-    await new TriggerRepository(db).CreateAsync(e.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "boom", null,
+    await new TriggerRepository(db, TestConfig.Default).CreateAsync(e.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "boom", null,
       new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
 
     // Must NOT throw despite the handler throwing.
     await tick.RunDueAsync(new DateTimeOffset(2026, 6, 1, 9, 1, 0, TimeSpan.Zero), default);
 
-    var trigger = (await new TriggerRepository(db).ListByEntityAsync(e.Id))[0];
+    var trigger = (await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(e.Id))[0];
     Assert.False(trigger.Enabled);     // one-shot advanced + disabled (no poison loop)
     Assert.Null(trigger.NextFireAt);
     Assert.True(await new EntityEventStore(db).HasEventAsync(e.Id, new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), "boom")); // error occurrence recorded
@@ -114,7 +114,7 @@ public class SchedulerTickTests
     var repo = new EntityRepository(db, new SchemaValidator());
     var entity = await repo.CreateAsync("task", JsonNode.Parse("""{"name":"x"}"""), []);
 
-    var triggers = new TriggerRepository(db);
+    var triggers = new TriggerRepository(db, TestConfig.Default);
     var occurrence = DateTimeOffset.UtcNow.AddMinutes(-1);
     await triggers.CreateAsync(entity.Id, $$"""{"at":"{{occurrence:O}}"}""", "delete", null, DateTimeOffset.UtcNow.AddMinutes(-2));
 

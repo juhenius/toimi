@@ -2,6 +2,8 @@ using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using toimi.tools.tietue.Data;
 using toimi.tools.tietue.Entities;
+using toimi.tools.tietue.Provisioning;
+using toimi.tools.tietue.Scheduling;
 using toimi.tools.tietue.Types;
 using toimi.tools.tietue.Validation;
 using Xunit;
@@ -58,6 +60,31 @@ public class EntityRepositoryFailureTests
     Assert.False(db.ChangeTracker.HasChanges());
     Assert.Equal(1, await db.Entities.CountAsync());
     Assert.Empty(await db.IndexOutbox.ToListAsync());
+  }
+
+  [Fact]
+  public async Task Create_propagates_provisioning_failure()
+  {
+    // A default-trigger type so CreateAsync provisions; the provisioner's TriggerRepository
+    // runs over a context whose next save throws, standing in for a mid-provision failure.
+    // Under Postgres the surrounding transaction rolls the entity back too; the InMemory
+    // provider can't begin a real transaction, so this pins the exception propagation the
+    // caller (and scheduler tick) must see — the full ROLLBACK is only exercised on Postgres.
+    const string reminderSchema = /*lang=json,strict*/ """{"type":"object","properties":{"dueAt":{"type":"string"}},"required":["dueAt"]}""";
+    const string defaultTriggers = /*lang=json,strict*/ """[{"when":{"atField":"dueAt"},"handler":{"kind":"notify"}}]""";
+
+    var db = TestDb.New();
+    using var _ = db;
+    await new TypeRepository(db).DefineAsync("reminder", reminderSchema, defaultTriggersJson: defaultTriggers);
+
+    var throwDb = TestDb.NewThrowingOnce();
+    using var __ = throwDb;
+    throwDb.ThrowNext = true;
+    var provisioner = new TriggerProvisioner(new TriggerRepository(throwDb, TestConfig.Default));
+    var repo = new EntityRepository(db, new SchemaValidator(), provisioner: provisioner);
+
+    await Assert.ThrowsAnyAsync<Exception>(() =>
+      repo.CreateAsync("reminder", JsonNode.Parse("""{"dueAt":"2026-06-01T09:00:00Z"}"""), []));
   }
 
   [Fact]

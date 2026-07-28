@@ -19,7 +19,7 @@ public class ScriptHandlerTests
     var entities = new EntityRepository(db, new SchemaValidator());
     var e = await entities.CreateAsync("task", JsonNode.Parse("""{"name":"Jari","status":"open"}"""), []);
     var notifier = new FakeNotifier();
-    var applier = new ScriptEffectApplier(entities, notifier, new TriggerRepository(db), new FakeAgentRunner());
+    var applier = new ScriptEffectApplier(entities, notifier, new TriggerRepository(db, TestConfig.Default), new FakeAgentRunner(), new Lazy<HandlerRegistry>(() => new HandlerRegistry([new NotifyHandler(notifier)])), TestConfig.Default);
     var handler = new ScriptHandler(new ScriptEngine(), applier, new ScriptOptions { Enabled = enabled });
     return (e, notifier, handler);
   }

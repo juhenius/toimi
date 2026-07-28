@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using toimi.tools.tietue.Entities;
+using toimi.tools.tietue.Handlers;
 using toimi.tools.tietue.Scheduling;
 using toimi.tools.tietue.Scripts;
 using toimi.tools.tietue.Types;
@@ -19,8 +20,9 @@ public class ScriptEffectApplierTests
     var e = await entities.CreateAsync("task", JsonNode.Parse("""{"name":"x","status":"open"}"""), []);
     var notifier = new FakeNotifier();
     var runner = new FakeAgentRunner();
-    var triggers = new TriggerRepository(db);
-    return (e, entities, notifier, runner, triggers, new ScriptEffectApplier(entities, notifier, triggers, runner));
+    var triggers = new TriggerRepository(db, TestConfig.Default);
+    var handlers = new Lazy<HandlerRegistry>(() => new HandlerRegistry([new NotifyHandler(notifier)]));
+    return (e, entities, notifier, runner, triggers, new ScriptEffectApplier(entities, notifier, triggers, runner, handlers, TestConfig.Default));
   }
 
   [Fact]
@@ -76,5 +78,33 @@ public class ScriptEffectApplierTests
 
     Assert.Contains("trigger", applied);
     Assert.Single(await triggers.ListByEntityAsync(e.Id));
+  }
+
+  [Fact]
+  public async Task Does_not_create_trigger_for_unknown_handler_kind()
+  {
+    using var db = TestDb.New();
+    var (e, entities, notifier, runner, triggers, applier) = await SetupAsync(db);
+    var effects = ScriptEffects.Parse(/*lang=json,strict*/ """{"trigger":{"schedule":{"at":"2026-07-01T09:00:00Z"},"handlerKind":"bogus"}}""");
+
+    var applied = await applier.ApplyAsync(e, effects, ["trigger"]);
+
+    Assert.DoesNotContain("trigger", applied);
+    Assert.Contains(applied, s => s.StartsWith("trigger:error", StringComparison.Ordinal));
+    Assert.Empty(await triggers.ListByEntityAsync(e.Id));
+  }
+
+  [Fact]
+  public async Task Does_not_create_trigger_for_schedule_that_never_fires()
+  {
+    using var db = TestDb.New();
+    var (e, entities, notifier, runner, triggers, applier) = await SetupAsync(db);
+    var effects = ScriptEffects.Parse(/*lang=json,strict*/ """{"trigger":{"schedule":{"start":"2020-01-01T00:00:00Z","rrule":"FREQ=YEARLY;COUNT=1"},"handlerKind":"notify"}}""");
+
+    var applied = await applier.ApplyAsync(e, effects, ["trigger"]);
+
+    Assert.DoesNotContain("trigger", applied);
+    Assert.Contains(applied, s => s.StartsWith("trigger:error", StringComparison.Ordinal));
+    Assert.Empty(await triggers.ListByEntityAsync(e.Id));
   }
 }

@@ -16,7 +16,7 @@ public class ExpiryReconcilerTests
   private static async Task<EntityRepository> SetupAsync(Data.TietueDbContext db, string? behaviors)
   {
     await new TypeRepository(db).DefineAsync("temp", Schema, behaviors);
-    var triggers = new TriggerRepository(db);
+    var triggers = new TriggerRepository(db, TestConfig.Default);
     var reconciler = new ExpiryReconciler(db, triggers);
     return new EntityRepository(db, new SchemaValidator(), expiry: reconciler);
   }

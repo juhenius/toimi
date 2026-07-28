@@ -8,7 +8,7 @@ namespace toimi.tools.tietue.Tools;
 [McpServerToolType]
 public class UpdateTriggerTool(TriggerRepository repository)
 {
-  [McpServerTool, Description("Update a trigger's schedule, handler config, and/or enabled flag.")]
+  [McpServerTool, Description("Update a trigger's schedule, handler config, and/or enabled flag; recurring schedules without a tz default to the server's user timezone, pass \"tz\":\"UTC\" for fixed-UTC recurrence.")]
   public async Task<string> UpdateTrigger(
       [Description("Trigger id (GUID)")] string id,
       [Description("New schedule spec JSON (optional)")] string? schedule = null,

@@ -6,6 +6,16 @@ using Xunit;
 
 namespace toimi.tools.tietue.Tests;
 
+public static class TestConfig
+{
+  /// <summary>A minimal config for repos that inject <see cref="Toimi.Core.Configuration.ToimiConfiguration"/>.</summary>
+  public static readonly Toimi.Core.Configuration.ToimiConfiguration Default = new()
+  {
+    OpenAI = new Toimi.Core.Configuration.OpenAIOptions { ApiKey = "test" },
+    UserTimeZone = "Europe/Helsinki",
+  };
+}
+
 public static class TestDb
 {
   public static TietueDbContext New()

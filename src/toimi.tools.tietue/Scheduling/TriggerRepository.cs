@@ -3,10 +3,14 @@ using toimi.tools.tietue.Data;
 
 namespace toimi.tools.tietue.Scheduling;
 
-public class TriggerRepository(TietueDbContext db)
+public class TriggerRepository(TietueDbContext db, Toimi.Core.Configuration.ToimiConfiguration config)
 {
   public async Task<Trigger> CreateAsync(Guid entityId, string scheduleJson, string handlerKind, string? handlerConfig, DateTimeOffset now, string? source = null, CancellationToken ct = default)
   {
+    // Stamp the user's default tz onto recurring schedules that omit one, at creation time, so the
+    // persisted schedule is self-describing and its wall-clock survives DST forever.
+    scheduleJson = Schedules.WithDefaultTimeZone(scheduleJson, config.UserTimeZone);
+
     var trigger = new Trigger
     {
       Id = Guid.NewGuid(),
@@ -45,6 +49,9 @@ public class TriggerRepository(TietueDbContext db)
 
     if (scheduleJson is not null)
     {
+      // Same stamping as CreateAsync: recurring schedules that omit a tz get the user's default,
+      // so an update can't silently reintroduce DST drift.
+      scheduleJson = Schedules.WithDefaultTimeZone(scheduleJson, config.UserTimeZone);
       trigger.Schedule = scheduleJson;
       trigger.NextFireAt = Schedules.InitialNextFireAt(scheduleJson, now);
     }

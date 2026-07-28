@@ -9,23 +9,30 @@ public static class RecurrenceCalculator
   // Forward search window; rules sparser than this won't schedule their next fire (documented limitation).
   private static readonly TimeSpan Window = TimeSpan.FromDays(366 * 2);
 
-  public static DateTimeOffset? NextOccurrenceAfter(DateTimeOffset start, string rrule, DateTimeOffset after)
+  public static DateTimeOffset? NextOccurrenceAfter(DateTimeOffset start, string rrule, DateTimeOffset after, string? tz = null)
   {
-    return FirstOccurrence(start, rrule, after, inclusive: false);
+    return FirstOccurrence(start, rrule, after, inclusive: false, tz);
   }
 
-  public static DateTimeOffset? NextOccurrenceOnOrAfter(DateTimeOffset start, string rrule, DateTimeOffset after)
+  public static DateTimeOffset? NextOccurrenceOnOrAfter(DateTimeOffset start, string rrule, DateTimeOffset after, string? tz = null)
   {
-    return FirstOccurrence(start, rrule, after, inclusive: true);
+    return FirstOccurrence(start, rrule, after, inclusive: true, tz);
   }
 
-  private static DateTimeOffset? FirstOccurrence(DateTimeOffset start, string rrule, DateTimeOffset after, bool inclusive)
+  private static DateTimeOffset? FirstOccurrence(DateTimeOffset start, string rrule, DateTimeOffset after, bool inclusive, string? tz = null)
   {
+    var tzInfo = ResolveTz(tz);
+    // With a resolved zone, anchor DTSTART to that zone's wall-clock so Ical.Net expands the
+    // rule in local time (DST-stable); without one, keep the historical pure-UTC expansion.
+    var startCal = tzInfo is null
+      ? new CalDateTime(start.UtcDateTime)
+      : new CalDateTime(TimeZoneInfo.ConvertTime(start, tzInfo).DateTime, tz);
+
     var calendar = new Calendar();
     calendar.Events.Add(new CalendarEvent
     {
-      Start = new CalDateTime(start.UtcDateTime),
-      End = new CalDateTime(start.AddHours(1).UtcDateTime),
+      Start = startCal,
+      Duration = TimeSpan.FromHours(1),
       RecurrenceRules = [new RecurrencePattern(rrule)],
     });
 
@@ -35,10 +42,29 @@ public static class RecurrenceCalculator
     var to = windowBase.Add(Window).UtcDateTime;
 
     return calendar.GetOccurrences(new CalDateTime(from), new CalDateTime(to))
-      .Select(o => o.Period.StartTime.AsDateTimeOffset)
+      // AsDateTimeOffset carries the occurrence's local offset; compare instants in UTC so the
+      // inclusive/exclusive boundary is correct regardless of the zone.
+      .Select(o => o.Period.StartTime.AsDateTimeOffset.ToUniversalTime())
       .Where(o => inclusive ? o >= after : o > after)
       .OrderBy(o => o)
       .Cast<DateTimeOffset?>()
       .FirstOrDefault();
+  }
+
+  private static TimeZoneInfo? ResolveTz(string? tz)
+  {
+    if (string.IsNullOrWhiteSpace(tz))
+    {
+      return null;
+    }
+
+    try
+    {
+      return TimeZoneInfo.FindSystemTimeZoneById(tz);
+    }
+    catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
+    {
+      return null; // unknown tz -> fall back to UTC expansion rather than throwing
+    }
   }
 }

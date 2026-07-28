@@ -20,7 +20,7 @@ public static class Schedules
     if (spec.Start is { } start && spec.Rrule is { } rrule)
     {
       var anchor = start > now ? start : now;
-      return RecurrenceCalculator.NextOccurrenceOnOrAfter(start, rrule, anchor);
+      return RecurrenceCalculator.NextOccurrenceOnOrAfter(start, rrule, anchor, spec.Tz);
     }
 
     return null;
@@ -32,8 +32,29 @@ public static class Schedules
     return spec is null || spec.At is not null
       ? null
       : spec.Start is { } start && spec.Rrule is { } rrule
-        ? RecurrenceCalculator.NextOccurrenceAfter(start, rrule, firedOccurrence)
+        ? RecurrenceCalculator.NextOccurrenceAfter(start, rrule, firedOccurrence, spec.Tz)
         : null;
+  }
+
+  /// <summary>Returns the schedule JSON with a default tz stamped onto recurring specs that omit one.</summary>
+  public static string WithDefaultTimeZone(string scheduleJson, string defaultTz)
+  {
+    var spec = Parse(scheduleJson);
+    if (spec is null || spec.Rrule is null || !string.IsNullOrEmpty(spec.Tz))
+    {
+      return scheduleJson; // one-shot, unparseable, or already has a tz
+    }
+
+    try
+    {
+      var node = System.Text.Json.Nodes.JsonNode.Parse(scheduleJson)!.AsObject();
+      node["tz"] = defaultTz;
+      return node.ToJsonString();
+    }
+    catch (JsonException)
+    {
+      return scheduleJson;
+    }
   }
 
   private sealed record Spec(DateTimeOffset? At, DateTimeOffset? Start, string? Rrule, string? Tz);

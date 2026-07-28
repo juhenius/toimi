@@ -66,6 +66,11 @@ builder.Services.AddScoped<toimi.tools.tietue.Handlers.INativeHandler, toimi.too
 builder.Services.AddSingleton(
   builder.Configuration.GetSection("Scripts").Get<toimi.tools.tietue.Scripts.ScriptOptions>() ?? new toimi.tools.tietue.Scripts.ScriptOptions());
 builder.Services.AddSingleton<toimi.tools.tietue.Scripts.ScriptEngine>();
+// Lazily resolve HandlerRegistry inside ScriptEffectApplier: ScriptHandler (an INativeHandler the
+// registry enumerates) depends on the applier, so a direct edge would be a construction cycle. The
+// Lazy factory defers resolution to first use, by which point the scoped applier is already cached.
+builder.Services.AddScoped(sp => new Lazy<toimi.tools.tietue.Handlers.HandlerRegistry>(
+  sp.GetRequiredService<toimi.tools.tietue.Handlers.HandlerRegistry>));
 builder.Services.AddScoped<toimi.tools.tietue.Scripts.ScriptEffectApplier>();
 builder.Services.AddScoped<toimi.tools.tietue.Handlers.INativeHandler, toimi.tools.tietue.Handlers.ScriptHandler>();
 

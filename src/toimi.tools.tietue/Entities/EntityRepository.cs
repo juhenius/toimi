@@ -29,23 +29,61 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Sem
       CreatedAt = now,
       UpdatedAt = now,
     };
-    await EnforceUniqueOnCreateAsync(entity, typeDef.Behaviors, ct);
-    db.Entities.Add(entity);
-    var indexOp = outbox?.Enqueue(entity, typeDef.Behaviors, "upsert");
-    await SaveGuardingUniqueAsync(entity.Type, ct);
+    // Entity, unique-key, default triggers, and expiry trigger must land together: a crash
+    // between the entity save and provisioning would otherwise leave a reminder with no
+    // trigger (never fires) or a half-created entity a retry duplicates. The provisioner's
+    // and reconciler's own SaveChanges enlist in this ambient transaction (they share this
+    // DbContext connection), so they commit or roll back with the entity. InMemory can't
+    // begin a transaction, so guard on the relational provider — the call sequence is identical.
+    var useTx = db.Database.IsRelational();
+    var tx = useTx ? await db.Database.BeginTransactionAsync(ct) : null;
+    IndexOutbox? indexOp = null;
+    try
+    {
+      await EnforceUniqueOnCreateAsync(entity, typeDef.Behaviors, ct);
+      db.Entities.Add(entity);
+      indexOp = outbox?.Enqueue(entity, typeDef.Behaviors, "upsert");
+      await SaveGuardingUniqueAsync(entity.Type, ct);
+
+      if (provisioner is not null)
+      {
+        await provisioner.ProvisionAsync(entity, typeDef.DefaultTriggers, entity.CreatedAt, ct);
+      }
+
+      if (expiry is not null)
+      {
+        await expiry.ReconcileAsync(entity, typeDef.Behaviors, entity.CreatedAt, ct);
+      }
+
+      if (tx is not null)
+      {
+        await tx.CommitAsync(ct);
+      }
+    }
+    catch
+    {
+      if (tx is not null)
+      {
+        await tx.RollbackAsync(ct);
+      }
+
+      throw;
+    }
+    finally
+    {
+      if (tx is not null)
+      {
+        await tx.DisposeAsync();
+      }
+    }
+
+    // Drain AFTER the transaction is committed and disposed: the outbox row is already
+    // durable, a Qdrant hiccup must not roll back the entity, and keeping the drain
+    // outside the try means it can never trigger a rollback-after-commit even if
+    // DrainAsync's non-throwing contract ever changes.
     if (outbox is not null)
     {
       await outbox.DrainAsync(indexOp, ct);
-    }
-
-    if (provisioner is not null)
-    {
-      await provisioner.ProvisionAsync(entity, typeDef.DefaultTriggers, entity.CreatedAt, ct);
-    }
-
-    if (expiry is not null)
-    {
-      await expiry.ReconcileAsync(entity, typeDef.Behaviors, entity.CreatedAt, ct);
     }
 
     return entity;

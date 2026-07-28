@@ -25,7 +25,7 @@ public class ClaimCollisionTests
     await new TypeRepository(db).DefineAsync("reminder", Schema);
     var e = await new EntityRepository(db, new SchemaValidator()).CreateAsync(
       "reminder", JsonNode.Parse("""{"title":"Call"}"""), []);
-    await new TriggerRepository(db).CreateAsync(
+    await new TriggerRepository(db, TestConfig.Default).CreateAsync(
       e.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "notify",
       /*lang=json,strict*/ """{"titleTemplate":"{title}"}""",
       new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));

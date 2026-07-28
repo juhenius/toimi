@@ -51,7 +51,7 @@ public class SchedulerTickLockTests
     var tick = new SchedulerTick(db, registry, new EntityEventStore(db), tickLock: new DeniedTickLock());
 
     var e = await repo.CreateAsync("reminder", JsonNode.Parse("""{"title":"Call"}"""), []);
-    await new TriggerRepository(db).CreateAsync(
+    await new TriggerRepository(db, TestConfig.Default).CreateAsync(
       e.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "notify",
       /*lang=json,strict*/ """{"titleTemplate":"{title}"}""",
       new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
@@ -59,7 +59,7 @@ public class SchedulerTickLockTests
     await tick.RunDueAsync(new DateTimeOffset(2026, 6, 1, 9, 1, 0, TimeSpan.Zero), default);
 
     Assert.Empty(notifier.Sent);
-    var trigger = (await new TriggerRepository(db).ListByEntityAsync(e.Id))[0];
+    var trigger = (await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(e.Id))[0];
     Assert.True(trigger.Enabled);
     Assert.NotNull(trigger.NextFireAt);
   }

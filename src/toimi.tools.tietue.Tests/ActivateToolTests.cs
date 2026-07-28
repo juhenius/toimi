@@ -18,7 +18,7 @@ public class ActivateToolTests
     await new TypeRepository(db).DefineAsync("task", Schema);
     var entities = new EntityRepository(db, new SchemaValidator());
     var e = await entities.CreateAsync("task", JsonNode.Parse("""{"name":"x"}"""), []);
-    return (entities, new FakeAgentRunner(), new EntityEventStore(db), new TriggerRepository(db), e.Id);
+    return (entities, new FakeAgentRunner(), new EntityEventStore(db), new TriggerRepository(db, TestConfig.Default), e.Id);
   }
 
   [Fact]

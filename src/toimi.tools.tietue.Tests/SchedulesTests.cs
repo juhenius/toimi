@@ -39,4 +39,35 @@ public class SchedulesTests
   {
     Assert.Null(Schedules.InitialNextFireAt("{ not json", Now));
   }
+
+  [Fact]
+  public void WithDefaultTimeZone_stamps_tz_on_recurring_spec_without_one()
+  {
+    var stamped = Schedules.WithDefaultTimeZone(
+      /*lang=json,strict*/ """{"start":"2026-06-01T09:00:00Z","rrule":"FREQ=DAILY"}""", "Europe/Helsinki");
+    using var doc = System.Text.Json.JsonDocument.Parse(stamped);
+    Assert.Equal("Europe/Helsinki", doc.RootElement.GetProperty("tz").GetString());
+    Assert.Equal("FREQ=DAILY", doc.RootElement.GetProperty("rrule").GetString());
+  }
+
+  [Fact]
+  public void WithDefaultTimeZone_leaves_one_shot_unchanged()
+  {
+    const string json = /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""";
+    Assert.Equal(json, Schedules.WithDefaultTimeZone(json, "Europe/Helsinki"));
+  }
+
+  [Fact]
+  public void WithDefaultTimeZone_leaves_existing_tz_unchanged()
+  {
+    const string json = /*lang=json,strict*/ """{"start":"2026-06-01T09:00:00Z","rrule":"FREQ=DAILY","tz":"America/New_York"}""";
+    Assert.Equal(json, Schedules.WithDefaultTimeZone(json, "Europe/Helsinki"));
+  }
+
+  [Fact]
+  public void WithDefaultTimeZone_leaves_unparseable_unchanged()
+  {
+    const string json = "{ not json";
+    Assert.Equal(json, Schedules.WithDefaultTimeZone(json, "Europe/Helsinki"));
+  }
 }

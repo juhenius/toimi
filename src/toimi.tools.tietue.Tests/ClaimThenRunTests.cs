@@ -25,7 +25,7 @@ public class ClaimThenRunTests
     var registry = new HandlerRegistry([new NotifyHandler(notifier)]);
     var tick = new SchedulerTick(db, registry, new EntityEventStore(db));
     var e = await repo.CreateAsync("reminder", JsonNode.Parse("""{"title":"Call"}"""), []);
-    await new TriggerRepository(db).CreateAsync(
+    await new TriggerRepository(db, TestConfig.Default).CreateAsync(
       e.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "notify",
       /*lang=json,strict*/ """{"titleTemplate":"{title}"}""",
       new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
@@ -43,7 +43,7 @@ public class ClaimThenRunTests
     Assert.Single(notifier.Sent);
     var evt = await db.EntityEvents.SingleAsync(e => e.EntityId == entityId && e.Kind == "notify");
     Assert.NotEqual("started", evt.Status);
-    var trigger = (await new TriggerRepository(db).ListByEntityAsync(entityId))[0];
+    var trigger = (await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(entityId))[0];
     Assert.False(trigger.Enabled); // one-shot consumed
   }
 
@@ -67,7 +67,7 @@ public class ClaimThenRunTests
     await tick.RunDueAsync(TickTime, default);
 
     Assert.Empty(notifier.Sent);
-    var trigger = (await new TriggerRepository(db).ListByEntityAsync(entityId))[0];
+    var trigger = (await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(entityId))[0];
     Assert.True(trigger.Enabled);         // NOT advanced: occurrence stays due
     Assert.NotNull(trigger.NextFireAt);
   }
@@ -94,7 +94,7 @@ public class ClaimThenRunTests
     Assert.Single(notifier.Sent);
     var evt = await db.EntityEvents.SingleAsync(e => e.EntityId == entityId && e.Kind == "notify");
     Assert.NotEqual("started", evt.Status); // finalized
-    var trigger = (await new TriggerRepository(db).ListByEntityAsync(entityId))[0];
+    var trigger = (await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(entityId))[0];
     Assert.False(trigger.Enabled);          // advanced after successful retry
   }
 
@@ -118,7 +118,7 @@ public class ClaimThenRunTests
     await tick.RunDueAsync(TickTime, default);
 
     Assert.Empty(notifier.Sent);
-    var trigger = (await new TriggerRepository(db).ListByEntityAsync(entityId))[0];
+    var trigger = (await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(entityId))[0];
     Assert.False(trigger.Enabled); // advanced past the already-handled occurrence
   }
 
@@ -132,7 +132,7 @@ public class ClaimThenRunTests
     await tick.RunDueAsync(TickTime, default);
 
     Assert.Empty(notifier.Sent);
-    var trigger = (await new TriggerRepository(db).ListByEntityAsync(entityId))[0];
+    var trigger = (await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(entityId))[0];
     Assert.False(trigger.Enabled); // advanced past the completed occurrence
   }
 }
