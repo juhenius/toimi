@@ -4,9 +4,10 @@ using System.Text.Json;
 
 namespace Toimi.Notifications;
 
-public class NtfyClient(NtfyOptions options)
+public class NtfyClient(NtfyOptions options, HttpClient? httpClient = null)
 {
-  private static readonly HttpClient Http = new();
+  private static readonly HttpClient DefaultHttp = new() { Timeout = TimeSpan.FromSeconds(10) };
+  private readonly HttpClient _http = httpClient ?? DefaultHttp;
   private static readonly Dictionary<string, int> PriorityMap = new()
   {
     ["min"] = 1,
@@ -55,7 +56,7 @@ public class NtfyClient(NtfyOptions options)
       request.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
     }
 
-    var response = await Http.SendAsync(request, ct);
+    var response = await _http.SendAsync(request, ct);
     response.EnsureSuccessStatusCode();
   }
 }

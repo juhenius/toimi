@@ -11,12 +11,15 @@ public class ListEntitiesTool(HomeAssistantClient ha)
   [McpServerTool, Description("List Home Assistant entities, optionally filtered by domain or area. Returns entity IDs, states, friendly names, and area assignments.")]
   public async Task<string> ListEntities(
     [Description("Optional domain filter (e.g. 'light', 'sensor', 'switch', 'climate')")] string? domain = null,
-    [Description("Optional area/room filter (e.g. 'Olohuone', 'Keittiö', 'Makuuhuone')")] string? area = null)
+    [Description("Optional area/room filter (e.g. 'Olohuone', 'Keittiö', 'Makuuhuone')")] string? area = null,
+    [Description("Maximum entities to return (default 100)")] int limit = 100)
   {
+    limit = Math.Clamp(limit, 1, 500);
     var states = await ha.GetStatesAsync();
     var areas = await ha.GetEntityAreasAsync();
     var prefix = domain is not null ? domain + "." : null;
 
+    var truncated = false;
     var entities = new List<object>();
     foreach (var entity in states.EnumerateArray())
     {
@@ -33,6 +36,12 @@ public class ListEntitiesTool(HomeAssistantClient ha)
         continue;
       }
 
+      if (entities.Count >= limit)
+      {
+        truncated = true;
+        break;
+      }
+
       var state = entity.GetProperty("state").GetString();
       string? friendlyName = null;
       if (entity.TryGetProperty("attributes", out var attributes) &&
@@ -44,6 +53,9 @@ public class ListEntitiesTool(HomeAssistantClient ha)
       entities.Add(new { entity_id = entityId, state, friendly_name = friendlyName, area = entityArea });
     }
 
-    return JsonSerializer.Serialize(entities);
+    var json = JsonSerializer.Serialize(entities);
+    return truncated
+      ? json + "\n[truncated at " + limit + " entities — refine with domain/area filters]"
+      : json;
   }
 }

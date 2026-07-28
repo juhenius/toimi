@@ -6,7 +6,10 @@ var haOptions = builder.Configuration.GetSection("HomeAssistant").Get<HomeAssist
   ?? throw new InvalidOperationException("HomeAssistant configuration is required");
 
 builder.Services.AddSingleton(haOptions);
-builder.Services.AddHttpClient<HomeAssistantClient>();
+builder.Services.AddHttpClient<HomeAssistantClient>(client =>
+{
+  client.Timeout = TimeSpan.FromSeconds(30);
+});
 builder.Services.AddSingleton(sp =>
 {
   var factory = sp.GetRequiredService<IHttpClientFactory>();

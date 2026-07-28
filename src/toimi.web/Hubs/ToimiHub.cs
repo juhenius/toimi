@@ -56,12 +56,16 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
           // Invalid conversation ID, create new
           var newConversation = await _repository.CreateAsync();
           conversationId = newConversation.Id;
+          await Clients.Caller.SendAsync("ConversationLoaded", conversationId, "[]");
         }
       }
       else
       {
         var newConversation = await _repository.CreateAsync();
         conversationId = newConversation.Id;
+        // Tell the client its new conversation id so a later reconnect can reload it
+        // (query-param driven) instead of silently forking into yet another conversation.
+        await Clients.Caller.SendAsync("ConversationLoaded", conversationId, "[]");
       }
 
       Sessions[Context.ConnectionId] = new ToimiSession(

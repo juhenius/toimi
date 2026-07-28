@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Toimi.Core.Configuration;
 using Toimi.Core.Data;
+using Toimi.Web.Admin;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,8 +22,8 @@ if (string.IsNullOrEmpty(toimiConfig.OpenAI.ApiKey))
 builder.Services.AddSignalR();
 builder.Services.AddSingleton(toimiConfig);
 
-var adminToolsOptions = builder.Configuration.GetSection("Toimi:Admin").Get<Toimi.Web.Admin.AdminToolsOptions>()
-  ?? new Toimi.Web.Admin.AdminToolsOptions();
+var adminToolsOptions = builder.Configuration.GetSection("Toimi:Admin").Get<AdminToolsOptions>()
+  ?? new AdminToolsOptions();
 builder.Services.AddSingleton(adminToolsOptions);
 
 foreach (var tool in adminToolsOptions.Tools)
@@ -73,10 +74,11 @@ if (app.Environment.IsDevelopment())
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.UseAdminPathGuard();
 app.MapGet("/health", () => Results.Ok());
 
 
-Toimi.Web.Admin.AdminEndpoints.MapAdminEndpoints(app);
+AdminEndpoints.MapAdminEndpoints(app);
 app.MapHub<Toimi.Web.Hubs.ToimiHub>("/toimihub");
 app.MapFallbackToFile("index.html");
 

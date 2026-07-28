@@ -4,6 +4,8 @@ namespace toimi.tools.verkko.Fetcher;
 
 public class FetchCache
 {
+  public const int MaxEntries = 200;
+
   private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(5);
   private readonly ConcurrentDictionary<string, (FetchResult Result, DateTime ExpiresAt)> _cache = new();
 
@@ -23,6 +25,13 @@ public class FetchCache
       {
         _cache.TryRemove(key, out _);
       }
+    }
+
+    // Bound memory: evict the soonest-expiring entries when over the cap.
+    while (_cache.Count > MaxEntries)
+    {
+      var oldest = _cache.OrderBy(kv => kv.Value.ExpiresAt).First();
+      _cache.TryRemove(oldest.Key, out _);
     }
   }
 }

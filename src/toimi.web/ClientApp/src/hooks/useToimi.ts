@@ -37,6 +37,9 @@ export function useToimi() {
   const connectionRef = useRef<HubConnection | null>(null)
   const streamBufferRef = useRef('')
   const conversationIdRef = useRef<string | undefined>(undefined)
+  // Mirrors currentConversationId for use in connection callbacks, which would
+  // otherwise close over the state value from the render that built them.
+  const currentConversationIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     const url = conversationIdRef.current
@@ -88,6 +91,7 @@ export function useToimi() {
       })
       setMessages(loaded)
       setCurrentConversationId(conversationId)
+      currentConversationIdRef.current = conversationId
     })
 
     connection.on('ConversationList', (json: string) => {
@@ -153,7 +157,34 @@ export function useToimi() {
     })
 
     connection.onreconnecting(() => setConnectionStatus('reconnecting'))
-    connection.onreconnected(() => setConnectionStatus('connected'))
+    connection.onreconnected(() => {
+      setConnectionStatus('connected')
+      // The reconnect rebuilt the server session: the hub re-ran OnConnectedAsync
+      // with the ORIGINAL connection URL, so any response that was streaming is
+      // gone and the session now holds whatever that URL implies — a fresh
+      // conversation (no query param) or a replay of the URL's conversation id,
+      // which may not be the one the user is viewing. The hub exposes no
+      // invokable reload method, so converge to the DB source of truth here.
+      setIsStreaming(false)
+      const activeId = currentConversationIdRef.current ?? undefined
+      if (!activeId) {
+        // No conversation was ever loaded on this client; the rebuilt session
+        // points at a brand-new conversation, so reset the view to match. Any
+        // prior exchange is persisted and reachable from the conversation list
+        // (refreshed by the 'Connected' handler on this same reconnect).
+        setMessages([])
+      } else if (conversationIdRef.current !== activeId) {
+        // The connection URL carries a stale id (the user switched conversations
+        // via NewConversation since connecting). Rebuild the connection through
+        // the normal query-param load flow so the server replays the ACTIVE
+        // conversation and ConversationLoaded replaces client message state.
+        conversationIdRef.current = activeId
+        setReconnectCounter(c => c + 1)
+      }
+      // else: the URL already names the active conversation — OnConnectedAsync
+      // replayed it from the DB and re-sent ConversationLoaded, which replaces
+      // client message state; nothing more to do.
+    })
     connection.onclose(() => setConnectionStatus('disconnected'))
 
     // eslint-disable-next-line react-hooks/set-state-in-effect

@@ -85,18 +85,17 @@ guards adminer and qdrant.
   are the higher-value targets and are the ones gated.
 - **Traefik `PathPrefix` matching is case-sensitive; ASP.NET routing is
   case-insensitive.** The `/admin`/`/api/admin` guard on `toimi-web-admin`
-  matches those exact-case prefixes, but ASP.NET will still route a
-  case-variant request (e.g. `GET /Api/admin/summary`, `/ADMIN`) to the same
-  controller. Traefik's router doesn't recognize the variant as `/api/admin`
-  and falls through to the open `toimi-web` ingress, which has no basicAuth
-  — so a case-variant path reaches the admin API unauthenticated. This sits
-  inside the same accepted envelope as the point above (anyone who can reach
-  the open ingress can already do strictly more via the chat UI), so it is
-  not treated as an active vulnerability, but it is a real gap in the
-  admin-auth guarantee specifically and is tracked as a follow-up: either
-  enforce admin auth in the application layer (defense in depth, independent
-  of routing case) or move to Traefik v3's `PathRegexp` with a `(?i)` flag
-  once the server's Traefik version is confirmed to support it.
+  matches those exact-case prefixes on the RAW path, but ASP.NET routes the
+  DECODED path case-insensitively — so a case-variant (`GET /Api/admin/summary`,
+  `/ADMIN`) or percent-encoded (`/api/%61dmin`) request falls through to the
+  open `toimi-web` ingress yet still reaches the admin endpoints.
+  **Mitigated app-side (`AdminPathGuard` middleware in `toimi.web`):** any
+  request whose decoded path is an admin path but whose raw target does not
+  start with the exact lowercase literal now gets a 404, so non-canonical
+  requests never reach the admin endpoints. The Traefik-side limitation
+  itself remains (its router still only matches the exact-case prefix), but
+  the bypass is closed at the application layer, independent of the server's
+  Traefik version.
 - **Backups live on the same node disk as the databases** (see
   `docs/ops/disaster-recovery.md`) — protects against bad migrations/
   corruption, not disk failure. Off-site replication is still deferred; this
@@ -129,6 +128,7 @@ curl -sI --cacert toimi-ca.crt https://$QDRANT_HOST/                    # expect
 curl -sI http://$ADMINER_HOST/                                          # expect 301/308 → https
 curl -sI http://$QDRANT_HOST/                                           # expect 301/308 → https
 curl -sI --cacert toimi-ca.crt https://$TOIMI_HOST/api/admin/summary    # expect 401
+curl -sI --cacert toimi-ca.crt https://$TOIMI_HOST/Api/admin/summary    # expect 404 (path guard)
 curl -sI --cacert toimi-ca.crt https://$TOIMI_HOST/ruutu/               # expect 200 (no auth — display surface)
 kubectl top pods -n apps; kubectl top pods -n data                      # all within limits
 kubectl get certificates -A                                             # all Ready=True

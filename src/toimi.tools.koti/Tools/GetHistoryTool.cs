@@ -18,6 +18,10 @@ public class GetHistoryTool(HomeAssistantClient ha)
     }
 
     var result = await ha.GetHistoryAsync(entityId, hours);
-    return result.ToString();
+    var json = result.GetRawText();
+    const int maxChars = 50_000;
+    return json.Length <= maxChars
+      ? json
+      : json[..maxChars] + "\n[truncated — request fewer hours]";
   }
 }

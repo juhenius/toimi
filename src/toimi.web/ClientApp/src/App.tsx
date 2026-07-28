@@ -1,4 +1,5 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { ToimiView } from './components/ToimiView.tsx'
 import { AdminLayout } from './admin/AdminLayout.tsx'
 import { DashboardPage } from './admin/DashboardPage.tsx'
@@ -12,8 +13,8 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<ToimiView />} />
-        <Route path="/admin" element={<AdminLayout />}>
+        <Route path="/" element={<ErrorBoundary><ToimiView /></ErrorBoundary>} />
+        <Route path="/admin" element={<ErrorBoundary><AdminLayout /></ErrorBoundary>}>
           <Route index element={<DashboardPage />} />
           <Route path="data" element={<DataPage />} />
           <Route path="data/:id" element={<EntityDetailPage />} />

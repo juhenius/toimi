@@ -31,6 +31,15 @@ public class McpToolAggregator(ILogger? logger = null) : IAsyncDisposable
 
       foreach (var tool in connection.Tools.Values)
       {
+        var existing = _wrappedTools.OfType<AIFunction>().FirstOrDefault(t => t.Name == tool.Name);
+        if (existing is not null)
+        {
+          _logger.LogWarning(
+            "Tool name collision: {Tool} from server {Server} is shadowed by an earlier server's tool; rename one of them.",
+            tool.Name, server.Name);
+          continue;
+        }
+
         _wrappedTools.Add(new ResilientMcpTool(this, server.Name, tool, _logger));
       }
     }
