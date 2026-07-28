@@ -1,10 +1,10 @@
 using System.Net;
-using toimi.tools.verkko.Fetcher;
+using Toimi.Core.Net;
 using Xunit;
 
-namespace toimi.tools.verkko.Tests;
+namespace toimi.core.Tests;
 
-public class UrlGuardTests
+public class PrivateAddressTests
 {
   [Theory]
   [InlineData("10.0.0.1")]
@@ -24,7 +24,7 @@ public class UrlGuardTests
   [InlineData("::10.0.0.1")]
   public void IsPrivate_true_for_internal_addresses(string ip)
   {
-    Assert.True(UrlGuard.IsPrivate(IPAddress.Parse(ip)));
+    Assert.True(PrivateAddress.IsPrivate(IPAddress.Parse(ip)));
   }
 
   [Theory]
@@ -38,7 +38,7 @@ public class UrlGuardTests
   [InlineData("fe00::1")]
   public void IsPrivate_false_for_public_addresses(string ip)
   {
-    Assert.False(UrlGuard.IsPrivate(IPAddress.Parse(ip)));
+    Assert.False(PrivateAddress.IsPrivate(IPAddress.Parse(ip)));
   }
 
   [Theory]
@@ -50,7 +50,7 @@ public class UrlGuardTests
   [InlineData("")]
   public void IsBlockedHost_true_for_internal_hosts(string host)
   {
-    Assert.True(UrlGuard.IsBlockedHost(host));
+    Assert.True(PrivateAddress.IsBlockedHost(host));
   }
 
   [Theory]
@@ -58,6 +58,6 @@ public class UrlGuardTests
   [InlineData("api.github.com")]
   public void IsBlockedHost_false_for_public_hostnames(string host)
   {
-    Assert.False(UrlGuard.IsBlockedHost(host));
+    Assert.False(PrivateAddress.IsBlockedHost(host));
   }
 }

@@ -40,6 +40,7 @@ public class SafeUrlTests
   [InlineData("https://[fc00::1]/")]
   [InlineData("https://[fe80::1]/")]
   [InlineData("https://[::ffff:10.0.0.5]/")]
+  [InlineData("https://[::0a00:0001]/")] // deprecated IPv4-compatible ::a.b.c.d form → 10.0.0.1
   [InlineData("https://0.0.0.0/")]
   [InlineData("https://100.64.0.1/")]
   public void Rejects_loopback_private_and_single_label_hosts(string url)

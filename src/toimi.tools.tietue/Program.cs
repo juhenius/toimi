@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using Qdrant.Client;
+using Toimi.Core.Hosting;
 using toimi.tools.tietue.Data;
 using toimi.tools.tietue.Entities;
 using toimi.tools.tietue.Semantic;
@@ -68,17 +69,7 @@ builder.Services.AddSingleton<toimi.tools.tietue.Scripts.ScriptEngine>();
 builder.Services.AddScoped<toimi.tools.tietue.Scripts.ScriptEffectApplier>();
 builder.Services.AddScoped<toimi.tools.tietue.Handlers.INativeHandler, toimi.tools.tietue.Handlers.ScriptHandler>();
 
-builder.Services
-  .AddMcpServer(options =>
-  {
-    options.ServerInfo = new()
-    {
-      Name = "tietue",
-      Version = "1.0.0"
-    };
-  })
-  .WithHttpTransport()
-  .WithToolsFromAssembly();
+builder.Services.AddToimiMcpServer("tietue", typeof(Program).Assembly);
 
 var app = builder.Build();
 
@@ -99,8 +90,8 @@ using (var scope = app.Services.CreateScope())
   }
 }
 
-app.MapMcp();
-app.MapGet("/health", () => Results.Ok());
+app.MapToimiMcp();
+app.MapToimiReadiness<TietueDbContext>();
 toimi.tools.tietue.Admin.AdminEndpoints.MapAdminEndpoints(app);
 
 app.Run();

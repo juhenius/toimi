@@ -13,6 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../toimi.core/toimi.core.csproj" />
     <ProjectReference Include="../toimi.notifications/toimi.notifications.csproj" />
   </ItemGroup>
 

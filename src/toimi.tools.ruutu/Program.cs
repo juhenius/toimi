@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Toimi.Core.Hosting;
 using toimi.tools.ruutu.Data;
 using toimi.tools.ruutu.Data.Repositories;
 using toimi.tools.ruutu.Transport;
@@ -23,17 +24,7 @@ builder.Services.AddScoped<ContentPushService>();
 
 builder.Services.AddControllers();
 
-builder.Services
-  .AddMcpServer(options =>
-  {
-    options.ServerInfo = new()
-    {
-      Name = "ruutu",
-      Version = "1.0.0"
-    };
-  })
-  .WithHttpTransport()
-  .WithToolsFromAssembly();
+builder.Services.AddToimiMcpServer("ruutu", typeof(Program).Assembly);
 
 var app = builder.Build();
 
@@ -56,7 +47,7 @@ using (var seedScope = app.Services.CreateScope())
   await seeder.SeedAsync();
 }
 
-app.MapMcp();
-app.MapGet("/health", () => Results.Ok());
+app.MapToimiMcp();
+app.MapToimiReadiness<RuutuDbContext>();
 
 app.Run();

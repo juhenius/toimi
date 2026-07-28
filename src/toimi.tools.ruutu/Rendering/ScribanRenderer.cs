@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Sockets;
 using System.Text.Json;
 using Scriban;
 using Scriban.Runtime;
@@ -54,7 +53,7 @@ public static class ScribanRenderer
 
     if (IPAddress.TryParse(host, out var ip))
     {
-      if (IsPrivate(ip))
+      if (Toimi.Core.Net.PrivateAddress.IsPrivate(ip))
       {
         return "about:blank";
       }
@@ -66,49 +65,6 @@ public static class ScribanRenderer
     }
 
     return WebUtility.HtmlEncode(uri.AbsoluteUri);
-  }
-
-  private static bool IsPrivate(IPAddress ip)
-  {
-    if (IPAddress.IsLoopback(ip))
-    {
-      return true;
-    }
-
-    if (ip.AddressFamily == AddressFamily.InterNetworkV6)
-    {
-      if (ip.IsIPv6LinkLocal)
-      {
-        return true;
-      }
-
-      var b6 = ip.GetAddressBytes();
-      if ((b6[0] & 0xFE) == 0xFC)
-      {
-        return true;                    // fc00::/7 unique-local
-      }
-
-      if (ip.IsIPv4MappedToIPv6)
-      {
-        return IsPrivate(ip.MapToIPv4()); // unwrap ::ffff:a.b.c.d
-      }
-
-      return false;
-    }
-
-    if (ip.AddressFamily == AddressFamily.InterNetwork)
-    {
-      var b = ip.GetAddressBytes();
-      return b[0] == 0                                  // 0.0.0.0/8 (unspecified; localhost on some OSes)
-          || b[0] == 10                                 // 10/8
-          || b[0] == 127                                // 127/8 loopback
-          || (b[0] == 100 && b[1] >= 64 && b[1] <= 127) // 100.64/10 CGNAT (RFC 6598)
-          || (b[0] == 169 && b[1] == 254)               // 169.254/16 link-local
-          || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)  // 172.16/12
-          || (b[0] == 192 && b[1] == 168);              // 192.168/16
-    }
-
-    return false;
   }
 
   private static async Task<string> RenderInternalAsync(

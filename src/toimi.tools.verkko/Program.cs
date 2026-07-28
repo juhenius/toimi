@@ -1,4 +1,5 @@
 using toimi.tools.verkko.Fetcher;
+using Toimi.Core.Hosting;
 using Toimi.Notifications;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -28,21 +29,10 @@ var ntfyOptions = builder.Configuration.GetSection("Ntfy").Get<NtfyOptions>() ??
 builder.Services.AddSingleton(ntfyOptions);
 builder.Services.AddSingleton(new NtfyClient(ntfyOptions));
 
-builder.Services
-  .AddMcpServer(options =>
-  {
-    options.ServerInfo = new()
-    {
-      Name = "verkko",
-      Version = "1.0.0"
-    };
-  })
-  .WithHttpTransport()
-  .WithToolsFromAssembly();
+builder.Services.AddToimiMcpServer("verkko", typeof(Program).Assembly);
 
 var app = builder.Build();
 
-app.MapMcp();
-app.MapGet("/health", () => Results.Ok());
+app.MapToimiMcp();
 
 app.Run();

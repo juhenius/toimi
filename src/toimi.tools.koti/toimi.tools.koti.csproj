@@ -11,4 +11,8 @@
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.1.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="../toimi.core/toimi.core.csproj" />
+  </ItemGroup>
+
 </Project>

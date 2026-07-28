@@ -1,4 +1,5 @@
 using toimi.tools.koti.HomeAssistant;
+using Toimi.Core.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,21 +18,10 @@ builder.Services.AddSingleton(sp =>
   return new HomeAssistantClient(http, haOptions);
 });
 
-builder.Services
-  .AddMcpServer(options =>
-  {
-    options.ServerInfo = new()
-    {
-      Name = "koti",
-      Version = "1.0.0"
-    };
-  })
-  .WithHttpTransport()
-  .WithToolsFromAssembly();
+builder.Services.AddToimiMcpServer("koti", typeof(Program).Assembly);
 
 var app = builder.Build();
 
-app.MapMcp();
-app.MapGet("/health", () => Results.Ok());
+app.MapToimiMcp();
 
 app.Run();
