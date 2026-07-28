@@ -50,6 +50,7 @@ builder.Services.AddScoped<toimi.tools.tietue.Handlers.INativeHandler, toimi.too
 builder.Services.AddScoped<toimi.tools.tietue.Handlers.INativeHandler, toimi.tools.tietue.Handlers.DeleteHandler>();
 builder.Services.AddScoped<toimi.tools.tietue.Handlers.HandlerRegistry>();
 builder.Services.AddScoped<toimi.tools.tietue.Events.EntityEventStore>();
+builder.Services.AddScoped<toimi.tools.tietue.Scheduling.ITickLock, toimi.tools.tietue.Scheduling.PostgresTickLock>();
 builder.Services.AddScoped<toimi.tools.tietue.Scheduling.SchedulerTick>();
 builder.Services.AddHostedService<toimi.tools.tietue.Scheduling.TriggerWorker>();
 

@@ -1,14 +1,29 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using toimi.tools.tietue.Data;
 using toimi.tools.tietue.Events;
 using toimi.tools.tietue.Handlers;
 
 namespace toimi.tools.tietue.Scheduling;
 
-public class SchedulerTick(TietueDbContext db, HandlerRegistry handlers, EntityEventStore events)
+public class SchedulerTick(TietueDbContext db, HandlerRegistry handlers, EntityEventStore events, ILogger<SchedulerTick>? logger = null, ITickLock? tickLock = null)
 {
+  private readonly ILogger<SchedulerTick> _logger = logger ?? NullLogger<SchedulerTick>.Instance;
+
   public async Task RunDueAsync(DateTimeOffset now, CancellationToken ct)
   {
+    IAsyncDisposable? lease = null;
+    if (tickLock is not null)
+    {
+      lease = await tickLock.TryAcquireAsync(ct);
+      if (lease is null)
+      {
+        _logger.LogDebug("Scheduler tick skipped: another instance holds the tick lock.");
+        return;
+      }
+    }
+    await using var _ = lease;
+
     var due = await db.Triggers
       .Where(t => t.Enabled && t.NextFireAt != null && t.NextFireAt <= now)
       .OrderBy(t => t.NextFireAt)
@@ -42,6 +57,14 @@ public class SchedulerTick(TietueDbContext db, HandlerRegistry handlers, EntityE
           {
             status = "error";
             resultJson = System.Text.Json.JsonSerializer.Serialize(new { error = ex.Message });
+            _logger.LogError(ex, "Handler {HandlerKind} failed for trigger {TriggerId} (entity {EntityId}).",
+              trigger.HandlerKind, trigger.Id, trigger.EntityId);
+          }
+
+          if (_logger.IsEnabled(LogLevel.Information))
+          {
+            _logger.LogInformation("Trigger {TriggerId} ({HandlerKind}) fired for entity {EntityId}: {Status}",
+              trigger.Id, trigger.HandlerKind, trigger.EntityId, status);
           }
 
           // The handler may have deleted the entity (delete handler, or an agent run).
@@ -55,6 +78,11 @@ public class SchedulerTick(TietueDbContext db, HandlerRegistry handlers, EntityE
           {
             deletedDuringHandling = true;
           }
+        }
+        else
+        {
+          _logger.LogWarning("No handler registered for kind {HandlerKind} (trigger {TriggerId}, entity {EntityId}); trigger advances without firing.",
+            trigger.HandlerKind, trigger.Id, trigger.EntityId);
         }
       }
 
