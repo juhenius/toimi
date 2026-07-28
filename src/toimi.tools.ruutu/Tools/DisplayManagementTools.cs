@@ -15,7 +15,9 @@ public class DisplayManagementTools(DisplayRepository displays)
     CancellationToken ct = default)
   {
     if (capabilityTierOverride is not null and not "modern" and not "legacy")
+    {
       return "Error: capabilityTierOverride must be 'modern', 'legacy', or null.";
+    }
 
     var d = await displays.RegisterAsync(identifier, capabilityTierOverride, ct);
     return JsonSerializer.Serialize(new { d.Identifier, d.Tier, d.TierOverride, url = $"/ruutu/{d.Identifier}" });
@@ -35,7 +37,8 @@ public class DisplayManagementTools(DisplayRepository displays)
   {
     var list = await displays.ListAsync(ct);
     var now = DateTimeOffset.UtcNow;
-    var view = list.Select(d => new {
+    var view = list.Select(d => new
+    {
       d.Identifier,
       d.Tier,
       status = (d.LastSeenAt.HasValue && (now - d.LastSeenAt.Value) < TimeSpan.FromSeconds(30)) ? "online" : "offline",
@@ -54,7 +57,11 @@ public class DisplayManagementTools(DisplayRepository displays)
     [Description("Tier to apply: 'modern' or 'legacy'.")] string tier,
     CancellationToken ct = default)
   {
-    if (tier is not "modern" and not "legacy") return "Error: tier must be 'modern' or 'legacy'.";
+    if (tier is not "modern" and not "legacy")
+    {
+      return "Error: tier must be 'modern' or 'legacy'.";
+    }
+
     var ok = await displays.SetTierAsync(identifier, tier, ct);
     return ok ? "ok" : $"Display '{identifier}' not found.";
   }

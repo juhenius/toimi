@@ -25,7 +25,11 @@ public class DisplayEventRepository(RuutuDbContext db)
   public Task<List<DisplayEvent>> GetSinceAsync(int displayId, DateTimeOffset? since, CancellationToken ct = default)
   {
     var q = db.DisplayEvents.Where(e => e.DisplayId == displayId);
-    if (since.HasValue) q = q.Where(e => e.CreatedAt > since.Value);
+    if (since.HasValue)
+    {
+      q = q.Where(e => e.CreatedAt > since.Value);
+    }
+
     return q.OrderByDescending(e => e.CreatedAt).Take(200).ToListAsync(ct);
   }
 }

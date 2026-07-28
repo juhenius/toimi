@@ -25,27 +25,29 @@ public class SeedTemplatesRenderTests
 
   private sealed class MapSource(IReadOnlyDictionary<string, TemplateBody> map) : IRenderTemplateSource
   {
-    public Task<TemplateBody?> GetAsync(string name, CancellationToken ct = default) =>
-      Task.FromResult(map.TryGetValue(name, out var b) ? b : null);
+    public Task<TemplateBody?> GetAsync(string name, CancellationToken ct = default)
+    {
+      return Task.FromResult(map.TryGetValue(name, out var b) ? b : null);
+    }
   }
 
   [Theory]
   // leaf templates
   [InlineData("splash", "{}")]
   [InlineData("clock", "{}")]
-  [InlineData("message", """{"body":"hi"}""")]
-  [InlineData("notification", """{"title":"T","body":"B"}""")]
-  [InlineData("todo_list", """{"title":"T","steps":[]}""")]
-  [InlineData("weather", """{"location":"L","current":{"temp":0,"condition":"C"}}""")]
-  [InlineData("calendar_day", """{"date":"2026-01-01","events":[]}""")]
-  [InlineData("reminders", """{"items":[]}""")]
+  [InlineData("message", /*lang=json,strict*/ """{"body":"hi"}""")]
+  [InlineData("notification", /*lang=json,strict*/ """{"title":"T","body":"B"}""")]
+  [InlineData("todo_list", /*lang=json,strict*/ """{"title":"T","steps":[]}""")]
+  [InlineData("weather", /*lang=json,strict*/ """{"location":"L","current":{"temp":0,"condition":"C"}}""")]
+  [InlineData("calendar_day", /*lang=json,strict*/ """{"date":"2026-01-01","events":[]}""")]
+  [InlineData("reminders", /*lang=json,strict*/ """{"items":[]}""")]
   // layouts with required sub-template slots — use splash as filler so the
   // composite recursion is also exercised
-  [InlineData("split_horizontal", """{"left":{"template":"splash","data":{}},"right":{"template":"splash","data":{}}}""")]
-  [InlineData("split_vertical", """{"top":{"template":"splash","data":{}},"bottom":{"template":"splash","data":{}}}""")]
-  [InlineData("stack", """{"items":[]}""")]
-  [InlineData("stack", """{"items":[{"template":"splash","data":{}},{"template":"splash","data":{}}]}""")]
-  [InlineData("webview", """{"url":"https://x.test/a"}""")]
+  [InlineData("split_horizontal", /*lang=json,strict*/ """{"left":{"template":"splash","data":{}},"right":{"template":"splash","data":{}}}""")]
+  [InlineData("split_vertical", /*lang=json,strict*/ """{"top":{"template":"splash","data":{}},"bottom":{"template":"splash","data":{}}}""")]
+  [InlineData("stack", /*lang=json,strict*/ """{"items":[]}""")]
+  [InlineData("stack", /*lang=json,strict*/ """{"items":[{"template":"splash","data":{}},{"template":"splash","data":{}}]}""")]
+  [InlineData("webview", /*lang=json,strict*/ """{"url":"https://x.test/a"}""")]
   public async Task Seeded_template_renders_in_modern_tier(string templateName, string dataJson)
   {
     var data = JsonDocument.Parse(dataJson).RootElement;
@@ -56,17 +58,17 @@ public class SeedTemplatesRenderTests
   [Theory]
   [InlineData("splash", "{}")]
   [InlineData("clock", "{}")]
-  [InlineData("message", """{"body":"hi"}""")]
-  [InlineData("notification", """{"title":"T","body":"B"}""")]
-  [InlineData("todo_list", """{"title":"T","steps":[]}""")]
-  [InlineData("weather", """{"location":"L","current":{"temp":0,"condition":"C"}}""")]
-  [InlineData("calendar_day", """{"date":"2026-01-01","events":[]}""")]
-  [InlineData("reminders", """{"items":[]}""")]
-  [InlineData("split_horizontal", """{"left":{"template":"splash","data":{}},"right":{"template":"splash","data":{}}}""")]
-  [InlineData("split_vertical", """{"top":{"template":"splash","data":{}},"bottom":{"template":"splash","data":{}}}""")]
-  [InlineData("stack", """{"items":[]}""")]
-  [InlineData("stack", """{"items":[{"template":"splash","data":{}},{"template":"splash","data":{}}]}""")]
-  [InlineData("webview", """{"url":"https://x.test/a"}""")]
+  [InlineData("message", /*lang=json,strict*/ """{"body":"hi"}""")]
+  [InlineData("notification", /*lang=json,strict*/ """{"title":"T","body":"B"}""")]
+  [InlineData("todo_list", /*lang=json,strict*/ """{"title":"T","steps":[]}""")]
+  [InlineData("weather", /*lang=json,strict*/ """{"location":"L","current":{"temp":0,"condition":"C"}}""")]
+  [InlineData("calendar_day", /*lang=json,strict*/ """{"date":"2026-01-01","events":[]}""")]
+  [InlineData("reminders", /*lang=json,strict*/ """{"items":[]}""")]
+  [InlineData("split_horizontal", /*lang=json,strict*/ """{"left":{"template":"splash","data":{}},"right":{"template":"splash","data":{}}}""")]
+  [InlineData("split_vertical", /*lang=json,strict*/ """{"top":{"template":"splash","data":{}},"bottom":{"template":"splash","data":{}}}""")]
+  [InlineData("stack", /*lang=json,strict*/ """{"items":[]}""")]
+  [InlineData("stack", /*lang=json,strict*/ """{"items":[{"template":"splash","data":{}},{"template":"splash","data":{}}]}""")]
+  [InlineData("webview", /*lang=json,strict*/ """{"url":"https://x.test/a"}""")]
   public async Task Seeded_template_renders_in_legacy_tier(string templateName, string dataJson)
   {
     var data = JsonDocument.Parse(dataJson).RootElement;

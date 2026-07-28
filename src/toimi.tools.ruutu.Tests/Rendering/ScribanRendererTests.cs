@@ -6,26 +6,31 @@ namespace toimi.tools.ruutu.Tests.Rendering;
 
 public class ScribanRendererTests
 {
-  private static InMemorySource Source(params (string name, string modern, string legacy)[] tpls) =>
-    new(tpls.ToDictionary(t => t.name, t => (t.modern, t.legacy)));
+  private static InMemorySource Source(params (string name, string modern, string legacy)[] tpls)
+  {
+    return new(tpls.ToDictionary(t => t.name, t => (t.modern, t.legacy)));
+  }
 
   private sealed class InMemorySource(IReadOnlyDictionary<string, (string Modern, string Legacy)> map) : IRenderTemplateSource
   {
     public Task<TemplateBody?> GetAsync(string name, CancellationToken ct = default)
     {
-      if (map.TryGetValue(name, out var pair))
-        return Task.FromResult<TemplateBody?>(new TemplateBody(pair.Modern, pair.Legacy));
-      return Task.FromResult<TemplateBody?>(null);
+      return map.TryGetValue(name, out var pair)
+        ? Task.FromResult<TemplateBody?>(new TemplateBody(pair.Modern, pair.Legacy))
+        : Task.FromResult<TemplateBody?>(null);
     }
   }
 
-  private static JsonElement Json(string raw) => JsonDocument.Parse(raw).RootElement;
+  private static JsonElement Json(string raw)
+  {
+    return JsonDocument.Parse(raw).RootElement;
+  }
 
   [Fact]
   public async Task Renders_a_leaf_template_with_substitution()
   {
     var src = Source(("greet", "<p>Hello {{ name }}</p>", "<p>Hello {{ name }}</p>"));
-    var html = await ScribanRenderer.RenderAsync("greet", Json("""{ "name": "World" }"""), "modern", src);
+    var html = await ScribanRenderer.RenderAsync("greet", Json(/*lang=json,strict*/ """{ "name": "World" }"""), "modern", src);
     Assert.Contains("Hello World", html);
   }
 
@@ -60,7 +65,7 @@ public class ScribanRendererTests
     var src = Source(
       ("inner", "<span>{{ msg }}</span>", "<span>{{ msg }}</span>"),
       ("outer", "<div>{{ slot_html }}</div>", "<div>{{ slot_html }}</div>"));
-    var data = Json("""{ "slot": { "template": "inner", "data": { "msg": "hi" } } }""");
+    var data = Json(/*lang=json,strict*/ """{ "slot": { "template": "inner", "data": { "msg": "hi" } } }""");
     var html = await ScribanRenderer.RenderAsync("outer", data, "modern", src);
     Assert.Contains("<div><span>hi</span></div>", html);
   }
@@ -71,7 +76,7 @@ public class ScribanRendererTests
     var src = Source(
       ("item", "<li>{{ label }}</li>", "<li>{{ label }}</li>"),
       ("list", "<ul>{{ for it in items_html }}{{ it }}{{ end }}</ul>", "<ul>{{ for it in items_html }}{{ it }}{{ end }}</ul>"));
-    var data = Json("""
+    var data = Json(/*lang=json,strict*/ """
       { "items": [
           { "template": "item", "data": { "label": "a" } },
           { "template": "item", "data": { "label": "b" } }
@@ -87,7 +92,7 @@ public class ScribanRendererTests
     var src = Source(
       ("leaf", "leaf", "leaf"),
       ("wrap", "[{{ inner_html }}]", "[{{ inner_html }}]"));
-    var deep = Json("""
+    var deep = Json(/*lang=json,strict*/ """
       {
         "inner": {
           "template": "wrap",
@@ -119,7 +124,7 @@ public class ScribanRendererTests
   public async Task Plain_scalar_values_pass_through_unchanged()
   {
     var src = Source(("t", "n={{ count }} f={{ flag }}", "n={{ count }} f={{ flag }}"));
-    var html = await ScribanRenderer.RenderAsync("t", Json("""{ "count": 5, "flag": true }"""), "modern", src);
+    var html = await ScribanRenderer.RenderAsync("t", Json(/*lang=json,strict*/ """{ "count": 5, "flag": true }"""), "modern", src);
     Assert.Equal("n=5 f=true", html);
   }
 }

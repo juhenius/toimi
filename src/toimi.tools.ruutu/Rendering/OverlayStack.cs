@@ -10,9 +10,17 @@ public static class OverlayStack
 
   public static OverlayFrame[] Parse(string json)
   {
-    if (string.IsNullOrWhiteSpace(json)) return Array.Empty<OverlayFrame>();
+    if (string.IsNullOrWhiteSpace(json))
+    {
+      return [];
+    }
+
     using var doc = JsonDocument.Parse(json);
-    if (doc.RootElement.ValueKind != JsonValueKind.Array) return Array.Empty<OverlayFrame>();
+    if (doc.RootElement.ValueKind != JsonValueKind.Array)
+    {
+      return [];
+    }
+
     var frames = new List<OverlayFrame>();
     foreach (var el in doc.RootElement.EnumerateArray())
     {
@@ -21,7 +29,7 @@ public static class OverlayStack
       var enq = el.GetProperty("enqueued_at").GetDateTimeOffset();
       frames.Add(new OverlayFrame(template, data, enq));
     }
-    return frames.ToArray();
+    return [.. frames];
   }
 
   public static string Serialize(IReadOnlyList<OverlayFrame> frames)
@@ -62,7 +70,11 @@ public static class OverlayStack
   /// <summary>Pop the top of the stack. Returns the remainder and the NEW top (if any).</summary>
   public static (OverlayFrame[] Stack, OverlayFrame? NewTop) Pop(IReadOnlyList<OverlayFrame> current)
   {
-    if (current.Count == 0) return (Array.Empty<OverlayFrame>(), null);
+    if (current.Count == 0)
+    {
+      return ([], null);
+    }
+
     var remainder = current.Skip(1).ToArray();
     var newTop = remainder.Length > 0 ? remainder[0] : null;
     return (remainder, newTop);

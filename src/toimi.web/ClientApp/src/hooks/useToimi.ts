@@ -133,7 +133,7 @@ export function useToimi() {
       })
     })
 
-    connection.on('MessageComplete', (_fullMessage: string) => {
+    connection.on('MessageComplete', () => {
       setIsStreaming(false)
       connection.invoke('ListConversations')
     })
@@ -156,8 +156,9 @@ export function useToimi() {
     connection.onreconnected(() => setConnectionStatus('connected'))
     connection.onclose(() => setConnectionStatus('disconnected'))
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setConnectionStatus('connecting')
-    connection.start().then(() => {
+    void connection.start().then(() => {
       setConnectionStatus('connected')
     })
 

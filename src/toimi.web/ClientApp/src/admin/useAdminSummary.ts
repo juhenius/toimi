@@ -19,6 +19,7 @@ export function useAdminSummary(query: string) {
   const [loading, setLoading] = useState(true)
   useEffect(() => {
     let cancelled = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true)
     const url = `/api/admin/summary?q=${encodeURIComponent(query)}&limit=50`
     void fetch(url).then(async r => {

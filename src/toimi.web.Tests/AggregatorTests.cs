@@ -12,13 +12,17 @@ public class AggregatorTests
   private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler
   {
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
-      => Task.FromResult(handler(request));
+    {
+      return Task.FromResult(handler(request));
+    }
   }
 
   private sealed class StubFactory(Dictionary<string, HttpMessageHandler> handlers) : IHttpClientFactory
   {
     public HttpClient CreateClient(string name)
-      => new(handlers[name]) { BaseAddress = new Uri("http://localhost") };
+    {
+      return new(handlers[name]) { BaseAddress = new Uri("http://localhost") };
+    }
   }
 
   [Fact]
@@ -62,12 +66,17 @@ public class ForwarderTests
   private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler
   {
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
-      => Task.FromResult(handler(request));
+    {
+      return Task.FromResult(handler(request));
+    }
   }
 
   private sealed class StubFactory(HttpMessageHandler handler) : IHttpClientFactory
   {
-    public HttpClient CreateClient(string name) => new(handler) { BaseAddress = new Uri("http://upstream") };
+    public HttpClient CreateClient(string name)
+    {
+      return new(handler) { BaseAddress = new Uri("http://upstream") };
+    }
   }
 
   [Fact]

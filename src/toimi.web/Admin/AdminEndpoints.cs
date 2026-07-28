@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using Toimi.Core.Admin;
 
 namespace Toimi.Web.Admin;
@@ -35,14 +34,19 @@ public static class AdminForwarder
       string tool, string? path, HttpContext ctx,
       AdminToolsOptions opts, IHttpClientFactory http)
   {
-    if (!opts.Tools.Contains(tool)) return Results.NotFound();
+    if (!opts.Tools.Contains(tool))
+    {
+      return Results.NotFound();
+    }
 
     var client = http.CreateClient($"admin-{tool}");
     var upstreamPath = $"/admin/{path}{ctx.Request.QueryString}";
     var req = new HttpRequestMessage(new HttpMethod(ctx.Request.Method), upstreamPath);
 
     if (ctx.Request.Headers.TryGetValue("If-Unmodified-Since", out var ius))
-      req.Headers.TryAddWithoutValidation("If-Unmodified-Since", ius.ToArray());
+    {
+      req.Headers.TryAddWithoutValidation("If-Unmodified-Since", [.. ius]);
+    }
 
     if (HttpMethods.IsPost(ctx.Request.Method)
         || HttpMethods.IsPut(ctx.Request.Method)
@@ -53,7 +57,9 @@ public static class AdminForwarder
       ms.Position = 0;
       req.Content = new StreamContent(ms);
       if (!string.IsNullOrEmpty(ctx.Request.ContentType))
+      {
         req.Content.Headers.TryAddWithoutValidation("Content-Type", ctx.Request.ContentType);
+      }
     }
 
     HttpResponseMessage resp;
@@ -62,11 +68,21 @@ public static class AdminForwarder
 
     ctx.Response.StatusCode = (int)resp.StatusCode;
     foreach (var h in resp.Headers)
+    {
       if (!HopByHopHeaders.Contains(h.Key))
+      {
         ctx.Response.Headers[h.Key] = h.Value.ToArray();
+      }
+    }
+
     foreach (var h in resp.Content.Headers)
+    {
       if (!HopByHopHeaders.Contains(h.Key))
+      {
         ctx.Response.Headers[h.Key] = h.Value.ToArray();
+      }
+    }
+
     await resp.Content.CopyToAsync(ctx.Response.Body);
     return Results.Empty;
   }
@@ -84,11 +100,11 @@ public static class AdminAggregator
         var client = http.CreateClient($"admin-{tool}");
         var rows = await client.GetFromJsonAsync<AdminSummaryDto[]>(
             $"/admin/summary?q={Uri.EscapeDataString(q ?? string.Empty)}&limit={limit}");
-        return (tool, items: (IReadOnlyList<AdminSummaryDto>)(rows ?? []), error: (string?)null);
+        return (tool, items: (IReadOnlyList<AdminSummaryDto>)(rows ?? []), error: null);
       }
       catch (Exception ex)
       {
-        return (tool, items: (IReadOnlyList<AdminSummaryDto>)[], error: ex.Message);
+        return (tool, items: (IReadOnlyList<AdminSummaryDto>)[], error: (string?)ex.Message);
       }
     });
 

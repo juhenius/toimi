@@ -13,7 +13,8 @@ public class TemplateTools(TemplateRepository templates, DbTemplateSource source
   public async Task<string> DisplayListTemplates(CancellationToken ct = default)
   {
     var list = await templates.ListAsync(ct);
-    var view = list.Select(t => new {
+    var view = list.Select(t => new
+    {
       t.Name,
       t.Description,
       schema = JsonDocument.Parse(t.SchemaJson).RootElement,
@@ -30,15 +31,17 @@ public class TemplateTools(TemplateRepository templates, DbTemplateSource source
     CancellationToken ct = default)
   {
     var t = await templates.GetAsync(name, ct);
-    if (t is null) return $"Template '{name}' not found.";
-    return JsonSerializer.Serialize(new
-    {
-      t.Name, t.Description,
-      schema = JsonDocument.Parse(t.SchemaJson).RootElement,
-      modern_html = t.ModernHtml,
-      legacy_html = t.LegacyHtml,
-      t.IsSeeded
-    });
+    return t is null
+      ? $"Template '{name}' not found."
+      : JsonSerializer.Serialize(new
+      {
+        t.Name,
+        t.Description,
+        schema = JsonDocument.Parse(t.SchemaJson).RootElement,
+        modern_html = t.ModernHtml,
+        legacy_html = t.LegacyHtml,
+        t.IsSeeded
+      });
   }
 
   [McpServerTool, Description("Create a new template. Both modern_html and legacy_html variants are required and are LINTED before saving. Templates are declarative HTML — no <script> tags. Use data-tap/data-target/data-value attributes for interactivity. Variables come from the data object via Scriban syntax: {{ name }}, {{ for x in items }}…{{ end }}. For composite layouts: any data field shaped {template, data} is auto-rendered and the result is exposed as {fieldname}_html variable to the parent template. MODERN tier: Safari 14+/Chrome 90+ (≈2020+). Flexbox, grid, gap, vw/vh/rem/clamp/min/max, CSS variables, modern color syntax, WebP images, transitions, transforms allowed. LEGACY tier: iOS Safari 9-12 (iPad 2/3/4/Air 1). NO flexbox/grid (use tables/floats). NO var(--*). NO WebP. NO @import/@font-face. NO clamp/min/max CSS functions. NO :has()/:is()/:where(). Use system font stack only. Tune layouts for ~1024×768 either orientation.")]
@@ -83,7 +86,10 @@ public class TemplateTools(TemplateRepository templates, DbTemplateSource source
     CancellationToken ct = default)
   {
     var existing = await templates.GetAsync(name, ct);
-    if (existing is null) return $"Template '{name}' not found.";
+    if (existing is null)
+    {
+      return $"Template '{name}' not found.";
+    }
 
     var modernLint = modernHtml is null ? null : TierLinter.Lint("modern", modernHtml);
     var legacyLint = legacyHtml is null ? null : TierLinter.Lint("legacy", legacyHtml);
@@ -133,7 +139,11 @@ public class TemplateTools(TemplateRepository templates, DbTemplateSource source
     [Description("Tier: 'modern' or 'legacy'.")] string tier,
     CancellationToken ct = default)
   {
-    if (tier is not "modern" and not "legacy") return "Error: tier must be 'modern' or 'legacy'.";
+    if (tier is not "modern" and not "legacy")
+    {
+      return "Error: tier must be 'modern' or 'legacy'.";
+    }
+
     try
     {
       var data = JsonDocument.Parse(dataJson).RootElement;

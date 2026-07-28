@@ -5,9 +5,11 @@ namespace toimi.tools.ruutu.Tests.Rendering;
 
 public class CapabilityClassifierTests
 {
-  private static CapabilityPayload Caps(bool flex, bool fetch, bool promise) =>
-    new(flex, CssGrid: flex, Fetch: fetch, Promise: promise,
+  private static CapabilityPayload Caps(bool flex, bool fetch, bool promise)
+  {
+    return new(flex, CssGrid: flex, Fetch: fetch, Promise: promise,
         ViewportWidth: 1024, ViewportHeight: 768, UserAgent: "Test");
+  }
 
   [Fact]
   public void Classifies_modern_when_all_features_present()

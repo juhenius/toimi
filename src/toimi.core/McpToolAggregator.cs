@@ -6,9 +6,9 @@ namespace Toimi.Core;
 
 public class McpToolAggregator : IAsyncDisposable
 {
-  private readonly Dictionary<string, ServerConnection> _connections = new();
-  private readonly Dictionary<string, SemaphoreSlim> _reconnectLocks = new();
-  private readonly List<AITool> _wrappedTools = new();
+  private readonly Dictionary<string, ServerConnection> _connections = [];
+  private readonly Dictionary<string, SemaphoreSlim> _reconnectLocks = [];
+  private readonly List<AITool> _wrappedTools = [];
 
   private sealed record ServerConnection(
     McpServerOptions Options,
@@ -21,7 +21,11 @@ public class McpToolAggregator : IAsyncDisposable
     foreach (var server in servers)
     {
       var connection = await ConnectOneAsync(server, cancellationToken);
-      if (connection is null) continue;
+      if (connection is null)
+      {
+        continue;
+      }
+
       foreach (var tool in connection.Tools.Values)
       {
         _wrappedTools.Add(new ResilientMcpTool(this, server.Name, tool));
@@ -37,7 +41,10 @@ public class McpToolAggregator : IAsyncDisposable
   public async Task<string?> CallToolAsync(string toolName, Dictionary<string, object?>? arguments = null, CancellationToken ct = default)
   {
     var tool = _wrappedTools.OfType<AIFunction>().FirstOrDefault(t => t.Name == toolName);
-    if (tool is null) return null;
+    if (tool is null)
+    {
+      return null;
+    }
 
     var args = arguments is not null ? new AIFunctionArguments(arguments) : [];
     var result = await tool.InvokeAsync(args, ct);
@@ -75,8 +82,7 @@ public class McpToolAggregator : IAsyncDisposable
       _connections.Remove(serverName);
 
       var fresh = await ConnectOneAsync(options, ct);
-      if (fresh is null) return null;
-      return fresh.Tools.TryGetValue(toolName, out var tool) ? tool : null;
+      return fresh is null ? null : fresh.Tools.TryGetValue(toolName, out var tool) ? tool : null;
     }
     finally
     {
@@ -183,7 +189,11 @@ public class McpToolAggregator : IAsyncDisposable
 
     lock (_reconnectLocks)
     {
-      foreach (var sem in _reconnectLocks.Values) sem.Dispose();
+      foreach (var sem in _reconnectLocks.Values)
+      {
+        sem.Dispose();
+      }
+
       _reconnectLocks.Clear();
     }
 

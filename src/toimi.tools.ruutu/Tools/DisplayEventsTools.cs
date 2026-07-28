@@ -15,13 +15,19 @@ public class DisplayEventsTools(DisplayRepository displays, DisplayEventReposito
     CancellationToken ct = default)
   {
     var d = await displays.GetAsync(identifier, ct);
-    if (d is null) return $"Display '{identifier}' not found.";
+    if (d is null)
+    {
+      return $"Display '{identifier}' not found.";
+    }
 
     DateTimeOffset? since = null;
     if (sinceUtc is not null)
     {
       if (!DateTimeOffset.TryParse(sinceUtc, out var parsed))
+      {
         return "Error: sinceUtc must be ISO 8601.";
+      }
+
       since = parsed;
     }
 

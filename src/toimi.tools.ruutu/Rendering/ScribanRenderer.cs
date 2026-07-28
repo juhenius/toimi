@@ -26,17 +26,38 @@ public static class ScribanRenderer
   /// </summary>
   public static string SafeUrl(string? input)
   {
-    if (string.IsNullOrWhiteSpace(input)) return "about:blank";
-    if (!Uri.TryCreate(input, UriKind.Absolute, out var uri)) return "about:blank";
-    if (!string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase)) return "about:blank";
-    if (uri.IsLoopback) return "about:blank";
+    if (string.IsNullOrWhiteSpace(input))
+    {
+      return "about:blank";
+    }
+
+    if (!Uri.TryCreate(input, UriKind.Absolute, out var uri))
+    {
+      return "about:blank";
+    }
+
+    if (!string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
+    {
+      return "about:blank";
+    }
+
+    if (uri.IsLoopback)
+    {
+      return "about:blank";
+    }
 
     var host = uri.DnsSafeHost;
-    if (string.IsNullOrEmpty(host)) return "about:blank";
+    if (string.IsNullOrEmpty(host))
+    {
+      return "about:blank";
+    }
 
     if (IPAddress.TryParse(host, out var ip))
     {
-      if (IsPrivate(ip)) return "about:blank";
+      if (IsPrivate(ip))
+      {
+        return "about:blank";
+      }
     }
     else if (!host.Contains('.'))
     {
@@ -49,14 +70,29 @@ public static class ScribanRenderer
 
   private static bool IsPrivate(IPAddress ip)
   {
-    if (IPAddress.IsLoopback(ip)) return true;
+    if (IPAddress.IsLoopback(ip))
+    {
+      return true;
+    }
 
     if (ip.AddressFamily == AddressFamily.InterNetworkV6)
     {
-      if (ip.IsIPv6LinkLocal) return true;
+      if (ip.IsIPv6LinkLocal)
+      {
+        return true;
+      }
+
       var b6 = ip.GetAddressBytes();
-      if ((b6[0] & 0xFE) == 0xFC) return true;                    // fc00::/7 unique-local
-      if (ip.IsIPv4MappedToIPv6) return IsPrivate(ip.MapToIPv4()); // unwrap ::ffff:a.b.c.d
+      if ((b6[0] & 0xFE) == 0xFC)
+      {
+        return true;                    // fc00::/7 unique-local
+      }
+
+      if (ip.IsIPv4MappedToIPv6)
+      {
+        return IsPrivate(ip.MapToIPv4()); // unwrap ::ffff:a.b.c.d
+      }
+
       return false;
     }
 
@@ -80,15 +116,16 @@ public static class ScribanRenderer
     IRenderTemplateSource source, int depth, CancellationToken ct)
   {
     if (depth > MaxDepth)
+    {
       throw new RenderException($"Template recursion exceeded max depth of {MaxDepth} (at '{name}')");
+    }
 
-    var body = await source.GetAsync(name, ct);
-    if (body is null)
-      throw new RenderException($"Template '{name}' not found");
-
+    var body = await source.GetAsync(name, ct) ?? throw new RenderException($"Template '{name}' not found");
     var html = tier == "legacy" ? body.LegacyHtml : body.ModernHtml;
     if (string.IsNullOrEmpty(html))
+    {
       throw new RenderException($"Template '{name}' has no '{tier}' variant");
+    }
 
     var enriched = await EnrichDataWithSlotsAsync(data, tier, source, depth, ct);
 
@@ -96,11 +133,17 @@ public static class ScribanRenderer
     try { template = Template.Parse(html); }
     catch (Exception ex) { throw new RenderException($"Template '{name}' parse error: {ex.Message}", ex); }
     if (template.HasErrors)
+    {
       throw new RenderException($"Template '{name}' parse error: {string.Join("; ", template.Messages)}");
+    }
 
     var scriptObj = new ScriptObject();
-    foreach (var (k, v) in enriched) scriptObj[k] = v;
-    scriptObj.Import("safe_url", (Func<string?, string>)SafeUrl);
+    foreach (var (k, v) in enriched)
+    {
+      scriptObj[k] = v;
+    }
+
+    scriptObj.Import("safe_url", SafeUrl);
     var context = new TemplateContext { StrictVariables = false };
     context.PushGlobal(scriptObj);
 
@@ -112,7 +155,10 @@ public static class ScribanRenderer
     JsonElement data, string tier, IRenderTemplateSource source, int depth, CancellationToken ct)
   {
     var result = new Dictionary<string, object?>();
-    if (data.ValueKind != JsonValueKind.Object) return result;
+    if (data.ValueKind != JsonValueKind.Object)
+    {
+      return result;
+    }
 
     foreach (var prop in data.EnumerateObject())
     {
@@ -135,7 +181,10 @@ public static class ScribanRenderer
             rendered.Add(await RenderInternalAsync(iName!, iData, tier, source, depth + 1, ct));
           }
         }
-        if (anySlot) result[$"{prop.Name}_html"] = rendered;
+        if (anySlot)
+        {
+          result[$"{prop.Name}_html"] = rendered;
+        }
       }
     }
     return result;
@@ -144,23 +193,39 @@ public static class ScribanRenderer
   private static bool IsSlotRef(JsonElement v, out string? name, out JsonElement data)
   {
     name = null; data = default;
-    if (v.ValueKind != JsonValueKind.Object) return false;
-    if (!v.TryGetProperty("template", out var tEl) || tEl.ValueKind != JsonValueKind.String) return false;
-    if (!v.TryGetProperty("data", out var dEl)) return false;
+    if (v.ValueKind != JsonValueKind.Object)
+    {
+      return false;
+    }
+
+    if (!v.TryGetProperty("template", out var tEl) || tEl.ValueKind != JsonValueKind.String)
+    {
+      return false;
+    }
+
+    if (!v.TryGetProperty("data", out var dEl))
+    {
+      return false;
+    }
+
     name = tEl.GetString();
     data = dEl;
     return !string.IsNullOrEmpty(name);
   }
 
-  private static object? JsonToScalar(JsonElement v) => v.ValueKind switch
+  private static object? JsonToScalar(JsonElement v)
   {
-    JsonValueKind.String => v.GetString(),
-    JsonValueKind.Number => v.TryGetInt64(out var n) ? n : v.GetDouble(),
-    JsonValueKind.True => true,
-    JsonValueKind.False => false,
-    JsonValueKind.Null => null,
-    JsonValueKind.Array => v.EnumerateArray().Select(JsonToScalar).ToList(),
-    JsonValueKind.Object => v.EnumerateObject().ToDictionary(p => p.Name, p => JsonToScalar(p.Value)),
-    _ => null
-  };
+    return v.ValueKind switch
+    {
+      JsonValueKind.String => v.GetString(),
+      JsonValueKind.Number => v.TryGetInt64(out var n) ? n : v.GetDouble(),
+      JsonValueKind.True => true,
+      JsonValueKind.False => false,
+      JsonValueKind.Null => null,
+      JsonValueKind.Array => v.EnumerateArray().Select(JsonToScalar).ToList(),
+      JsonValueKind.Object => v.EnumerateObject().ToDictionary(p => p.Name, p => JsonToScalar(p.Value)),
+      JsonValueKind.Undefined => null,
+      _ => null
+    };
+  }
 }

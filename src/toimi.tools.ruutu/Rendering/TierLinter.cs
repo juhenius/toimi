@@ -40,7 +40,11 @@ public static partial class TierLinter
 
   public static LintResult Lint(string tier, string html)
   {
-    if (string.IsNullOrEmpty(html)) return LintResult.Ok();
+    if (string.IsNullOrEmpty(html))
+    {
+      return LintResult.Ok();
+    }
+
     var legacyMode = tier == "legacy";
     var issues = new List<LintIssue>();
     var lines = html.Split('\n');
@@ -50,7 +54,11 @@ public static partial class TierLinter
       var line = lines[i];
       foreach (var rule in Rules)
       {
-        if (!legacyMode && !rule.ModernToo) continue;
+        if (!legacyMode && !rule.ModernToo)
+        {
+          continue;
+        }
+
         if (rule.Pattern.IsMatch(line))
         {
           issues.Add(new LintIssue(i + 1, rule.Name, rule.Message));

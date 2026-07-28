@@ -7,7 +7,6 @@ public class DbTemplateSource(TemplateRepository templates) : IRenderTemplateSou
   public async Task<TemplateBody?> GetAsync(string name, CancellationToken ct = default)
   {
     var t = await templates.GetAsync(name, ct);
-    if (t is null) return null;
-    return new TemplateBody(t.ModernHtml ?? "", t.LegacyHtml ?? "");
+    return t is null ? null : new TemplateBody(t.ModernHtml ?? "", t.LegacyHtml ?? "");
   }
 }

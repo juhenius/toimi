@@ -6,5 +6,7 @@ namespace Toimi.Core.Admin;
 public static class AdminEndpointBuilder
 {
   public static RouteGroupBuilder MapAdmin(this IEndpointRouteBuilder app)
-    => app.MapGroup("/admin");
+  {
+    return app.MapGroup("/admin");
+  }
 }

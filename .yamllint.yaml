@@ -7,6 +7,7 @@ rules:
     max: 200
   truthy:
     allowed-values: ['true', 'false', 'yes', 'no']
+    check-keys: false  # GitHub Actions requires a bare `on:` key
   document-start: disable
   comments:
     min-spaces-from-content: 1

@@ -9,7 +9,7 @@ public class OverlayStackTests
   public void Push_makes_new_overlay_the_top()
   {
     var stack = OverlayStack.Parse("[]");
-    var (next, _) = OverlayStack.Push(stack, new OverlayFrame("notification", "{\"x\":1}", DateTimeOffset.UnixEpoch));
+    var (next, _) = OverlayStack.Push(stack, new OverlayFrame("notification", /*lang=json,strict*/ "{\"x\":1}", DateTimeOffset.UnixEpoch));
     Assert.Single(next);
     Assert.Equal("notification", next[0].Template);
   }
@@ -40,7 +40,7 @@ public class OverlayStackTests
   [Fact]
   public void Pop_on_empty_returns_empty_and_null()
   {
-    var (next, top) = OverlayStack.Pop(Array.Empty<OverlayFrame>());
+    var (next, top) = OverlayStack.Pop([]);
     Assert.Empty(next);
     Assert.Null(top);
   }
@@ -58,26 +58,28 @@ public class OverlayStackTests
   public void Push_evicts_oldest_when_cap_exceeded()
   {
     var stack = Array.Empty<OverlayFrame>();
-    OverlayFrame? evicted = null;
     for (var i = 0; i < OverlayStack.MaxDepth; i++)
+    {
       (stack, _) = OverlayStack.Push(stack, new OverlayFrame($"t{i}", "{}", DateTimeOffset.UnixEpoch.AddSeconds(i)));
+    }
 
+    OverlayFrame? evicted;
     (stack, evicted) = OverlayStack.Push(stack, new OverlayFrame("new", "{}", DateTimeOffset.UnixEpoch.AddSeconds(100)));
 
     Assert.Equal(OverlayStack.MaxDepth, stack.Length);
     Assert.Equal("new", stack[0].Template);
     Assert.NotNull(evicted);
-    Assert.Equal("t0", evicted!.Template);
+    Assert.Equal("t0", evicted.Template);
   }
 
   [Fact]
   public void Serialize_and_parse_round_trip()
   {
-    var stack = new[] { new OverlayFrame("a", "{\"k\":1}", DateTimeOffset.UnixEpoch) };
+    var stack = new[] { new OverlayFrame("a", /*lang=json,strict*/ "{\"k\":1}", DateTimeOffset.UnixEpoch) };
     var json = OverlayStack.Serialize(stack);
     var parsed = OverlayStack.Parse(json);
     Assert.Single(parsed);
     Assert.Equal("a", parsed[0].Template);
-    Assert.Equal("{\"k\":1}", parsed[0].DataJson);
+    Assert.Equal(/*lang=json,strict*/ "{\"k\":1}", parsed[0].DataJson);
   }
 }

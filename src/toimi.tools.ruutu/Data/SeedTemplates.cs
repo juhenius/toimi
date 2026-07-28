@@ -11,7 +11,7 @@ public static class SeedTemplates
     new(
       Name: "splash",
       Description: "Default idle scene. Shows the Toimi splash and the display identifier — useful for confirming the right URL was opened.",
-      SchemaJson: """
+      SchemaJson: /*lang=json,strict*/ """
         {
           "type": "object",
           "properties": { "message": { "type": "string" } },
@@ -40,7 +40,7 @@ public static class SeedTemplates
     new(
       Name: "clock",
       Description: "Large current time + date. Ticks client-side from Date.now() in the device's local time zone. Optional 24h/12h format. Useful as a single-tile glanceable element.",
-      SchemaJson: """
+      SchemaJson: /*lang=json,strict*/ """
         {
           "type": "object",
           "properties": {
@@ -70,7 +70,7 @@ public static class SeedTemplates
     new(
       Name: "message",
       Description: "Big text card with optional title. Use for short standalone messages like 'Welcome home' or 'Leave for school in 5 min'.",
-      SchemaJson: """
+      SchemaJson: /*lang=json,strict*/ """
         {
           "type": "object",
           "properties": {
@@ -103,7 +103,7 @@ public static class SeedTemplates
     new(
       Name: "notification",
       Description: "Notification card. Most commonly used as an overlay. Tap anywhere dismisses. Severity styles the accent color.",
-      SchemaJson: """
+      SchemaJson: /*lang=json,strict*/ """
         {
           "type": "object",
           "properties": {
@@ -141,7 +141,7 @@ public static class SeedTemplates
     new(
       Name: "todo_list",
       Description: "Title plus a checkbox list. Tap a row to record a check event with target=step.id. Use for in-progress routines (e.g. evening routine).",
-      SchemaJson: """
+      SchemaJson: /*lang=json,strict*/ """
         {
           "type": "object",
           "properties": {
@@ -202,7 +202,7 @@ public static class SeedTemplates
     new(
       Name: "weather",
       Description: "Current temperature plus brief outlook. AI populates from koti (Home Assistant weather entity).",
-      SchemaJson: """
+      SchemaJson: /*lang=json,strict*/ """
         {
           "type": "object",
           "properties": {
@@ -261,7 +261,7 @@ public static class SeedTemplates
     new(
       Name: "calendar_day",
       Description: "Today's events as a vertical list with times. AI populates from Google Calendar.",
-      SchemaJson: """
+      SchemaJson: /*lang=json,strict*/ """
         {
           "type": "object",
           "properties": {
@@ -316,7 +316,7 @@ public static class SeedTemplates
     new(
       Name: "reminders",
       Description: "Upcoming reminders, time-ordered. AI populates from tietue reminders.",
-      SchemaJson: """
+      SchemaJson: /*lang=json,strict*/ """
         {
           "type": "object",
           "properties": {
@@ -373,7 +373,7 @@ public static class SeedTemplates
     new(
       Name: "split_horizontal",
       Description: "Two tiles side by side. Sub-templates declared as { template, data } in 'left' and 'right'. Renders each at the display's capability tier.",
-      SchemaJson: """
+      SchemaJson: /*lang=json,strict*/ """
         {
           "type": "object",
           "properties": {
@@ -402,7 +402,7 @@ public static class SeedTemplates
     new(
       Name: "split_vertical",
       Description: "Two tiles stacked top over bottom. Sub-templates in 'top' and 'bottom'.",
-      SchemaJson: """
+      SchemaJson: /*lang=json,strict*/ """
         {
           "type": "object",
           "properties": {
@@ -429,7 +429,7 @@ public static class SeedTemplates
     new(
       Name: "stack",
       Description: "N tiles stacked vertically with optional gap. 'items' is an array of { template, data }.",
-      SchemaJson: """
+      SchemaJson: /*lang=json,strict*/ """
         {
           "type": "object",
           "properties": {
@@ -467,7 +467,7 @@ public static class SeedTemplates
     new(
       Name: "webview",
       Description: "Embed an external web page (e.g. a parcel-tracking page) in a sandboxed iframe. Provide an https `url`; an optional `title` shows a header bar. Works on modern and legacy displays. Note: sites that forbid framing (X-Frame-Options / CSP frame-ancestors) will appear blank.",
-      SchemaJson: """
+      SchemaJson: /*lang=json,strict*/ """
         {
           "type": "object",
           "properties": {

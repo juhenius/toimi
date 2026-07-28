@@ -15,7 +15,9 @@ public class DisplayApiController(
   {
     var display = await displays.GetAsync(identifier, ct);
     if (display is null)
+    {
       return Content(NotConfiguredPage(identifier), "text/html");
+    }
 
     var shellPath = Path.Combine(env.WebRootPath, "shell.html");
     var html = await System.IO.File.ReadAllTextAsync(shellPath, ct);
@@ -32,9 +34,12 @@ public class DisplayApiController(
     string identifier, [FromBody] CapabilitiesRequest req, CancellationToken ct)
   {
     var display = await displays.GetAsync(identifier, ct);
-    if (display is null) return NotFound();
+    if (display is null)
+    {
+      return NotFound();
+    }
 
-    var payload = new toimi.tools.ruutu.Rendering.CapabilityPayload(
+    var payload = new Rendering.CapabilityPayload(
       req.Flexbox, req.CssGrid, req.Fetch, req.Promise,
       req.ViewportWidth, req.ViewportHeight, req.UserAgent ?? "");
 
@@ -42,8 +47,8 @@ public class DisplayApiController(
     string orientation;
     try
     {
-      tier = toimi.tools.ruutu.Rendering.CapabilityClassifier.Classify(payload);
-      orientation = toimi.tools.ruutu.Rendering.CapabilityClassifier.DeriveOrientation(
+      tier = Rendering.CapabilityClassifier.Classify(payload);
+      orientation = Rendering.CapabilityClassifier.DeriveOrientation(
         payload.ViewportWidth, payload.ViewportHeight);
     }
 #pragma warning disable CA1031 // Defensive fallback to legacy on any classifier failure; we log so bugs in the pure-function classifier still surface.
@@ -134,7 +139,10 @@ public class DisplayApiController(
     CancellationToken ct)
   {
     var display = await displays.GetAsync(identifier, ct);
-    if (display is null) return NotFound();
+    if (display is null)
+    {
+      return NotFound();
+    }
 
     await displays.UpdateLastSeenAsync(identifier, ct);
 
@@ -158,8 +166,9 @@ public class DisplayApiController(
     await Response.Body.FlushAsync(ct);
   }
 
-  private static string NotConfiguredPage(string identifier) =>
-    $$"""
+  private static string NotConfiguredPage(string identifier)
+  {
+    return $$"""
     <!DOCTYPE html><html><head><meta charset="utf-8"><title>not configured</title>
     <style>body{font-family:-apple-system,system-ui,sans-serif;background:#f5f3ef;padding:40px;text-align:center;color:#444}</style>
     </head><body>
@@ -167,4 +176,5 @@ public class DisplayApiController(
       <p>Ask Toimi to register this display, then refresh this page.</p>
     </body></html>
     """;
+  }
 }

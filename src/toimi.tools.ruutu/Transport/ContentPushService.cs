@@ -62,7 +62,10 @@ public class ContentPushService(
   public async Task DismissTopOverlayAsync(string identifier, CancellationToken ct = default)
   {
     var display = await displays.GetAsync(identifier, ct);
-    if (display is null) return;
+    if (display is null)
+    {
+      return;
+    }
 
     var stack = OverlayStack.Parse(display.OverlayStack);
     var (next, newTop) = OverlayStack.Pop(stack);
@@ -96,7 +99,10 @@ public class ContentPushService(
   public async Task ClearAsync(string identifier, CancellationToken ct = default)
   {
     var display = await displays.GetAsync(identifier, ct);
-    if (display is null) return;
+    if (display is null)
+    {
+      return;
+    }
 
     display.CurrentTemplate = display.IdleTemplate;
     display.CurrentData = display.IdleData;
@@ -111,11 +117,17 @@ public class ContentPushService(
   public async Task ReplayCurrentStateAsync(string identifier, CancellationToken ct = default)
   {
     var display = await displays.GetAsync(identifier, ct);
-    if (display is null) return;
+    if (display is null)
+    {
+      return;
+    }
 
     var tier = display.Tier ?? "legacy";
     var (template, dataJson) = (display.CurrentTemplate, display.CurrentData);
-    if (template is null) (template, dataJson) = (display.IdleTemplate, display.IdleData);
+    if (template is null)
+    {
+      (template, dataJson) = (display.IdleTemplate, display.IdleData);
+    }
 
     if (template is not null)
     {

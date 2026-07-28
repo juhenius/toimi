@@ -33,10 +33,17 @@ public sealed class SseHub
 
   public async Task<bool> PublishAsync(string identifier, SseEvent ev, CancellationToken ct = default)
   {
-    if (!_channels.TryGetValue(identifier, out var ch)) return false;
+    if (!_channels.TryGetValue(identifier, out var ch))
+    {
+      return false;
+    }
+
     await ch.Writer.WriteAsync(ev, ct);
     return true;
   }
 
-  public bool HasSubscriber(string identifier) => _channels.ContainsKey(identifier);
+  public bool HasSubscriber(string identifier)
+  {
+    return _channels.ContainsKey(identifier);
+  }
 }

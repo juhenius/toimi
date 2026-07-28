@@ -5,16 +5,24 @@ namespace toimi.tools.ruutu.Data.Repositories;
 
 public class DisplayRepository(RuutuDbContext db)
 {
-  public Task<Display?> GetAsync(string identifier, CancellationToken ct = default) =>
-    db.Displays.FirstOrDefaultAsync(d => d.Identifier == identifier, ct);
+  public Task<Display?> GetAsync(string identifier, CancellationToken ct = default)
+  {
+    return db.Displays.FirstOrDefaultAsync(d => d.Identifier == identifier, ct);
+  }
 
-  public Task<List<Display>> ListAsync(CancellationToken ct = default) =>
-    db.Displays.OrderBy(d => d.Identifier).ToListAsync(ct);
+  public Task<List<Display>> ListAsync(CancellationToken ct = default)
+  {
+    return db.Displays.OrderBy(d => d.Identifier).ToListAsync(ct);
+  }
 
   public async Task<Display> RegisterAsync(string identifier, string? tierOverride, CancellationToken ct = default)
   {
     var existing = await GetAsync(identifier, ct);
-    if (existing is not null) return existing;
+    if (existing is not null)
+    {
+      return existing;
+    }
+
     var display = new Display
     {
       Identifier = identifier,
@@ -30,7 +38,11 @@ public class DisplayRepository(RuutuDbContext db)
   public async Task<bool> UnregisterAsync(string identifier, CancellationToken ct = default)
   {
     var display = await GetAsync(identifier, ct);
-    if (display is null) return false;
+    if (display is null)
+    {
+      return false;
+    }
+
     db.Displays.Remove(display);
     await db.SaveChangesAsync(ct);
     return true;
@@ -39,7 +51,11 @@ public class DisplayRepository(RuutuDbContext db)
   public async Task UpdateLastSeenAsync(string identifier, CancellationToken ct = default)
   {
     var d = await GetAsync(identifier, ct);
-    if (d is null) return;
+    if (d is null)
+    {
+      return;
+    }
+
     d.LastSeenAt = DateTimeOffset.UtcNow;
     await db.SaveChangesAsync(ct);
   }
@@ -54,7 +70,11 @@ public class DisplayRepository(RuutuDbContext db)
     CancellationToken ct = default)
   {
     var d = await GetAsync(identifier, ct) ?? throw new InvalidOperationException($"Display '{identifier}' not registered");
-    if (!d.TierOverride) d.Tier = tier;
+    if (!d.TierOverride)
+    {
+      d.Tier = tier;
+    }
+
     d.LastUserAgent = userAgent;
     d.ViewportWidth = viewportWidth;
     d.ViewportHeight = viewportHeight;
@@ -66,7 +86,11 @@ public class DisplayRepository(RuutuDbContext db)
   public async Task<bool> SetTierAsync(string identifier, string tier, CancellationToken ct = default)
   {
     var d = await GetAsync(identifier, ct);
-    if (d is null) return false;
+    if (d is null)
+    {
+      return false;
+    }
+
     d.Tier = tier;
     d.TierOverride = true;
     await db.SaveChangesAsync(ct);
@@ -76,7 +100,11 @@ public class DisplayRepository(RuutuDbContext db)
   public async Task<bool> SetIdleAsync(string identifier, string? template, string? dataJson, CancellationToken ct = default)
   {
     var d = await GetAsync(identifier, ct);
-    if (d is null) return false;
+    if (d is null)
+    {
+      return false;
+    }
+
     d.IdleTemplate = template;
     d.IdleData = dataJson;
     await db.SaveChangesAsync(ct);
