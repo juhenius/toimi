@@ -12,7 +12,7 @@ public class SkillSeederTests
   private static async Task<SkillSeeder> SetupAsync(Data.TietueDbContext db)
   {
     await new TypeSeeder(new TypeRepository(db)).SeedAsync();
-    // EntityRepository WITHOUT a BehaviorDispatcher → no Qdrant embedding in tests.
+    // EntityRepository WITHOUT a SemanticOutbox → no Qdrant embedding in tests.
     var entities = new EntityRepository(db, new SchemaValidator());
     return new SkillSeeder(db, entities);
   }

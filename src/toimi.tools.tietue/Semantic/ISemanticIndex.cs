@@ -12,4 +12,7 @@ public interface ISemanticIndex
 
   // Embeds the query internally and returns entity ids ranked by similarity, deduped by entity (best score wins).
   Task<IReadOnlyList<ScoredId>> SearchAsync(string collection, string query, int limit, CancellationToken ct = default);
+
+  // Returns every point id in the collection (for reconciliation). Empty if the collection doesn't exist.
+  Task<IReadOnlyList<Guid>> ListIdsAsync(string collection, CancellationToken ct = default);
 }

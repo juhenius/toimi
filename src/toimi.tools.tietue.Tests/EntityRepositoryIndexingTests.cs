@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
-using toimi.tools.tietue.Behaviors;
 using toimi.tools.tietue.Entities;
+using toimi.tools.tietue.Semantic;
 using toimi.tools.tietue.Types;
 using toimi.tools.tietue.Validation;
 using Xunit;
@@ -16,7 +16,7 @@ public class EntityRepositoryIndexingTests
   {
     await new TypeRepository(db).DefineAsync("note", Schema, Behaviors);
     var idx = new FakeSemanticIndex();
-    var repo = new EntityRepository(db, new SchemaValidator(), new BehaviorDispatcher(db, idx));
+    var repo = new EntityRepository(db, new SchemaValidator(), new SemanticOutbox(db, idx));
     return (repo, idx);
   }
 

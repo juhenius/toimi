@@ -9,6 +9,7 @@ public class TietueDbContext(DbContextOptions<TietueDbContext> options) : DbCont
   public DbSet<Trigger> Triggers => Set<Trigger>();
   public DbSet<EntityEvent> EntityEvents => Set<EntityEvent>();
   public DbSet<UniqueKey> UniqueKeys => Set<UniqueKey>();
+  public DbSet<IndexOutbox> IndexOutbox => Set<IndexOutbox>();
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {

@@ -38,6 +38,7 @@ builder.Services.AddSingleton<EmbeddingService>();
 
 builder.Services.AddSingleton<ISemanticIndex, QdrantSemanticIndex>();
 builder.Services.AddScoped<toimi.tools.tietue.Behaviors.BehaviorDispatcher>();
+builder.Services.AddScoped<SemanticOutbox>();
 builder.Services.AddScoped<toimi.tools.tietue.Seed.TypeSeeder>();
 builder.Services.AddScoped<toimi.tools.tietue.Seed.SkillSeeder>();
 
@@ -53,6 +54,7 @@ builder.Services.AddScoped<toimi.tools.tietue.Events.EntityEventStore>();
 builder.Services.AddScoped<toimi.tools.tietue.Scheduling.ITickLock, toimi.tools.tietue.Scheduling.PostgresTickLock>();
 builder.Services.AddScoped<toimi.tools.tietue.Scheduling.SchedulerTick>();
 builder.Services.AddHostedService<toimi.tools.tietue.Scheduling.TriggerWorker>();
+builder.Services.AddHostedService<OutboxWorker>();
 
 builder.Services.AddSingleton(
   builder.Configuration.GetSection("Toimi").Get<Toimi.Core.Configuration.ToimiConfiguration>()

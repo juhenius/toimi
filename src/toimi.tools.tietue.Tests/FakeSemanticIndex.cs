@@ -57,6 +57,12 @@ public class FakeSemanticIndex : ISemanticIndex
     return Task.FromResult<IReadOnlyList<ScoredId>>(ranked);
   }
 
+  public Task<IReadOnlyList<Guid>> ListIdsAsync(string collection, CancellationToken ct = default)
+  {
+    return Task.FromResult<IReadOnlyList<Guid>>(
+      Store.TryGetValue(collection, out var c) ? [.. c.Keys] : []);
+  }
+
   private static float Overlap(string text, string query)
   {
     var t = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);

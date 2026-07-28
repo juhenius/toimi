@@ -4,13 +4,14 @@ using Microsoft.EntityFrameworkCore;
 using toimi.tools.tietue.Behaviors;
 using toimi.tools.tietue.Data;
 using toimi.tools.tietue.Provisioning;
+using toimi.tools.tietue.Semantic;
 using toimi.tools.tietue.Validation;
 
 namespace toimi.tools.tietue.Entities;
 
 public record PagedEntities(IReadOnlyList<Entity> Items, int Page, int Size, int Total);
 
-public class EntityRepository(TietueDbContext db, SchemaValidator validator, BehaviorDispatcher? dispatcher = null, TriggerProvisioner? provisioner = null, ExpiryReconciler? expiry = null)
+public class EntityRepository(TietueDbContext db, SchemaValidator validator, SemanticOutbox? outbox = null, TriggerProvisioner? provisioner = null, ExpiryReconciler? expiry = null)
 {
   public async Task<Entity> CreateAsync(string type, JsonNode? data, string[] tags, CancellationToken ct = default)
   {
@@ -30,10 +31,11 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Beh
     };
     db.Entities.Add(entity);
     await EnforceUniqueOnCreateAsync(entity, typeDef.Behaviors, ct);
+    var indexOp = outbox?.Enqueue(entity, typeDef.Behaviors, "upsert");
     await SaveGuardingUniqueAsync(entity.Type, ct);
-    if (dispatcher is not null)
+    if (outbox is not null)
     {
-      await dispatcher.OnEntitySavedAsync(entity, ct);
+      await outbox.DrainAsync(indexOp, ct);
     }
 
     if (provisioner is not null)
@@ -63,6 +65,7 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Beh
     }
 
     string? behaviorsForExpiry = null;
+    IndexOutbox? indexOp = null;
     if (data is not null)
     {
       var typeDef = await GetTypeDefOrThrowAsync(entity.Type, ct);
@@ -72,6 +75,7 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Beh
       previous.Dispose();
       await EnforceUniqueOnUpdateAsync(entity, typeDef.Behaviors, ct);
       behaviorsForExpiry = typeDef.Behaviors;
+      indexOp = outbox?.Enqueue(entity, typeDef.Behaviors, "upsert");
     }
 
     if (tags is not null)
@@ -86,9 +90,9 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Beh
       await expiry.ReconcileAsync(entity, behaviorsForExpiry, entity.UpdatedAt, ct);
     }
 
-    if (dispatcher is not null)
+    if (outbox is not null)
     {
-      await dispatcher.OnEntitySavedAsync(entity, ct);
+      await outbox.DrainAsync(indexOp, ct);
     }
 
     return entity;
@@ -104,11 +108,13 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Beh
 
     var keys = await db.UniqueKeys.Where(k => k.EntityId == id).ToListAsync(ct);
     db.UniqueKeys.RemoveRange(keys);
+    var typeDef = await db.TypeDefinitions.AsNoTracking().FirstOrDefaultAsync(t => t.Name == entity.Type, ct);
+    var indexOp = outbox?.Enqueue(entity, typeDef?.Behaviors, "delete");
     db.Entities.Remove(entity);
     await db.SaveChangesAsync(ct);
-    if (dispatcher is not null)
+    if (outbox is not null)
     {
-      await dispatcher.OnEntityDeletedAsync(entity, ct);
+      await outbox.DrainAsync(indexOp, ct);
     }
 
     return true;

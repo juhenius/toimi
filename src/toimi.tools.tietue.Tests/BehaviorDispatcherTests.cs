@@ -32,53 +32,16 @@ public class BehaviorDispatcherTests
   }
 
   [Fact]
-  public async Task OnSaved_indexes_configured_fields_for_semantic_type()
-  {
-    var (db, idx, disp) = await SetupAsync(Behaviors);
-    using var _ = db;
-    var e = NewEntity("hello world");
-
-    await disp.OnEntitySavedAsync(e);
-
-    Assert.Equal("hello world", idx.Store["note"][e.Id]);
-    Assert.Contains("note", idx.EnsuredCollections);
-  }
-
-  [Fact]
-  public async Task OnSaved_does_nothing_for_non_semantic_type()
-  {
-    var (db, idx, disp) = await SetupAsync(behaviors: null);
-    using var _ = db;
-
-    await disp.OnEntitySavedAsync(NewEntity("hi"));
-
-    Assert.Empty(idx.Store);
-  }
-
-  [Fact]
-  public async Task OnDeleted_removes_from_index()
-  {
-    var (db, idx, disp) = await SetupAsync(Behaviors);
-    using var _ = db;
-    var e = NewEntity("bye");
-    await disp.OnEntitySavedAsync(e);
-
-    await disp.OnEntityDeletedAsync(e);
-
-    Assert.False(idx.Store["note"].ContainsKey(e.Id));
-  }
-
-  [Fact]
   public async Task Search_returns_matching_entities_ordered_by_score()
   {
-    var (db, _, disp) = await SetupAsync(Behaviors);
+    var (db, idx, disp) = await SetupAsync(Behaviors);
     using var _ = db;
     var match = NewEntity("apple banana");
     var other = NewEntity("zebra");
     db.Entities.AddRange(match, other);
     await db.SaveChangesAsync();
-    await disp.OnEntitySavedAsync(match);
-    await disp.OnEntitySavedAsync(other);
+    await idx.IndexAsync("note", match.Id, "apple banana");
+    await idx.IndexAsync("note", other.Id, "zebra");
 
     var results = await disp.SearchAsync("note", "apple", 10);
 

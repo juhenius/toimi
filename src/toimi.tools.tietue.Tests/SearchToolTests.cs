@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using toimi.tools.tietue.Behaviors;
 using toimi.tools.tietue.Entities;
+using toimi.tools.tietue.Semantic;
 using toimi.tools.tietue.Tools;
 using toimi.tools.tietue.Types;
 using toimi.tools.tietue.Validation;
@@ -21,7 +22,7 @@ public class SearchToolTests
     await new TypeRepository(db).DefineAsync("note", Schema, Behaviors);
     var idx = new FakeSemanticIndex();
     var dispatcher = new BehaviorDispatcher(db, idx);
-    var repo = new EntityRepository(db, new SchemaValidator(), dispatcher);
+    var repo = new EntityRepository(db, new SchemaValidator(), new SemanticOutbox(db, idx));
     await repo.CreateAsync("note", JsonNode.Parse("""{"content":"apple pie"}"""), []);
     await repo.CreateAsync("note", JsonNode.Parse("""{"content":"zebra"}"""), []);
 

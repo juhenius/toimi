@@ -49,4 +49,28 @@ public class QdrantSemanticIndex(QdrantClient qdrant, EmbeddingService embedding
       .Select(g => new ScoredId(g.Key, g.Max(r => r.Score)))
       .OrderByDescending(s => s.Score)];
   }
+
+  public async Task<IReadOnlyList<Guid>> ListIdsAsync(string collection, CancellationToken ct = default)
+  {
+    if (!await qdrant.CollectionExistsAsync(collection, ct))
+    {
+      return [];
+    }
+
+    var ids = new List<Guid>();
+    PointId? offset = null;
+    while (true)
+    {
+      var page = await qdrant.ScrollAsync(collection, limit: 256, offset: offset, payloadSelector: new WithPayloadSelector { Enable = false }, cancellationToken: ct);
+      ids.AddRange(page.Result.Select(p => Guid.Parse(p.Id.Uuid)));
+      if (page.NextPageOffset is null || page.Result.Count == 0)
+      {
+        break;
+      }
+
+      offset = page.NextPageOffset;
+    }
+
+    return ids;
+  }
 }

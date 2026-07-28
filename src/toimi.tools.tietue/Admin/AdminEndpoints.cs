@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Toimi.Core.Admin;
 using toimi.tools.tietue.Data;
+using toimi.tools.tietue.Semantic;
 
 namespace toimi.tools.tietue.Admin;
 
@@ -117,6 +118,33 @@ public static class AdminEndpoints
       return t is null
         ? Results.NotFound()
         : Results.Ok(new TypeItem(t.Name, t.JsonSchema.RootElement.GetRawText(), t.Behaviors, t.DefaultTriggers, t.CreatedAt, t.UpdatedAt));
+    });
+
+    admin.MapGet("/outbox", async (TietueDbContext db) =>
+    {
+      var rows = await db.IndexOutbox.OrderBy(o => o.CreatedAt).ToListAsync();
+      return Results.Ok(new
+      {
+        pending = rows.Count(r => r.Attempts == 0),
+        failing = rows.Count(r => r.Attempts is > 0 and < SemanticOutbox.MaxAttempts),
+        dead = rows.Count(r => r.Attempts >= SemanticOutbox.MaxAttempts),
+        deadRows = rows.Where(r => r.Attempts >= SemanticOutbox.MaxAttempts)
+          .Select(r => new { r.Id, r.EntityId, r.Type, r.Op, r.Attempts, r.LastError, r.LastAttemptAt })
+          .ToList(),
+      });
+    });
+
+    admin.MapPost("/semantic/reconcile/{type}", async (TietueDbContext db, ISemanticIndex index, string type) =>
+    {
+      try
+      {
+        var result = await SemanticReconciler.ReconcileAsync(db, index, type, CancellationToken.None);
+        return Results.Ok(result);
+      }
+      catch (InvalidOperationException ex)
+      {
+        return Results.BadRequest(new { error = ex.Message });
+      }
     });
   }
 }

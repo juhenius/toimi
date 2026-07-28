@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using toimi.tools.tietue.Data;
@@ -11,9 +12,11 @@ using toimi.tools.tietue.Data;
 namespace toimi.tools.tietue.Migrations
 {
     [DbContext(typeof(TietueDbContext))]
-    partial class TietueDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260707190347_AddIndexOutbox")]
+    partial class AddIndexOutbox
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
