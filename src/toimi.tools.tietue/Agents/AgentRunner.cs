@@ -34,7 +34,7 @@ public class AgentRunner(ToimiConfiguration config, ILogger<AgentRunner>? logger
       messages.Add(new(ChatRole.User, prompt));
 
       ToimiClientFactory.RefreshDynamicContext(messages);
-      await ContextManager.CompactIfNeeded(messages, client, token);
+      await ContextManager.CompactIfNeeded(messages, client, budget: null, maxTokens: config.MaxContextTokens, ct: token);
 
       var response = await client.GetResponseAsync(messages, options, token);
       var responseText = response.Text ?? "";

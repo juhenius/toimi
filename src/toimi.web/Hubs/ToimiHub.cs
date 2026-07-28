@@ -104,7 +104,7 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
 
     // Update current time and compact context if needed
     ToimiClientFactory.RefreshDynamicContext(session.Messages);
-    await ContextManager.CompactIfNeeded(session.Messages, session.ChatClient, Context.ConnectionAborted);
+    await ContextManager.CompactIfNeeded(session.Messages, session.ChatClient, session.Budget, _config.MaxContextTokens, Context.ConnectionAborted);
 
     try
     {
@@ -138,6 +138,12 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
 
       var responseText = fullResponse.ToString();
       session.Messages.Add(new(ChatRole.Assistant, responseText));
+
+      // Anchor the budget to real prompt usage (covers the list as sent plus the response).
+      if (usage?.InputTokenCount is not null)
+      {
+        session.Budget.RecordUsage((int)usage.InputTokenCount.Value, session.Messages);
+      }
 
       // Serialize tool calls JSON
       var toolCallsJson = toolCallEvents.Count > 0
@@ -200,6 +206,7 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
     {
       Messages = messages,
       ConversationId = newConversation.Id,
+      Budget = new(),
     };
 
     await Clients.Caller.SendAsync("ConversationLoaded", newConversation.Id, "[]");
@@ -243,5 +250,8 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
     List<ChatMessage> Messages,
     string? SkillSummary,
     string? TypeCatalog,
-    Guid ConversationId);
+    Guid ConversationId)
+  {
+    public ContextBudget Budget { get; init; } = new();
+  }
 }
