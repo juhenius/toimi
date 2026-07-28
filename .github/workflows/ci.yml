@@ -43,6 +43,14 @@ jobs:
       - uses: actions/checkout@v4
       - run: pip install yamllint
       - run: yamllint -c .yamllint.yaml .
+      - run: kubectl kustomize k8s/base > /dev/null
+      - run: kubectl kustomize infrastructure/base > /dev/null
+      - name: Render server overlays with dummy secrets
+        run: |
+          cp k8s/overlays/server/secrets.env.example k8s/overlays/server/secrets.env
+          cp infrastructure/secrets.env.example infrastructure/overlays/server/secrets.env
+          kubectl kustomize k8s/overlays/server > /dev/null
+          kubectl kustomize infrastructure/overlays/server > /dev/null
 
   shell:
     runs-on: ubuntu-latest

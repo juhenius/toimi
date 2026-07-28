@@ -1,0 +1,32 @@
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      nuget-minor-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: npm
+    directory: /src/toimi.web/ClientApp
+    schedule:
+      interval: weekly
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: docker
+    directories:
+      - /src/toimi.web
+      - /src/toimi.tools.tietue
+      - /src/toimi.tools.koti
+      - /src/toimi.tools.verkko
+      - /src/toimi.tools.ruutu
+    schedule:
+      interval: weekly
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

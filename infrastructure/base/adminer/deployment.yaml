@@ -15,11 +15,31 @@ spec:
       labels:
         app: adminer
     spec:
+      securityContext:
+        runAsNonRoot: true
+        # The image's USER is the non-numeric name `adminer`; the kubelet can't verify
+        # a named user is non-root, so pin the numeric uid (verified: uid 100).
+        runAsUser: 100
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: adminer
-          image: adminer:latest
+          image: adminer:5.5.0
           ports:
             - containerPort: 8080
           env:
             - name: ADMINER_DEFAULT_SERVER
               value: "postgresql.data.svc.cluster.local"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          # no readOnlyRootFilesystem: php writes session files to its tmp dir
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL

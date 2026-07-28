@@ -15,6 +15,10 @@ spec:
       labels:
         app: qdrant
     spec:
+      # qdrant image expects uid 0 unless storage ownership is migrated; runAsNonRoot deferred
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: qdrant
           image: qdrant/qdrant:v1.13.6
@@ -23,6 +27,18 @@ spec:
               name: http
             - containerPort: 6334
               name: grpc
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           volumeMounts:
             - name: qdrant-storage
               mountPath: /qdrant/storage

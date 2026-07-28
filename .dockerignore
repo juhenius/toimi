@@ -1,0 +1,13 @@
+.git
+.github
+.worktrees
+.playwright-mcp
+**/bin
+**/obj
+**/node_modules
+docs
+k8s
+infrastructure
+scripts
+samples
+*.md

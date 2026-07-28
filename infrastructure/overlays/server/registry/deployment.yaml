@@ -15,12 +15,28 @@ spec:
       labels:
         app: registry
     spec:
+      # runAsNonRoot skipped: image writes /var/lib/registry as root unless the PVC ownership is prepared
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: registry
-          image: registry:2
+          image: registry:2.8.3
           ports:
             - containerPort: 5000
               hostPort: 5000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           volumeMounts:
             - name: registry-data
               mountPath: /var/lib/registry

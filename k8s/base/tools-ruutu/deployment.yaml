@@ -15,6 +15,11 @@ spec:
       labels:
         app: toimi-tools-ruutu
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654  # `app` user in the .NET base images (APP_UID)
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: toimi-tools-ruutu
           image: ${IMAGE_REGISTRY}/toimi-tools-ruutu:latest
@@ -26,6 +31,24 @@ spec:
                 secretKeyRef:
                   name: toimi-secrets
                   key: ruutu-connection-string
+            - name: HOME
+              value: /tmp  # readOnlyRootFilesystem: $HOME writes (data-protection keys) land on the emptyDir
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           livenessProbe:
             httpGet:
               path: /health
@@ -38,3 +61,6 @@ spec:
               port: 8080
             initialDelaySeconds: 3
             periodSeconds: 5
+      volumes:
+        - name: tmp
+          emptyDir: {}
