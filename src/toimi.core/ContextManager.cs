@@ -61,8 +61,20 @@ public static class ContextManager
       new(ChatRole.User, conversationText)
     };
 
-    var response = await client.GetResponseAsync(summaryMessages, cancellationToken: ct);
-    var summary = response.Text ?? "Earlier conversation summary unavailable.";
+    string summary;
+    try
+    {
+      using var summaryCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      summaryCts.CancelAfter(TimeSpan.FromSeconds(30));
+      var response = await client.GetResponseAsync(summaryMessages, cancellationToken: summaryCts.Token);
+      summary = response.Text ?? "Earlier conversation summary unavailable.";
+    }
+    catch (Exception)
+    {
+      // Summarization failed/timed out: proceed uncompacted. An over-budget prompt the
+      // provider trims is strictly better than dropping the user's turn.
+      return false;
+    }
 
     messages.RemoveRange(systemCount, summarizeCount);
     messages.Insert(systemCount, new(ChatRole.System, $"Summary of earlier conversation:\n{summary}"));

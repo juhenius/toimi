@@ -2,11 +2,12 @@ using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Toimi.Core;
 using Toimi.Core.Configuration;
+using Toimi.Core.Llm;
 using toimi.tools.tietue.Data;
 
 namespace toimi.tools.tietue.Agents;
 
-public class AgentRunner(ToimiConfiguration config, ILogger<AgentRunner>? logger = null) : IAgentRunner
+public class AgentRunner(ToimiConfiguration config, ILlmClientProvider llmProvider, ILogger<AgentRunner>? logger = null) : IAgentRunner
 {
   public async Task<AgentRunResult> RunAsync(Entity entity, string prompt, CancellationToken ct = default)
   {
@@ -24,7 +25,7 @@ public class AgentRunner(ToimiConfiguration config, ILogger<AgentRunner>? logger
       var skillSummary = await aggregator.CallToolAsync("list_skills", ct: token);
       var typeCatalog = await aggregator.CallToolAsync("list_types", ct: token);
 
-      var (client, notifier) = ToimiClientFactory.Create(config);
+      var (client, notifier) = llmProvider.Create();
       var options = ToimiClientFactory.CreateRequestOptions(tools);
       var messages = ToimiClientFactory.CreateInitialMessages(skillSummary, typeCatalog);
 

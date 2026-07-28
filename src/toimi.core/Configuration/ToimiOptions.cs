@@ -4,6 +4,12 @@ public class OpenAIOptions
 {
   public required string ApiKey { get; set; }
   public string Model { get; set; } = "gpt-4o";
+
+  /// <summary>Per-request network timeout for LLM calls.</summary>
+  public int NetworkTimeoutSeconds { get; set; } = 100;
+
+  /// <summary>Max transient retries (429/5xx) at the SDK pipeline layer.</summary>
+  public int MaxRetries { get; set; } = 3;
 }
 
 public class ToimiConfiguration

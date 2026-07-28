@@ -26,7 +26,7 @@ Context: `DisplayRegister` lets the AI set an `identifier` that `DisplayReposito
 - Modify: `src/toimi.tools.ruutu/Data/Repositories/DisplayRepository.cs`
 - Test: `src/toimi.tools.ruutu.Tests/DisplayIdentifierTests.cs` (new)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `src/toimi.tools.ruutu.Tests/DisplayIdentifierTests.cs`. Check the existing ruutu test setup (there's an in-memory DbContext helper — grep `RuutuDbContext` in the tests dir and mirror it):
 
@@ -69,9 +69,9 @@ public class DisplayIdentifierTests
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `dotnet test src/toimi.tools.ruutu.Tests --filter DisplayIdentifierTests` → FAIL (no validation; invalid ids currently persist).
+- [x] **Step 2: Run to verify it fails** — `dotnet test src/toimi.tools.ruutu.Tests --filter DisplayIdentifierTests` → FAIL (no validation; invalid ids currently persist).
 
-- [ ] **Step 3: Add validation in `RegisterAsync`**
+- [x] **Step 3: Add validation in `RegisterAsync`**
 
 At the top of `DisplayRepository.RegisterAsync`, before the existing-lookup:
 
@@ -95,7 +95,7 @@ and add a private static (with `using System.Text.RegularExpressions;`):
   }
 ```
 
-- [ ] **Step 4: Surface it cleanly at the tool boundary**
+- [x] **Step 4: Surface it cleanly at the tool boundary**
 
 `DisplayRegister` in `src/toimi.tools.ruutu/Tools/DisplayManagementTools.cs` calls `RegisterAsync`. Wrap that call so the `ArgumentException` returns a readable string to the agent instead of throwing (match the file's existing error-string style — read it first):
 
@@ -112,7 +112,7 @@ and add a private static (with `using System.Text.RegularExpressions;`):
 
 Also check `DisplayApiController.GetShell` (route `{identifier}`): an unregistered identifier already returns the not-configured page, so no XSS reaches the shell for unknown ids — the fix is purely at registration. Confirm no other write path (SSE subscribe, capabilities) persists a fresh identifier without going through `RegisterAsync`; if one does, guard it too and note it.
 
-- [ ] **Step 5: Run tests, format, commit**
+- [x] **Step 5: Run tests, format, commit**
 
 ```bash
 dotnet test src/toimi.tools.ruutu.Tests
@@ -132,7 +132,7 @@ Context: `WebFetcher.FetchAsync` calls `ReadAsStringAsync` (buffering the whole 
 - Modify: `src/toimi.tools.verkko/Program.cs` (the `AddHttpClient<WebFetcher>` block)
 - Modify: `src/toimi.tools.verkko/Tools/FetchUrlTool.cs` (catch the new exception)
 
-- [ ] **Step 1: Cap the buffer**
+- [x] **Step 1: Cap the buffer**
 
 In `src/toimi.tools.verkko/Program.cs`, inside the existing `AddHttpClient<WebFetcher>(client => { ... })` lambda, add:
 
@@ -142,11 +142,11 @@ In `src/toimi.tools.verkko/Program.cs`, inside the existing `AddHttpClient<WebFe
   client.MaxResponseContentBufferSize = 8_000_000;
 ```
 
-- [ ] **Step 2: Return a clean message when a body is too large**
+- [x] **Step 2: Return a clean message when a body is too large**
 
 `HttpClient` throws `HttpRequestException` when the buffer limit is exceeded. `FetchUrlTool.FetchUrl` already catches `HttpRequestException` and returns a string, so oversized responses already degrade to a readable error — verify by reading `FetchUrlTool.cs`; if the existing catch message would be confusing for this case, no change is needed (the generic "HTTP error fetching" is acceptable). Confirm in your report which catch handles it.
 
-- [ ] **Step 3: Build, format, commit**
+- [x] **Step 3: Build, format, commit**
 
 ```bash
 dotnet build src/toimi.tools.verkko/toimi.tools.verkko.csproj
@@ -167,7 +167,7 @@ Context: `UrlGuard.IsPrivate` (verkko) and `ScribanRenderer.IsPrivate` (ruutu) a
 - Modify: `src/toimi.tools.verkko/Fetcher/UrlGuard.cs` (delegate to core), `src/toimi.tools.verkko/toimi.tools.verkko.csproj` (reference core if not already)
 - Modify: `src/toimi.tools.ruutu/Rendering/ScribanRenderer.cs` (delegate to core), `src/toimi.tools.ruutu/toimi.tools.ruutu.csproj` (reference core)
 
-- [ ] **Step 1: Move the canonical logic to core (tests first)**
+- [x] **Step 1: Move the canonical logic to core (tests first)**
 
 Read the CURRENT `UrlGuard.IsPrivate`/`IsBlockedHost` (verkko — the more complete copy, includes `::a.b.c.d`) and `ScribanRenderer.IsPrivate`. Create `src/toimi.core/Net/PrivateAddress.cs` with the UNION of both (verkko's is the superset — use it verbatim, adapting the namespace):
 
@@ -190,7 +190,7 @@ public static class PrivateAddress
 
 Copy verkko's `IsBlockedHost` and `IsPrivate` exactly (they're the superset). Create `src/toimi.core.Tests/PrivateAddressTests.cs` porting verkko's existing `UrlGuardTests` IsPrivate/IsBlockedHost cases (read `src/toimi.tools.verkko.Tests/UrlGuardTests.cs` and move the predicate cases; keep verkko's `GuardedConnectAsync`/fetch tests where they are). Run → these pass immediately (pure move); that's fine, they lock the behavior in its new home.
 
-- [ ] **Step 2: Delegate verkko's UrlGuard to core**
+- [x] **Step 2: Delegate verkko's UrlGuard to core**
 
 Ensure `src/toimi.tools.verkko/toimi.tools.verkko.csproj` has `<ProjectReference Include="../toimi.core/toimi.core.csproj" />` (add if missing). In `UrlGuard.cs`, replace the `IsPrivate`/`IsBlockedHost` bodies with delegation:
 
@@ -208,11 +208,11 @@ Ensure `src/toimi.tools.verkko/toimi.tools.verkko.csproj` has `<ProjectReference
 
 Keep `GuardedConnectAsync` as-is (it calls `IsPrivate`, now delegating). verkko's existing UrlGuardTests still pass (behavior unchanged).
 
-- [ ] **Step 3: Delegate ruutu's ScribanRenderer.SafeUrl to core**
+- [x] **Step 3: Delegate ruutu's ScribanRenderer.SafeUrl to core**
 
 Add the core ProjectReference to `src/toimi.tools.ruutu/toimi.tools.ruutu.csproj` if missing. In `ScribanRenderer.cs`, replace the private `IsPrivate` with a call to `Toimi.Core.Net.PrivateAddress.IsPrivate` inside `SafeUrl` (keep `SafeUrl`'s https-only + HTML-escape wrapper local — only the IP predicate moves). This is where the fix has teeth: ruutu now inherits verkko's `::a.b.c.d` handling. Add a ruutu test asserting `safe_url` rejects an IPv4-compatible IPv6 form (e.g. `https://[::0a00:0001]/`) → `about:blank`.
 
-- [ ] **Step 4: Run all affected suites, format, commit**
+- [x] **Step 4: Run all affected suites, format, commit**
 
 ```bash
 dotnet test src/toimi.core.Tests src/toimi.tools.verkko.Tests src/toimi.tools.ruutu.Tests
@@ -236,7 +236,7 @@ Context: the MCP-server block, migrate-at-startup scope, and `/health` are copy-
 - Modify: `src/toimi.tools.{tietue,koti,verkko,ruutu}/Program.cs`
 - Modify: `k8s/base/tools-tietue/deployment.yaml`, `k8s/base/tools-ruutu/deployment.yaml` (readinessProbe → `/ready`)
 
-- [ ] **Step 1: Create the hosting extensions**
+- [x] **Step 1: Create the hosting extensions**
 
 Create `src/toimi.core/Hosting/ToimiHostingExtensions.cs`:
 
@@ -289,15 +289,15 @@ public static class ToimiHostingExtensions
 
 Note: `WithToolsFromAssembly()` with no argument discovers tools from the *calling* assembly. When called from inside core it would scan core, not the tool server. Verify the ModelContextProtocol API — if `WithToolsFromAssembly()` binds to core's assembly here, change the signature to `AddToimiMcpServer(this IServiceCollection services, string name, System.Reflection.Assembly toolAssembly)` and pass `typeof(Program).Assembly` from each server, calling `.WithToolsFromAssembly(toolAssembly)`. Pick whichever the API supports and note it.
 
-- [ ] **Step 2: Rewire all four tool servers**
+- [x] **Step 2: Rewire all four tool servers**
 
 In each of `src/toimi.tools.{tietue,koti,verkko,ruutu}/Program.cs`, replace the inline `.AddMcpServer(...).WithHttpTransport().WithToolsFromAssembly()` with `builder.Services.AddToimiMcpServer("<name>")` (or the assembly-arg form), and replace `app.MapMcp(); app.MapGet("/health", ...)` with `app.MapToimiMcp();` (+ `using Toimi.Core.Hosting;`). For tietue and ruutu (DB-backed), also add `app.MapToimiReadiness<TietueDbContext>();` / `<RuutuDbContext>();`. koti and verkko keep liveness-only. Leave every other line (DI registrations, migrate-at-startup, admin endpoints) exactly as-is. koti/verkko may not reference core yet — add the ProjectReference.
 
-- [ ] **Step 3: Point the readiness probes at /ready**
+- [x] **Step 3: Point the readiness probes at /ready**
 
 In `k8s/base/tools-tietue/deployment.yaml` and `k8s/base/tools-ruutu/deployment.yaml`, change the `readinessProbe.httpGet.path` from `/health` to `/ready` (leave livenessProbe on `/health`). Do NOT touch koti/verkko/web manifests. `yamllint -c .yamllint.yaml` the two files.
 
-- [ ] **Step 4: Build, test, lint, commit**
+- [x] **Step 4: Build, test, lint, commit**
 
 ```bash
 dotnet build toimi.sln && dotnet test toimi.sln
@@ -320,7 +320,7 @@ Context: `tz` is parsed and advertised but `RecurrenceCalculator` expands purely
 - Modify: `src/toimi.tools.tietue/Program.cs` (TriggerRepository already scoped; ToimiConfiguration already singleton — verify DI)
 - Test: `src/toimi.tools.tietue.Tests/RecurrenceCalculatorTests.cs` (extend), `SchedulesTests.cs` (extend)
 
-- [ ] **Step 1: Add the config knob**
+- [x] **Step 1: Add the config knob**
 
 In `ToimiConfiguration` (`ToimiOptions.cs`):
 
@@ -329,7 +329,7 @@ In `ToimiConfiguration` (`ToimiOptions.cs`):
   public string UserTimeZone { get; set; } = "Europe/Helsinki";
 ```
 
-- [ ] **Step 2: Failing DST test**
+- [x] **Step 2: Failing DST test**
 
 Extend `RecurrenceCalculatorTests.cs` with a tz-aware overload test that crosses a DST boundary. Helsinki springs forward 2026-03-29 03:00. A `FREQ=DAILY` rule at `2026-03-27T09:00` local should fire at 07:00Z on the 28th (before) and 06:00Z on the 30th (after) — the UTC instant shifts by the DST hour while wall-clock stays 09:00:
 
@@ -351,7 +351,7 @@ Extend `RecurrenceCalculatorTests.cs` with a tz-aware overload test that crosses
 
 Run → FAIL to compile (the `tz` param doesn't exist).
 
-- [ ] **Step 3: Make `RecurrenceCalculator` tz-aware**
+- [x] **Step 3: Make `RecurrenceCalculator` tz-aware**
 
 Add an optional `string? tz = null` parameter to `NextOccurrenceAfter`, `NextOccurrenceOnOrAfter`, and `FirstOccurrence`. In `FirstOccurrence`, when `tz` resolves to a `TimeZoneInfo` (`TimeZoneInfo.FindSystemTimeZoneById(tz)` — .NET 10 accepts IANA ids cross-platform), build the `CalDateTime` with the tzid so `Ical.Net` expands in wall-clock:
 
@@ -402,7 +402,7 @@ Add an optional `string? tz = null` parameter to `NextOccurrenceAfter`, `NextOcc
 
 VERIFY against the installed `Ical.Net` version: the `CalDateTime(DateTime, string tzId)` ctor, `Duration`, `AsDateTimeOffset`, and `GetOccurrences` signatures. Adapt the exact API while keeping the behavior (expand in-zone, return UTC-comparable offsets). If `AsDateTimeOffset` yields a wall-clock-with-offset value, `.ToUniversalTime()` before comparing to `after` — make the comparison UTC-correct. Run the DST test → PASS.
 
-- [ ] **Step 4: Thread tz through `Schedules`**
+- [x] **Step 4: Thread tz through `Schedules`**
 
 `Schedules.InitialNextFireAt`/`NextAfter` already `Parse` a `Spec` with `Tz`. Pass `spec.Tz` into the `RecurrenceCalculator` calls. Add a public helper used by trigger creation to stamp a default tz:
 
@@ -428,11 +428,11 @@ VERIFY against the installed `Ical.Net` version: the `CalDateTime(DateTime, stri
   }
 ```
 
-- [ ] **Step 5: Stamp the default at creation**
+- [x] **Step 5: Stamp the default at creation**
 
 In `TriggerRepository`, inject `ToimiConfiguration` (`public class TriggerRepository(TietueDbContext db, Toimi.Core.Configuration.ToimiConfiguration config)`), and in `CreateAsync`, before computing `InitialNextFireAt`, replace the incoming `scheduleJson` with `Schedules.WithDefaultTimeZone(scheduleJson, config.UserTimeZone)`. This covers BOTH creation paths (provisioner and `set_trigger`) since both go through `CreateAsync`. Confirm `ToimiConfiguration` is DI-registered in tietue's `Program.cs` (it is — used by the agent runner) and that `TriggerRepository` construction sites in tests get updated (pass a `new ToimiConfiguration { OpenAI = ... , UserTimeZone = "Europe/Helsinki" }` or a test default — grep test construction sites).
 
-- [ ] **Step 6: Test the stamping + run full suite**
+- [x] **Step 6: Test the stamping + run full suite**
 
 Add a `SchedulesTests` case: `WithDefaultTimeZone` on `{"start":...,"rrule":"FREQ=DAILY"}` adds `tz`; on `{"at":...}` and on a spec that already has `tz`, returns unchanged. Then:
 
@@ -455,7 +455,7 @@ Context: entity + unique-key + outbox commit together, but `ProvisionAsync` and 
 - Modify: `src/toimi.tools.tietue/Entities/EntityRepository.cs` (`CreateAsync`)
 - Test: `src/toimi.tools.tietue.Tests/EntityRepositoryFailureTests.cs` (extend)
 
-- [ ] **Step 1: Failing test — provision failure rolls back the entity**
+- [x] **Step 1: Failing test — provision failure rolls back the entity**
 
 Extend `EntityRepositoryFailureTests.cs`. Use the InMemory provider's transaction-warning suppression OR a fake provisioner that throws. Simplest: inject a `TriggerProvisioner` whose dependency throws, and assert that after the exception, NO entity of that type exists (transaction rolled back). The InMemory provider does not support real transactions — `BeginTransactionAsync` is a no-op warning there. So test the transaction behavior at the seam instead: assert `CreateAsync` propagates the provisioner exception AND (with a relational-less fallback) that the outbox/entity are consistent. Given InMemory's limitation, the highest-value test is: a provisioner that throws causes `CreateAsync` to throw and the tool to see it. Add:
 
@@ -475,7 +475,7 @@ Extend `EntityRepositoryFailureTests.cs`. Use the InMemory provider's transactio
 
 (Adapt to real ctor params — check `EntityRepository`'s constructor and `TriggerProvisioner`'s. If a throwing fake is awkward, this step can assert the wrap exists by reading; but prefer a behavioral test.) The transaction's ROLLBACK correctness is only fully exercised under Postgres — note that in the report; the InMemory test pins the exception propagation.
 
-- [ ] **Step 2: Wrap create in a transaction**
+- [x] **Step 2: Wrap create in a transaction**
 
 In `EntityRepository.CreateAsync`, wrap the entity-save + provision + expiry in a transaction that only executes when the provider is relational (InMemory throws on `BeginTransaction`):
 
@@ -529,7 +529,7 @@ In `EntityRepository.CreateAsync`, wrap the entity-save + provision + expiry in 
 
 IMPORTANT ordering notes: (a) preserve the existing pre-check/enqueue ordering from the current `CreateAsync` (unique pre-check before save — the Week-4 change-tracker-safety fix; read the current method and keep that intact). (b) The outbox DrainAsync stays OUTSIDE/AFTER the transaction commit — its whole design is that a Qdrant failure must not roll back the DB (it's exception-safe and leaves the row for the worker). Adapt the exact statements to the current method body; the shape above is the target. Also confirm `ExpiryReconciler.ReconcileAsync`'s internal two-SaveChanges now run inside this ambient transaction (they will, since they share the DbContext connection enlisted in `tx`).
 
-- [ ] **Step 3: Run full suite, format, commit**
+- [x] **Step 3: Run full suite, format, commit**
 
 ```bash
 dotnet test src/toimi.tools.tietue.Tests
@@ -550,11 +550,11 @@ Context: a bad entity id surfaces as a raw `DbUpdateException`; an unknown `hand
 - Modify: `src/toimi.tools.tietue/Scripts/ScriptEffectApplier.cs` (the `trigger` effect path — same validation)
 - Test: `src/toimi.tools.tietue.Tests/SetTriggerToolTests.cs` (new or extend an existing trigger-tool test file)
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 Create/extend a test for `SetTriggerTool.SetTrigger` asserting readable error strings (not exceptions, not silent nulls) for: (a) unknown entity id → "entity not found"; (b) unknown `handlerKind` → lists valid kinds; (c) a schedule that resolves to null `NextFireAt` (e.g. `{"start":"2020-01-01T00:00:00Z","rrule":"FREQ=YEARLY;COUNT=1"}` fully in the past, or a malformed schedule) → "schedule does not resolve to a future fire time". Read the existing tietue tool tests for the harness (they construct repositories over `TestDb.New()`). The tool needs `EntityRepository`/`TietueDbContext` and `HandlerRegistry` to validate — see Step 2 for the new dependencies.
 
-- [ ] **Step 2: Add validation**
+- [x] **Step 2: Add validation**
 
 `SetTriggerTool` currently depends only on `TriggerRepository`. Add `TietueDbContext db` and `HandlerRegistry handlers` to its primary constructor. Before `CreateAsync`:
 
@@ -579,11 +579,11 @@ Create/extend a test for `SetTriggerTool.SetTrigger` asserting readable error st
 
 `HandlerRegistry` needs a `Kinds` accessor — add `public IReadOnlyCollection<string> Kinds => _byKind.Keys.ToList();` to it. (`using Microsoft.EntityFrameworkCore;` for `AnyAsync`.) `SetTriggerTool` is discovered by `WithToolsFromAssembly` and its deps resolved from DI — `TietueDbContext` (scoped) and `HandlerRegistry` (scoped) are already registered, so no Program.cs change beyond confirming.
 
-- [ ] **Step 3: Same guard on the script `trigger` effect**
+- [x] **Step 3: Same guard on the script `trigger` effect**
 
 `ScriptEffectApplier` (the `trigger` effect at ~line 33) creates triggers from sandboxed scripts with the same lack of validation. Apply the same three checks there (entity existence is implicit — the script acts on a known entity; still validate handlerKind and the resolved fire time), returning/logging a clear effect error rather than creating a dead trigger. Read the current method and match its effect-result style.
 
-- [ ] **Step 4: Run full suite, format, commit**
+- [x] **Step 4: Run full suite, format, commit**
 
 ```bash
 dotnet test src/toimi.tools.tietue.Tests
@@ -605,7 +605,7 @@ Context: `ToimiClientFactory.Create` hardcodes OpenAI with no configured timeout
 - Modify: `src/toimi.web/Program.cs` + `src/toimi.web/Hubs/ToimiHub.cs` (inject provider), `src/toimi.tools.tietue/Program.cs` + `src/toimi.tools.tietue/Agents/AgentRunner.cs` (inject provider)
 - Modify: `src/toimi.core/Configuration/ToimiOptions.cs` (timeout/retry knobs)
 
-- [ ] **Step 1: Config knobs**
+- [x] **Step 1: Config knobs**
 
 In `OpenAIOptions`:
 
@@ -616,7 +616,7 @@ In `OpenAIOptions`:
   public int MaxRetries { get; set; } = 3;
 ```
 
-- [ ] **Step 2: The interface + OpenAI impl**
+- [x] **Step 2: The interface + OpenAI impl**
 
 `src/toimi.core/Llm/ILlmClientProvider.cs`:
 
@@ -662,11 +662,11 @@ public sealed class OpenAiLlmClientProvider(ToimiConfiguration config) : ILlmCli
 
 VERIFY the OpenAI SDK API: the `OpenAIClientOptions.NetworkTimeout`/`RetryPolicy` property names and the `ClientRetryPolicy(maxRetries)` ctor against the installed `OpenAI` package version. Adapt exact names; the intent is explicit timeout + bounded retries. If `RetryPolicy` isn't settable that way, use the SDK's documented mechanism for the installed version and note it.
 
-- [ ] **Step 3: Keep `ToimiClientFactory.Create` as a thin shim, register in DI**
+- [x] **Step 3: Keep `ToimiClientFactory.Create` as a thin shim, register in DI**
 
 Leave `ToimiClientFactory`'s static message-assembly helpers alone. Change `Create(ToimiConfiguration)` to delegate — or (cleaner) delete `Create` and update the two call sites to use the injected provider. Recommended minimal change: keep a `Create(ToimiConfiguration)` that news up `OpenAiLlmClientProvider(config).Create()` so nothing else breaks, AND register `services.AddSingleton<ILlmClientProvider, OpenAiLlmClientProvider>()` in both `src/toimi.web/Program.cs` and `src/toimi.tools.tietue/Program.cs`. Then inject `ILlmClientProvider` into `ToimiHub` (replace `ToimiClientFactory.Create(_config)` at the OnConnected site with `_llmProvider.Create()`) and `AgentRunner` (replace the `ToimiClientFactory.Create(config)` call). This gives the seam + resilience with the smallest blast radius. Document in the commit which call sites moved to the injected provider.
 
-- [ ] **Step 4: Build, test, format, commit**
+- [x] **Step 4: Build, test, format, commit**
 
 ```bash
 dotnet build toimi.sln && dotnet test toimi.sln
@@ -688,7 +688,7 @@ Context: `CompactIfNeeded` runs before `SendMessage`'s try (a thrown summarizati
 - Modify: `src/toimi.web/Hubs/ToimiHub.cs` (move compaction inside try; explicit rollback intent)
 - Test: `src/toimi.core.Tests/ContextManagerTests.cs` (extend — summarization-failure fallback)
 
-- [ ] **Step 1: Failing test — summarization failure degrades to uncompacted**
+- [x] **Step 1: Failing test — summarization failure degrades to uncompacted**
 
 Extend `ContextManagerTests.cs`. The existing `FakeChatClient` returns a canned response; add a mode where `GetResponseAsync` throws, and assert `CompactIfNeeded` returns `false` (proceeds uncompacted) instead of throwing, leaving `messages` unchanged:
 
@@ -709,7 +709,7 @@ Extend `ContextManagerTests.cs`. The existing `FakeChatClient` returns a canned 
 
 Run → FAIL (currently throws).
 
-- [ ] **Step 2: Wrap summarization in `ContextManager`**
+- [x] **Step 2: Wrap summarization in `ContextManager`**
 
 Around the `client.GetResponseAsync(summaryMessages, ...)` call, add a try/catch and an optional timeout:
 
@@ -732,7 +732,7 @@ Around the `client.GetResponseAsync(summaryMessages, ...)` call, add a try/catch
 
 Leave the message-splice logic after this unchanged.
 
-- [ ] **Step 3: Move compaction inside the hub's try + fix the rollback**
+- [x] **Step 3: Move compaction inside the hub's try + fix the rollback**
 
 In `ToimiHub.SendMessage`: move the `await ContextManager.CompactIfNeeded(...)` call (currently line ~111, before the `try` at ~113) to just INSIDE the `try`. And replace the catch's blind removal with intent tracking:
 
@@ -758,7 +758,7 @@ In `ToimiHub.SendMessage`: move the `await ContextManager.CompactIfNeeded(...)` 
 
 The already-persisted user message stays in-memory (matches the DB). Read the current method to place `assistantAppended = true` immediately after the assistant `Add`, and keep every other line.
 
-- [ ] **Step 4: Run suites, format, commit**
+- [x] **Step 4: Run suites, format, commit**
 
 ```bash
 dotnet test src/toimi.core.Tests src/toimi.web.Tests
@@ -780,7 +780,7 @@ Context: every no-param connect / reconnect / abandoned "New" writes a titleless
 - Modify: `src/toimi.web/ClientApp/src/hooks/useToimi.ts` (handle `ConversationCreated`)
 - Test: `src/toimi.web.Tests/` (a hub-logic test if a seam allows; otherwise document manual verification)
 
-- [ ] **Step 1: Make the session's ConversationId nullable and defer creation**
+- [x] **Step 1: Make the session's ConversationId nullable and defer creation**
 
 In `ToimiHub`, change the `ToimiSession` record's `ConversationId` from `Guid` to `Guid?`. In `OnConnectedAsync`, the no-param branch (and `NewConversation`) should NOT call `_repository.CreateAsync()` — set `ConversationId = null` and send the client an empty state (no `ConversationLoaded` with a real id, or a distinct "new/empty" signal). The `?conversationId=` branch that loads an existing conversation is unchanged.
 
@@ -798,11 +798,11 @@ In `SendMessage`, before the first `AddMessageAsync`, create the row lazily:
 
 Then use `session.ConversationId!.Value` for the `AddMessageAsync`/`UpdateTitleAsync` calls. (Records are immutable — the `with` + dictionary reassign is how the session gets its id; confirm `ToimiSession` is a `record` and `Sessions` is the `ConcurrentDictionary`.) `NewConversation` becomes: clear in-memory messages, set `ConversationId = null`, emit the empty state — no DB row.
 
-- [ ] **Step 2: Client learns its id via `ConversationCreated`**
+- [x] **Step 2: Client learns its id via `ConversationCreated`**
 
 In `useToimi.ts`, add a handler mirroring the existing `ConversationLoaded` id-capture: `connection.on('ConversationCreated', (id: string) => { setCurrentConversationId(id); currentConversationIdRef.current = id })`. This keeps the reconnect-resync (Week 4) working: once the first message creates the row and the client learns the id, a later reconnect rebuilds with `?conversationId=<id>`. Read the hook's existing `ConversationLoaded` handler and mirror its state/ref updates exactly. Confirm the sidebar list (`ListConversations`) now only shows conversations that have messages (they will — empty ones no longer exist).
 
-- [ ] **Step 3: Verify, lint, build, commit**
+- [x] **Step 3: Verify, lint, build, commit**
 
 ```bash
 dotnet test toimi.sln
@@ -816,7 +816,7 @@ git commit -m "fix(web): create conversations lazily on first message to stop or
 
 ## Final verification
 
-- [ ] `bash scripts/lint.sh && dotnet test toimi.sln` — all green.
-- [ ] `cd src/toimi.web/ClientApp && npm run lint && npm run build` — clean.
-- [ ] `git status` clean; commits follow convention.
-- [ ] Completion report to the user MUST note: (a) the two security fixes and that ruutu/verkko need redeploy; (b) tietue needs redeploy (tz recurrence, atomic create, set_trigger validation) — NO new migration; (c) `UserTimeZone` config default is Europe/Helsinki, override via `Toimi:UserTimeZone` if needed; (d) the `/ready` readiness probes change the tietue+ruutu manifests (apply via deploy); (e) the LLM timeout/retry defaults (100s/3) are new `Toimi:OpenAI` knobs.
+- [x] `bash scripts/lint.sh && dotnet test toimi.sln` — all green.
+- [x] `cd src/toimi.web/ClientApp && npm run lint && npm run build` — clean.
+- [x] `git status` clean; commits follow convention.
+- [x] Completion report to the user MUST note: (a) the two security fixes and that ruutu/verkko need redeploy; (b) tietue needs redeploy (tz recurrence, atomic create, set_trigger validation) — NO new migration; (c) `UserTimeZone` config default is Europe/Helsinki, override via `Toimi:UserTimeZone` if needed; (d) the `/ready` readiness probes change the tietue+ruutu manifests (apply via deploy); (e) the LLM timeout/retry defaults (100s/3) are new `Toimi:OpenAI` knobs.

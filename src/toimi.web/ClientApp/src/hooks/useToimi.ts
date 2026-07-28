@@ -94,6 +94,24 @@ export function useToimi() {
       currentConversationIdRef.current = conversationId
     })
 
+    // Lazy conversations: the row is created on the first message, and the server
+    // tells us its id here. Mirror ConversationLoaded's id-capture so a later
+    // reconnect rebuilds the connection with ?conversationId=<id> and resyncs.
+    connection.on('ConversationCreated', (id: string) => {
+      setCurrentConversationId(id)
+      currentConversationIdRef.current = id
+    })
+
+    // NewConversation started a fresh, row-less conversation server-side. Reset the
+    // view and forget the current id so reconnect-resync stays fresh until the first
+    // message creates the row (and ConversationCreated hands us the new id).
+    connection.on('ConversationReset', () => {
+      setMessages([])
+      setCurrentConversationId(null)
+      currentConversationIdRef.current = null
+      conversationIdRef.current = undefined
+    })
+
     connection.on('ConversationList', (json: string) => {
       const list = JSON.parse(json) as ConversationSummary[]
       setConversations(list)

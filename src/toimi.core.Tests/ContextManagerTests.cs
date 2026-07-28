@@ -89,6 +89,24 @@ public class ContextManagerTests
   }
 
   [Fact]
+  public async Task Compaction_that_fails_to_summarize_proceeds_uncompacted()
+  {
+    var client = new FakeChatClient { Throw = true };
+    var messages = new List<ChatMessage>();
+    for (var i = 0; i < 30; i++)
+    {
+      messages.Add(Text(ChatRole.User, 100));
+    }
+
+    var before = messages.Count;
+
+    var compacted = await ContextManager.CompactIfNeeded(messages, client, budget: null, maxTokens: 1, ct: default);
+
+    Assert.False(compacted);
+    Assert.Equal(before, messages.Count); // untouched on failure
+  }
+
+  [Fact]
   public async Task No_compaction_below_the_limit()
   {
     var client = new FakeChatClient();

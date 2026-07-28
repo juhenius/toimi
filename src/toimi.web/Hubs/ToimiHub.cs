@@ -4,15 +4,17 @@ using System.Text.Json;
 using Toimi.Core;
 using Toimi.Core.Configuration;
 using Toimi.Core.Data;
+using Toimi.Core.Llm;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.AI;
 
 namespace Toimi.Web.Hubs;
 
-public class ToimiHub(ToimiConfiguration config, ConversationRepository repository, ILogger<ToimiHub> logger) : Hub
+public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider, ConversationRepository repository, ILogger<ToimiHub> logger) : Hub
 {
   private static readonly ConcurrentDictionary<string, ToimiSession> Sessions = new();
   private readonly ToimiConfiguration _config = config;
+  private readonly ILlmClientProvider _llmProvider = llmProvider;
   private readonly ConversationRepository _repository = repository;
 
   public override async Task OnConnectedAsync()
@@ -25,13 +27,19 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
       var tools = aggregator.GetAllTools();
       var skillSummary = await aggregator.CallToolAsync("list_skills");
       var typeCatalog = await aggregator.CallToolAsync("list_types");
-      var (toimiClient, notifier) = ToimiClientFactory.Create(_config);
+      var (toimiClient, notifier) = _llmProvider.Create();
       var toimiOptions = ToimiClientFactory.CreateRequestOptions(tools);
       var messages = ToimiClientFactory.CreateInitialMessages(skillSummary, typeCatalog);
 
       // Check for conversationId query parameter
       var conversationIdParam = Context.GetHttpContext()?.Request.Query["conversationId"].ToString();
-      Guid conversationId;
+
+      // Lazy conversations: no DB row is written on connect. Only an existing,
+      // query-param-named conversation resolves to an id here; a no-param connect
+      // (or an unknown/deleted id) starts with a null ConversationId and no row.
+      // The row is created on the first message (see SendMessage), which then emits
+      // ConversationCreated so the client can learn its id for reconnect-resync.
+      Guid? conversationId = null;
 
       if (!string.IsNullOrEmpty(conversationIdParam) && Guid.TryParse(conversationIdParam, out var existingId))
       {
@@ -49,24 +57,14 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
 
           // Send ConversationLoaded with messages
           var messagesJson = SerializeConversationMessages(conversation.Messages);
-          await Clients.Caller.SendAsync("ConversationLoaded", conversationId, messagesJson);
+          await Clients.Caller.SendAsync("ConversationLoaded", conversation.Id, messagesJson);
         }
-        else
-        {
-          // Invalid conversation ID, create new
-          var newConversation = await _repository.CreateAsync();
-          conversationId = newConversation.Id;
-          await Clients.Caller.SendAsync("ConversationLoaded", conversationId, "[]");
-        }
+        // else: unknown/deleted id — fall through as a fresh, lazy conversation.
+        // No ConversationLoaded is sent; the client keeps its empty view and learns
+        // a real id from ConversationCreated once the first message creates the row.
       }
-      else
-      {
-        var newConversation = await _repository.CreateAsync();
-        conversationId = newConversation.Id;
-        // Tell the client its new conversation id so a later reconnect can reload it
-        // (query-param driven) instead of silently forking into yet another conversation.
-        await Clients.Caller.SendAsync("ConversationLoaded", conversationId, "[]");
-      }
+      // No-param connect is lazy too: no send, no row. The client's fresh view
+      // (empty messages, no id) already reflects this state.
 
       Sessions[Context.ConnectionId] = new ToimiSession(
         aggregator, toimiClient, notifier, toimiOptions, messages, skillSummary, typeCatalog, conversationId);
@@ -101,17 +99,33 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
       return;
     }
 
+    // Lazily create the conversation row on the first message, so no-param
+    // connects / reconnects / abandoned "New" sessions never leave orphan rows.
+    if (session.ConversationId is null)
+    {
+      var created = await _repository.CreateAsync();
+      session = session with { ConversationId = created.Id };
+      Sessions[Context.ConnectionId] = session;
+      await Clients.Caller.SendAsync("ConversationCreated", created.Id);
+    }
+
     session.Messages.Add(new(ChatRole.User, message));
 
     // Save user message to DB
-    await _repository.AddMessageAsync(session.ConversationId, "user", message);
+    await _repository.AddMessageAsync(session.ConversationId.Value, "user", message);
 
-    // Update current time and compact context if needed
+    // Update current time
     ToimiClientFactory.RefreshDynamicContext(session.Messages);
-    await ContextManager.CompactIfNeeded(session.Messages, session.ChatClient, session.Budget, _config.MaxContextTokens, Context.ConnectionAborted);
 
+    var assistantAppended = false;
+    var assistantPersisted = false;
     try
     {
+      // Compact context if needed. Inside the try so a summarization failure degrades
+      // gracefully (CompactIfNeeded returns false) or is caught here rather than killing
+      // the turn with the user message already persisted.
+      await ContextManager.CompactIfNeeded(session.Messages, session.ChatClient, session.Budget, _config.MaxContextTokens, Context.ConnectionAborted);
+
       var fullResponse = new StringBuilder();
       var toolCallEvents = new List<object>();
       UsageDetails? usage = null;
@@ -151,6 +165,7 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
       }
 
       session.Messages.Add(new(ChatRole.Assistant, responseText));
+      assistantAppended = true;
 
       // Serialize tool calls JSON
       var toolCallsJson = toolCallEvents.Count > 0
@@ -163,23 +178,32 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
       var totalTokens = (int?)usage?.TotalTokenCount ?? (promptTokens + completionTokens);
 
       // Save assistant message to DB
-      await _repository.AddMessageAsync(session.ConversationId, "assistant", responseText, toolCallsJson,
+      await _repository.AddMessageAsync(session.ConversationId.Value, "assistant", responseText, toolCallsJson,
         promptTokens: promptTokens,
         completionTokens: completionTokens,
         totalTokens: totalTokens);
+      assistantPersisted = true;
 
       // Auto-title: set title on first exchange
       if (session.Messages.Count(m => m.Role == ChatRole.User) == 1)
       {
         var title = message.Length > 50 ? message[..50] : message;
-        await _repository.UpdateTitleAsync(session.ConversationId, title);
+        await _repository.UpdateTitleAsync(session.ConversationId.Value, title);
       }
 
       await Clients.Caller.SendAsync("MessageComplete", responseText);
     }
     catch (Exception ex)
     {
-      session.Messages.RemoveAt(session.Messages.Count - 1);
+      // Only remove the assistant message if it was appended but NOT yet persisted.
+      // A blind RemoveAt would strip the already-persisted user message (early throw),
+      // and removing an assistant message the DB already has (throw after persist, e.g.
+      // auto-title) would diverge in-memory context from the DB.
+      if (assistantAppended && !assistantPersisted)
+      {
+        session.Messages.RemoveAt(session.Messages.Count - 1);
+      }
+
       await Clients.Caller.SendAsync("Error", ex.Message);
     }
   }
@@ -205,18 +229,21 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
       return;
     }
 
-    var newConversation = await _repository.CreateAsync();
     var messages = ToimiClientFactory.CreateInitialMessages(session.SkillSummary, session.TypeCatalog);
 
-    // Replace the session with a new conversation
+    // Start a fresh, lazy conversation: clear in-memory state but write no DB row.
+    // The row is created on the first message (ConversationCreated then tells the
+    // client its id), so an abandoned "New" never leaves an orphan row.
     Sessions[Context.ConnectionId] = session with
     {
       Messages = messages,
-      ConversationId = newConversation.Id,
+      ConversationId = null,
       Budget = new(),
     };
 
-    await Clients.Caller.SendAsync("ConversationLoaded", newConversation.Id, "[]");
+    // Distinct "new/empty" signal (not a ConversationLoaded with a real id): the
+    // client resets its view and forgets any current id until the first message.
+    await Clients.Caller.SendAsync("ConversationReset");
   }
 
   private async Task DrainToolEvents(ToolCallNotifier notifier, List<object>? toolCallEvents = null)
@@ -257,7 +284,7 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
     List<ChatMessage> Messages,
     string? SkillSummary,
     string? TypeCatalog,
-    Guid ConversationId)
+    Guid? ConversationId)
   {
     public ContextBudget Budget { get; init; } = new();
   }

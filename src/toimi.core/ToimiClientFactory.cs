@@ -1,4 +1,3 @@
-using Toimi.Core.Configuration;
 using Microsoft.Extensions.AI;
 using AIChatOptions = Microsoft.Extensions.AI.ChatOptions;
 
@@ -6,19 +5,6 @@ namespace Toimi.Core;
 
 public static class ToimiClientFactory
 {
-  public static (IChatClient Client, ToolCallNotifier Notifier) Create(ToimiConfiguration config)
-  {
-    var openAiClient = new OpenAI.OpenAIClient(config.OpenAI.ApiKey);
-    var inner = openAiClient.GetChatClient(config.OpenAI.Model).AsIChatClient();
-    var notifier = new ToolCallNotifier(inner);
-
-    var client = new ChatClientBuilder(notifier)
-        .UseFunctionInvocation()
-        .Build();
-
-    return (client, notifier);
-  }
-
   public static AIChatOptions CreateRequestOptions(IList<AITool> tools)
   {
     return new AIChatOptions

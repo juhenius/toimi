@@ -21,6 +21,7 @@ if (string.IsNullOrEmpty(toimiConfig.OpenAI.ApiKey))
 
 builder.Services.AddSignalR();
 builder.Services.AddSingleton(toimiConfig);
+builder.Services.AddSingleton<Toimi.Core.Llm.ILlmClientProvider, Toimi.Core.Llm.OpenAiLlmClientProvider>();
 
 var adminToolsOptions = builder.Configuration.GetSection("Toimi:Admin").Get<AdminToolsOptions>()
   ?? new AdminToolsOptions();

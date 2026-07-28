@@ -60,6 +60,7 @@ builder.Services.AddHostedService<OutboxWorker>();
 builder.Services.AddSingleton(
   builder.Configuration.GetSection("Toimi").Get<Toimi.Core.Configuration.ToimiConfiguration>()
     ?? throw new InvalidOperationException("Toimi configuration is required"));
+builder.Services.AddSingleton<Toimi.Core.Llm.ILlmClientProvider, Toimi.Core.Llm.OpenAiLlmClientProvider>();
 builder.Services.AddSingleton<toimi.tools.tietue.Agents.IAgentRunner, toimi.tools.tietue.Agents.AgentRunner>();
 builder.Services.AddScoped<toimi.tools.tietue.Handlers.INativeHandler, toimi.tools.tietue.Handlers.MessageHandler>();
 
