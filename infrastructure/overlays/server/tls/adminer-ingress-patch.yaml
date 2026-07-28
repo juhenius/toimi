@@ -1,0 +1,14 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: adminer
+  namespace: data
+  annotations:
+    cert-manager.io/cluster-issuer: toimi-ca-issuer
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.middlewares: data-admin-auth@kubernetescrd
+spec:
+  tls:
+    - hosts:
+        - ${ADMINER_HOST}
+      secretName: adminer-tls

@@ -575,6 +575,8 @@ Temporary Items
 # Kustomize secrets
 **/secrets.env
 !**/secrets.env.example
+**/admin-auth.env
+!**/admin-auth.env.example
 /.claude
 /.mcp.json
 /.playwright-mcp

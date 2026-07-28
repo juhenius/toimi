@@ -3,11 +3,25 @@ kind: Kustomization
 
 resources:
   - ../../base
+  - tls/redirect-middleware.yaml
+  - tls/web-http-ingress.yaml
+  - auth/middleware.yaml
+  - auth/web-admin-ingress.yaml
+
+patches:
+  - path: tls/web-ingress-patch.yaml
+  - path: tls/ruutu-ingress-patch.yaml
 
 secretGenerator:
   - name: toimi-secrets
     namespace: apps
     envs:
       - secrets.env
+    options:
+      disableNameSuffixHash: true
+  - name: admin-basic-auth
+    namespace: apps
+    envs:
+      - admin-auth.env
     options:
       disableNameSuffixHash: true

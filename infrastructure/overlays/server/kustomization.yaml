@@ -4,3 +4,19 @@ kind: Kustomization
 resources:
   - ../../base
   - registry
+  - tls/redirect-middleware.yaml
+  - tls/adminer-http-ingress.yaml
+  - tls/qdrant-http-ingress.yaml
+  - auth/middleware.yaml
+
+patches:
+  - path: tls/adminer-ingress-patch.yaml
+  - path: tls/qdrant-ingress-patch.yaml
+
+secretGenerator:
+  - name: admin-basic-auth
+    namespace: data
+    envs:
+      - admin-auth.env
+    options:
+      disableNameSuffixHash: true

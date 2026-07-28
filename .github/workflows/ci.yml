@@ -49,6 +49,8 @@ jobs:
         run: |
           cp k8s/overlays/server/secrets.env.example k8s/overlays/server/secrets.env
           cp infrastructure/secrets.env.example infrastructure/overlays/server/secrets.env
+          cp k8s/overlays/server/admin-auth.env.example k8s/overlays/server/admin-auth.env
+          cp infrastructure/overlays/server/admin-auth.env.example infrastructure/overlays/server/admin-auth.env
           kubectl kustomize k8s/overlays/server > /dev/null
           kubectl kustomize infrastructure/overlays/server > /dev/null
 

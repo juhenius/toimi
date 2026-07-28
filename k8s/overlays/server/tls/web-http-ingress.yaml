@@ -1,0 +1,25 @@
+# Companion HTTP ingress: catches plain-HTTP requests for the whole host
+# (web / and ruutu /ruutu) and redirects them to HTTPS. The redirect
+# middleware lives on this separate router because putting it on the TLS
+# router would loop.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: toimi-web-http-redirect
+  namespace: apps
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.middlewares: apps-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: ${TOIMI_HOST}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: toimi-web
+                port:
+                  number: 80

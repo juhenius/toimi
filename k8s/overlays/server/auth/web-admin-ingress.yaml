@@ -1,0 +1,36 @@
+# Dedicated ingress for the admin surfaces only. Traefik routes by
+# longest matching prefix, so /admin and /api/admin land on this router
+# (with basicAuth) while everything else stays on the open toimi-web
+# ingress.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: toimi-web-admin
+  namespace: apps
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.middlewares: apps-admin-auth@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - ${TOIMI_HOST}
+      secretName: toimi-web-tls
+  rules:
+    - host: ${TOIMI_HOST}
+      http:
+        paths:
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service:
+                name: toimi-web
+                port:
+                  number: 80
+          - path: /api/admin
+            pathType: Prefix
+            backend:
+              service:
+                name: toimi-web
+                port:
+                  number: 80

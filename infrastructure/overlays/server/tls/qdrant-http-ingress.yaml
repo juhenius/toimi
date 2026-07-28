@@ -1,0 +1,22 @@
+# Companion HTTP ingress: redirects plain-HTTP qdrant requests to HTTPS.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: qdrant-http-redirect
+  namespace: data
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.middlewares: data-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: ${QDRANT_HOST}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: qdrant
+                port:
+                  number: 6333

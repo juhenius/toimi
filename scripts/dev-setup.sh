@@ -118,10 +118,34 @@ helm upgrade --install postgresql bitnami/postgresql \
   --set auth.postgresPassword="$PG_PASSWORD" \
   --wait
 
+# --- cert-manager (Helm; must precede the infra apply — ClusterIssuer/Certificate need its CRDs) ---
+echo "Installing cert-manager..."
+helm repo add jetstack https://charts.jetstack.io --force-update >/dev/null
+helm repo update >/dev/null
+helm upgrade --install cert-manager jetstack/cert-manager \
+  --namespace cert-manager \
+  --create-namespace \
+  --version "v1.21.0" \
+  --set crds.enabled=true \
+  --wait
+
 # --- Infrastructure (Kustomize) ---
 echo "Applying infrastructure (with config.env substitution)..."
-kubectl kustomize "$ROOT_DIR/infrastructure/overlays/dev" | envsubst "$SUBST" | \
-  { kubectl apply --server-side -f - 2>/dev/null || kubectl apply -f -; }
+INFRA_MANIFESTS=$(kubectl kustomize "$ROOT_DIR/infrastructure/overlays/dev" | envsubst "$SUBST")
+# cert-manager's webhook can lag a few seconds behind helm --wait (caBundle
+# propagation), transiently rejecting Certificate/ClusterIssuer applies — retry.
+for attempt in 1 2 3; do
+  if echo "$INFRA_MANIFESTS" | kubectl apply --server-side -f - 2>/dev/null \
+    || echo "$INFRA_MANIFESTS" | kubectl apply -f -; then
+    break
+  fi
+  if [ "$attempt" -eq 3 ]; then
+    echo "ERROR: infrastructure apply failed after 3 attempts" >&2
+    exit 1
+  fi
+  echo "Apply failed (cert-manager webhook settling?); retrying in 5s..."
+  sleep 5
+done
 
 # --- Database init (imperative by nature) ---
 echo "Waiting for PostgreSQL..."

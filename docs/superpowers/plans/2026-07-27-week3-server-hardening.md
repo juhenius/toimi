@@ -27,7 +27,7 @@
 - Modify: `src/toimi.web/Dockerfile`, `src/toimi.tools.tietue/Dockerfile`, `src/toimi.tools.koti/Dockerfile`, `src/toimi.tools.verkko/Dockerfile`, `src/toimi.tools.ruutu/Dockerfile` (FROM lines)
 - Modify: `infrastructure/base/adminer/deployment.yaml:20` (`adminer:latest`), `infrastructure/overlays/server/registry/deployment.yaml:20` (`registry:2`)
 
-- [ ] **Step 1: Create `.dockerignore`** at repo root:
+- [x] **Step 1: Create `.dockerignore`** at repo root:
 
 ```
 .git
@@ -47,11 +47,11 @@ samples
 
 (Build context is the repo root for every Dockerfile; nothing in these paths is COPYed.)
 
-- [ ] **Step 2: Resolve current patch tags and pin.** Look up the current tags: `curl -s https://mcr.microsoft.com/v2/dotnet/sdk/tags/list | jq -r '.tags[]' | grep -E '^10\.0\.[0-9]+$' | sort -V | tail -1` (same for `dotnet/aspnet`), and for node: `curl -s 'https://hub.docker.com/v2/repositories/library/node/tags?name=24.&page_size=100' | jq -r '.results[].name' | grep -E '^24\.[0-9]+\.[0-9]+-slim$' | sort -V | tail -1`. Then in all five Dockerfiles replace `sdk:10.0`→`sdk:10.0.<patch>`, `aspnet:10.0`→`aspnet:10.0.<patch>`, and in toimi.web also `node:24-slim`→`node:24.<x>.<y>-slim`. Pin `adminer:latest`→ current stable (`curl -s 'https://hub.docker.com/v2/repositories/library/adminer/tags?page_size=25' | jq -r '.results[].name'` — pick the newest plain semver, e.g. `adminer:5.x.y`) and `registry:2`→ newest `registry:2.8.x` (same technique, repo `library/registry`). If a registry query fails, use the most recent version you know and note it for Dependabot to correct.
+- [x] **Step 2: Resolve current patch tags and pin.** Look up the current tags: `curl -s https://mcr.microsoft.com/v2/dotnet/sdk/tags/list | jq -r '.tags[]' | grep -E '^10\.0\.[0-9]+$' | sort -V | tail -1` (same for `dotnet/aspnet`), and for node: `curl -s 'https://hub.docker.com/v2/repositories/library/node/tags?name=24.&page_size=100' | jq -r '.results[].name' | grep -E '^24\.[0-9]+\.[0-9]+-slim$' | sort -V | tail -1`. Then in all five Dockerfiles replace `sdk:10.0`→`sdk:10.0.<patch>`, `aspnet:10.0`→`aspnet:10.0.<patch>`, and in toimi.web also `node:24-slim`→`node:24.<x>.<y>-slim`. Pin `adminer:latest`→ current stable (`curl -s 'https://hub.docker.com/v2/repositories/library/adminer/tags?page_size=25' | jq -r '.results[].name'` — pick the newest plain semver, e.g. `adminer:5.x.y`) and `registry:2`→ newest `registry:2.8.x` (same technique, repo `library/registry`). If a registry query fails, use the most recent version you know and note it for Dependabot to correct.
 
-- [ ] **Step 3: Verify one build if docker is available**: `docker build -f src/toimi.tools.verkko/Dockerfile -t verkko-pin-test . && docker rmi verkko-pin-test`. If docker is unavailable, note it — CI's next real deploy validates; the pinned tags at least must exist per the registry queries above.
+- [x] **Step 3: Verify one build if docker is available**: `docker build -f src/toimi.tools.verkko/Dockerfile -t verkko-pin-test . && docker rmi verkko-pin-test`. If docker is unavailable, note it — CI's next real deploy validates; the pinned tags at least must exist per the registry queries above.
 
-- [ ] **Step 4: Lint + commit**
+- [x] **Step 4: Lint + commit**
 
 ```bash
 bash scripts/lint.sh
@@ -67,7 +67,7 @@ git commit -m "chore: pin base images and add .dockerignore"
 - Modify: `k8s/base/web/deployment.yaml`, `k8s/base/tools-tietue/deployment.yaml`, `k8s/base/tools-koti/deployment.yaml`, `k8s/base/tools-verkko/deployment.yaml`, `k8s/base/tools-ruutu/deployment.yaml`
 - Modify: `infrastructure/base/qdrant/deployment.yaml`, `infrastructure/base/adminer/deployment.yaml`, `infrastructure/overlays/server/registry/deployment.yaml`
 
-- [ ] **Step 1: .NET app deployments.** In each of the five `k8s/base/*/deployment.yaml`, inside `spec.template.spec` add pod-level securityContext, and on the container add resources, container securityContext, tmp mount. Template (adjust resources per table below):
+- [x] **Step 1: .NET app deployments.** In each of the five `k8s/base/*/deployment.yaml`, inside `spec.template.spec` add pod-level securityContext, and on the container add resources, container securityContext, tmp mount. Template (adjust resources per table below):
 
 ```yaml
     spec:
@@ -104,12 +104,12 @@ Per-pod resources: **tietue** `requests 200m/512Mi, limits 1000m/1Gi`; **web, ko
 
 Note: if a deployment already has `volumeMounts`/`volumes` (check each file), merge rather than duplicate keys. ASP.NET needs writable `/tmp` (data protection keys land under /root or /home by default — with `readOnlyRootFilesystem` the app may also need `DOTNET_CLI_HOME=/tmp` and `ASPNETCORE_DATA_PROTECTION` fallback; to keep risk low, ALSO add env `- name: HOME` / `value: /tmp` to each container so anything writing to $HOME lands on the emptyDir).
 
-- [ ] **Step 2: Infra deployments.**
+- [x] **Step 2: Infra deployments.**
   - **qdrant** (`infrastructure/base/qdrant/deployment.yaml`): resources `200m/512Mi → 1000m/1Gi`; container securityContext `allowPrivilegeEscalation: false` + `capabilities.drop: [ALL]`. Qdrant's official image runs as root by default and writes to its storage path (PVC) — set pod `securityContext: { seccompProfile: { type: RuntimeDefault } }` only, with a comment: `# qdrant image expects uid 0 unless storage ownership is migrated; runAsNonRoot deferred`. Do NOT set readOnlyRootFilesystem.
   - **adminer**: resources `50m/64Mi → 200m/256Mi`; the official image runs as `adminer` (uid 1000) already — set pod securityContext `runAsNonRoot: true`, `seccompProfile: RuntimeDefault`; container `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`. No readOnlyRootFilesystem (php session tmp).
   - **registry** (`infrastructure/overlays/server/registry/deployment.yaml`): resources `50m/64Mi → 200m/256Mi` (file already has a `resources:` key at ~line 40 — REPLACE its contents, don't duplicate); container `allowPrivilegeEscalation: false` + `capabilities.drop: [ALL]`; comment that runAsNonRoot is skipped (image writes /var/lib/registry as root unless the PVC ownership is prepared).
 
-- [ ] **Step 3: Lint + commit**
+- [x] **Step 3: Lint + commit**
 
 ```bash
 bash scripts/lint.sh
@@ -125,7 +125,7 @@ git commit -m "feat(infra): resource limits and security contexts on all deploym
 - Modify: `.github/workflows/ci.yml` (yaml job)
 - Create: `.github/dependabot.yml`
 
-- [ ] **Step 1: Extend the CI `yaml` job** with kustomize render checks (ubuntu-latest runners ship kubectl):
+- [x] **Step 1: Extend the CI `yaml` job** with kustomize render checks (ubuntu-latest runners ship kubectl):
 
 ```yaml
   yaml:
@@ -148,7 +148,7 @@ git commit -m "feat(infra): resource limits and security contexts on all deploym
 
 NOTE: the `admin-auth.env.example` files are created in Task 6. To keep every commit green, in THIS task add the render step only for the base directories and the two `cp` lines for the existing secrets.env examples + overlay renders; Task 6 then appends its two `cp` lines when the files exist. (Check `infrastructure/secrets.env.example` location — it's at `infrastructure/secrets.env.example`, copied into the overlay dir.)
 
-- [ ] **Step 2: Create `.github/dependabot.yml`:**
+- [x] **Step 2: Create `.github/dependabot.yml`:**
 
 ```yaml
 version: 2
@@ -187,7 +187,7 @@ updates:
 
 (`directories:` on one docker entry is supported by current Dependabot; if the schema validator in CI complains, split into five entries.)
 
-- [ ] **Step 3: Lint + commit**
+- [x] **Step 3: Lint + commit**
 
 ```bash
 bash scripts/lint.sh
@@ -205,7 +205,7 @@ git commit -m "ci: validate kustomize renders; add Dependabot for nuget, npm, do
 - Modify: `infrastructure/base/kustomization.yaml` (add `- cert-manager`)
 - Create: `scripts/export-ca.sh`
 
-- [ ] **Step 1: Helm install in both setup scripts.** Determine the current cert-manager chart version (`helm search repo jetstack/cert-manager` after adding the repo, or check https://cert-manager.io/docs/releases/ — pin the latest stable, e.g. `v1.18.x`). Insert after the Traefik/PostgreSQL installs (dev) and PostgreSQL install (server), following each script's existing style:
+- [x] **Step 1: Helm install in both setup scripts.** Determine the current cert-manager chart version (`helm search repo jetstack/cert-manager` after adding the repo, or check https://cert-manager.io/docs/releases/ — pin the latest stable, e.g. `v1.18.x`). Insert after the Traefik/PostgreSQL installs (dev) and PostgreSQL install (server), following each script's existing style:
 
 ```bash
 helm repo add jetstack https://charts.jetstack.io --force-update >/dev/null
@@ -219,7 +219,7 @@ helm upgrade --install cert-manager jetstack/cert-manager \
 
 (server-setup.sh uses `sudo k3s kubectl` but plain `helm` — helm talks to the kubeconfig; check how the script configures KUBECONFIG for helm's postgres install and mirror it.)
 
-- [ ] **Step 2: Bootstrap manifests.** `infrastructure/base/cert-manager/selfsigned-issuer.yaml`:
+- [x] **Step 2: Bootstrap manifests.** `infrastructure/base/cert-manager/selfsigned-issuer.yaml`:
 
 ```yaml
 apiVersion: cert-manager.io/v1
@@ -265,7 +265,7 @@ spec:
 
 `kustomization.yaml` listing the three; add `- cert-manager` to `infrastructure/base/kustomization.yaml` resources. ORDERING NOTE: applying these requires cert-manager CRDs to exist — the setup scripts install cert-manager (Step 1) BEFORE applying the infrastructure kustomize (verify the script order puts the Helm install before the `kubectl kustomize infrastructure/overlays/...` apply; move it above if not). CI's kustomize-render check doesn't need the CRDs (client-side render).
 
-- [ ] **Step 3: `scripts/export-ca.sh`** (executable, `set -euo pipefail`, SCRIPT_DIR/ROOT_DIR preamble like the other scripts):
+- [x] **Step 3: `scripts/export-ca.sh`** (executable, `set -euo pipefail`, SCRIPT_DIR/ROOT_DIR preamble like the other scripts):
 
 ```bash
 #!/usr/bin/env bash
@@ -281,7 +281,7 @@ echo "Fingerprint: $(openssl x509 -in "$OUT" -noout -fingerprint -sha256)"
 
 `chmod +x scripts/export-ca.sh`.
 
-- [ ] **Step 4: Lint + commit**
+- [x] **Step 4: Lint + commit**
 
 ```bash
 bash scripts/lint.sh
@@ -298,7 +298,7 @@ git commit -m "feat(infra): cert-manager with a self-managed Toimi CA"
 - Create: `infrastructure/overlays/server/tls/` — `adminer-ingress-patch.yaml`, `qdrant-ingress-patch.yaml`, `redirect-middleware.yaml`, `adminer-http-ingress.yaml`, `qdrant-http-ingress.yaml`
 - Modify: `k8s/overlays/server/kustomization.yaml`, `infrastructure/overlays/server/kustomization.yaml`
 
-- [ ] **Step 1: Redirect middlewares** (one per namespace). `k8s/overlays/server/tls/redirect-middleware.yaml`:
+- [x] **Step 1: Redirect middlewares** (one per namespace). `k8s/overlays/server/tls/redirect-middleware.yaml`:
 
 ```yaml
 apiVersion: traefik.io/v1alpha1
@@ -314,7 +314,7 @@ spec:
 
 Same content with `namespace: data` in `infrastructure/overlays/server/tls/redirect-middleware.yaml`.
 
-- [ ] **Step 2: TLS patches.** `k8s/overlays/server/tls/web-ingress-patch.yaml` (strategic-merge patch):
+- [x] **Step 2: TLS patches.** `k8s/overlays/server/tls/web-ingress-patch.yaml` (strategic-merge patch):
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -351,7 +351,7 @@ spec:
 
 `infrastructure/overlays/server/tls/adminer-ingress-patch.yaml` and `qdrant-ingress-patch.yaml`: same shape — `name: adminer`/`qdrant`, `namespace: data`, cert-manager annotation present on each (distinct hosts), hosts `${ADMINER_HOST}`/`${QDRANT_HOST}`, secretNames `adminer-tls`/`qdrant-tls`.
 
-- [ ] **Step 3: Companion HTTP redirect ingresses.** `k8s/overlays/server/tls/web-http-ingress.yaml` (a resource, not a patch — covers both web `/` and ruutu `/ruutu` since it matches the whole host):
+- [x] **Step 3: Companion HTTP redirect ingresses.** `k8s/overlays/server/tls/web-http-ingress.yaml` (a resource, not a patch — covers both web `/` and ruutu `/ruutu` since it matches the whole host):
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -379,7 +379,7 @@ spec:
 
 Same pattern for `adminer-http-ingress.yaml` and `qdrant-http-ingress.yaml` in the infra overlay (`data-redirect-https@kubernetescrd`, respective hosts/services/ports — adminer service port 80, qdrant 6333).
 
-- [ ] **Step 4: Wire kustomizations.** `k8s/overlays/server/kustomization.yaml` gains:
+- [x] **Step 4: Wire kustomizations.** `k8s/overlays/server/kustomization.yaml` gains:
 
 ```yaml
 resources:
@@ -394,7 +394,7 @@ patches:
 
 (analogous for the infrastructure server overlay with its five files). Keep the existing secretGenerator untouched.
 
-- [ ] **Step 5: Lint + commit** (CI's overlay render step now exercises these):
+- [x] **Step 5: Lint + commit** (CI's overlay render step now exercises these):
 
 ```bash
 bash scripts/lint.sh
@@ -412,7 +412,7 @@ git commit -m "feat(infra): TLS on all server ingresses via the Toimi CA with HT
 - Create: `infrastructure/overlays/server/auth/middleware.yaml`, `.../adminer-auth-patch.yaml`, `.../qdrant-auth-patch.yaml`
 - Modify: both server `kustomization.yaml`s (secretGenerator entries + resources/patches), `.github/workflows/ci.yml` (the two deferred `cp` lines), `.gitignore` (ignore `admin-auth.env`)
 
-- [ ] **Step 1: htpasswd env files.** `admin-auth.env.example` (identical content in both overlay dirs):
+- [x] **Step 1: htpasswd env files.** `admin-auth.env.example` (identical content in both overlay dirs):
 
 ```
 # Copy to admin-auth.env and replace with a real bcrypt htpasswd line:
@@ -423,7 +423,7 @@ users=admin:$2y$05$REPLACE_WITH_REAL_BCRYPT_HASH
 
 Add `admin-auth.env` to `.gitignore` (alongside the existing secrets.env pattern — check how secrets.env is ignored and mirror it).
 
-- [ ] **Step 2: secretGenerator entries.** In `k8s/overlays/server/kustomization.yaml`:
+- [x] **Step 2: secretGenerator entries.** In `k8s/overlays/server/kustomization.yaml`:
 
 ```yaml
 secretGenerator:
@@ -438,7 +438,7 @@ secretGenerator:
 
 Same in the infra overlay with `namespace: data`. (The htpasswd `$` characters are safe: secretGenerator base64-encodes values, so the envsubst pipeline never sees raw `$` in the rendered YAML.)
 
-- [ ] **Step 3: Middlewares.** `k8s/overlays/server/auth/middleware.yaml`:
+- [x] **Step 3: Middlewares.** `k8s/overlays/server/auth/middleware.yaml`:
 
 ```yaml
 apiVersion: traefik.io/v1alpha1
@@ -453,7 +453,7 @@ spec:
 
 Same with `namespace: data` in the infra overlay.
 
-- [ ] **Step 4: Apply auth.**
+- [x] **Step 4: Apply auth.**
   - `infrastructure/overlays/server/auth/adminer-auth-patch.yaml` / `qdrant-auth-patch.yaml` — annotation patches ADDING the middleware to the EXISTING websecure annotation set (strategic-merge on metadata.annotations merges keys; the entrypoints annotation from Task 5 must not be lost — put both patches' annotations in ONE patch file per ingress OR merge Task 5's and this task's annotations into a single combined patch per ingress. SIMPLEST: extend Task 5's `adminer-ingress-patch.yaml`/`qdrant-ingress-patch.yaml` with the extra annotation line instead of new files):
 
 ```yaml
@@ -497,9 +497,9 @@ spec:
                   number: 80
 ```
 
-- [ ] **Step 5: Wire kustomizations + CI.** Add `auth/middleware.yaml` (+ `auth/web-admin-ingress.yaml` in k8s) to the overlay `resources:`. Append the two deferred `cp ... admin-auth.env.example → admin-auth.env` lines to CI's overlay-render step (Task 3 note).
+- [x] **Step 5: Wire kustomizations + CI.** Add `auth/middleware.yaml` (+ `auth/web-admin-ingress.yaml` in k8s) to the overlay `resources:`. Append the two deferred `cp ... admin-auth.env.example → admin-auth.env` lines to CI's overlay-render step (Task 3 note).
 
-- [ ] **Step 6: Lint + commit**
+- [x] **Step 6: Lint + commit**
 
 ```bash
 bash scripts/lint.sh
@@ -514,7 +514,7 @@ git commit -m "feat(infra): basic auth on admin surfaces (adminer, qdrant, /admi
 **Files:**
 - Create: `docs/ops/server-hardening.md`
 
-- [ ] **Step 1: Write the runbook** covering, in order:
+- [x] **Step 1: Write the runbook** covering, in order:
   1. **CA trust per device** — run `scripts/export-ca.sh`, then: macOS (Keychain Access → System → import, set Always Trust), iOS (AirDrop/mail the .crt → Settings → General → VPN & Device Management → install, then Settings → General → About → Certificate Trust Settings → enable), Android (Settings → Security → Encryption & credentials → Install a certificate → CA certificate), Linux (`sudo cp toimi-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates`), ruutu display browser (depends on the display OS — trust at the OS level as above).
   2. **Admin credential rotation** — generate a new htpasswd line (`htpasswd -nbB admin '...'` or the docker fallback), update `users=` in BOTH `k8s/overlays/server/admin-auth.env` and `infrastructure/overlays/server/admin-auth.env`, re-run `scripts/deploy.sh server <any app>` (re-applies the overlay) and the infra apply; verify with the smoke checklist.
   3. **Accepted risks** — chat UI unauthenticated on the trusted LAN; backups on the node disk (off-site deferred, second consecutive deferral — revisit); dev overlay fully unencrypted/unauthenticated by design; qdrant + registry containers still run as root (image limitations, documented in their manifests).
@@ -533,7 +533,7 @@ kubectl get certificates -A                                   # all Ready=True
 
   5. **First-deploy order**: run `scripts/server-setup.sh` (installs cert-manager, applies infra incl. CA bootstrap), wait for `kubectl get clusterissuer toimi-ca-issuer` Ready, then `scripts/deploy.sh server <apps>`, then smoke checklist.
 
-- [ ] **Step 2: Lint + commit**
+- [x] **Step 2: Lint + commit**
 
 ```bash
 bash scripts/lint.sh
@@ -545,7 +545,7 @@ git commit -m "docs(ops): server hardening runbook (CA trust, credential rotatio
 
 ## Final verification
 
-- [ ] `bash scripts/lint.sh` — passes.
-- [ ] The kustomize render checks cannot run locally (no kubectl) — state clearly in the completion report that the push-triggered CI run and the post-deploy smoke checklist are the two outstanding acceptance gates.
-- [ ] `git status` clean; commits follow convention.
-- [ ] Completion report to the user MUST include: the smoke checklist location, the "trust the CA on your devices" action item, the htpasswd generation step needed before the server deploy, and the note that dev (kind) is intentionally unchanged.
+- [x] `bash scripts/lint.sh` — passes.
+- [x] The kustomize render checks cannot run locally (no kubectl) — state clearly in the completion report that the push-triggered CI run and the post-deploy smoke checklist are the two outstanding acceptance gates.
+- [x] `git status` clean; commits follow convention.
+- [x] Completion report to the user MUST include: the smoke checklist location, the "trust the CA on your devices" action item, the htpasswd generation step needed before the server deploy, and the note that dev (kind) is intentionally unchanged.

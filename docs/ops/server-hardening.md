@@ -1,0 +1,151 @@
+# Server hardening runbook
+
+Covers the outcomes of the week-3 server-hardening effort (container/k8s
+hardening, cert-manager TLS from a self-managed CA, Traefik basicAuth on
+admin surfaces): trusting the CA on client devices, rotating the admin
+credential, the accepted-risk list, and the post-deploy smoke checklist.
+Companion to `docs/ops/disaster-recovery.md` (backups/restore); this doc is
+about transport trust and access control, not data recovery.
+
+## 1. CA trust per device
+
+TLS on the server overlay is issued by a self-managed in-cluster CA
+(`toimi-ca-issuer`, bootstrapped from the `toimi-ca-key-pair` secret in the
+`cert-manager` namespace), not a public CA — so every client device needs the
+CA certificate installed to avoid trust warnings.
+
+Export the certificate from the cluster:
+
+```bash
+scripts/export-ca.sh                       # writes ./toimi-ca.crt
+# on the k3s server itself, kubectl means sudo k3s kubectl:
+KUBECTL="sudo k3s kubectl" scripts/export-ca.sh
+```
+
+Then trust `toimi-ca.crt` on each device:
+
+- **macOS**: open in Keychain Access → drag into the `System` keychain →
+  double-click the entry → `Trust` → `Always Trust`.
+- **iOS**: get the file onto the device (AirDrop or mail it to yourself) →
+  `Settings → General → VPN & Device Management` → install the profile, then
+  `Settings → General → About → Certificate Trust Settings` → enable full
+  trust for the Toimi CA.
+- **Android**: `Settings → Security → Encryption & credentials → Install a
+  certificate → CA certificate` → select `toimi-ca.crt`.
+- **Linux**: `sudo cp toimi-ca.crt /usr/local/share/ca-certificates/ && sudo
+  update-ca-certificates`.
+- **ruutu display browser**: trust depends on the display's OS — apply the
+  matching instructions above at the OS level (ruutu itself has no
+  certificate store of its own).
+
+## 2. Admin credential rotation
+
+The admin basicAuth password is stored as an htpasswd line in two gitignored
+files (`admin-auth.env`, one per Traefik namespace) — `k8s/overlays/server/`
+guards the web `/admin` + `/api/admin` paths, `infrastructure/overlays/server/`
+guards adminer and qdrant.
+
+1. Generate a new bcrypt htpasswd line:
+
+   ```bash
+   htpasswd -nbB admin 'your-new-password'
+   # or, without apache2-utils installed:
+   docker run --rm httpd:2.4-alpine htpasswd -nbB admin 'your-new-password'
+   ```
+
+2. Replace the `users=` line in **both**:
+   - `k8s/overlays/server/admin-auth.env`
+   - `infrastructure/overlays/server/admin-auth.env`
+
+   (Same credential in both files — there is one admin password, enforced by
+   two separate Traefik Middlewares/namespaces.)
+
+3. Re-apply:
+   - `k8s/overlays/server` (the `admin-basic-auth` secret + `/admin` guard):
+     `scripts/deploy.sh server <any-app>` re-renders and re-applies the whole
+     overlay, so any app works, e.g. `scripts/deploy.sh server web`.
+   - `infrastructure/overlays/server` (adminer/qdrant guard): re-run
+     `scripts/server-setup.sh`. It is idempotent by design (`helm upgrade
+     --install` for PostgreSQL/cert-manager, `k3s` restart only if already
+     installed, kustomize apply for the rest) and safe to run end-to-end on a
+     live server for this purpose — it does not touch `k8s/overlays/server` or
+     restart application deployments.
+
+4. Verify with the smoke checklist below, in particular the `-u admin:PW`
+   and unauthenticated `401` lines.
+
+## 3. Accepted risks
+
+- **Chat UI unauthenticated on the trusted LAN.** The main `toimi-web`
+  ingress (chat, SSE, SignalR) carries no basicAuth — only `/admin` and
+  `/api/admin` do. Anyone on the LAN can reach the assistant, which is
+  already able to do most things an authenticated admin session could do
+  (it drives the same tool servers). Accepted: the admin surfaces (raw DB
+  access via adminer, raw vector access via qdrant, and the admin dashboard)
+  are the higher-value targets and are the ones gated.
+- **Traefik `PathPrefix` matching is case-sensitive; ASP.NET routing is
+  case-insensitive.** The `/admin`/`/api/admin` guard on `toimi-web-admin`
+  matches those exact-case prefixes, but ASP.NET will still route a
+  case-variant request (e.g. `GET /Api/admin/summary`, `/ADMIN`) to the same
+  controller. Traefik's router doesn't recognize the variant as `/api/admin`
+  and falls through to the open `toimi-web` ingress, which has no basicAuth
+  — so a case-variant path reaches the admin API unauthenticated. This sits
+  inside the same accepted envelope as the point above (anyone who can reach
+  the open ingress can already do strictly more via the chat UI), so it is
+  not treated as an active vulnerability, but it is a real gap in the
+  admin-auth guarantee specifically and is tracked as a follow-up: either
+  enforce admin auth in the application layer (defense in depth, independent
+  of routing case) or move to Traefik v3's `PathRegexp` with a `(?i)` flag
+  once the server's Traefik version is confirmed to support it.
+- **Backups live on the same node disk as the databases** (see
+  `docs/ops/disaster-recovery.md`) — protects against bad migrations/
+  corruption, not disk failure. Off-site replication is still deferred; this
+  is the second consecutive deferral and should be revisited before a third.
+- **Dev overlay (kind) is fully unencrypted and unauthenticated by design.**
+  No TLS, no basicAuth — hardening is server-overlay-only so local dev stays
+  frictionless. Do not port any of this back to `k8s/overlays/dev` or
+  `infrastructure/overlays/dev`.
+- **qdrant and registry containers still run as root.** Both official images
+  write to their storage paths as uid 0 by default; `runAsNonRoot` is
+  deferred until PVC ownership is migrated. `allowPrivilegeEscalation: false`
+  and `capabilities.drop: [ALL]` are applied regardless. Documented inline in
+  `infrastructure/base/qdrant/deployment.yaml` and
+  `infrastructure/overlays/server/registry/deployment.yaml`.
+
+## 4. Post-deploy smoke checklist
+
+Run after every server deploy that touches TLS, auth, or ingress
+(`$TOIMI_HOST`/`$ADMINER_HOST`/`$QDRANT_HOST` are the values from
+`config.env`; `PW` is the current admin password; `toimi-ca.crt` from
+step 1):
+
+```bash
+curl -sI http://$TOIMI_HOST/                                           # expect 301/308 → https
+curl -sI --cacert toimi-ca.crt https://$TOIMI_HOST/                    # expect 200
+curl -sI --cacert toimi-ca.crt https://$TOIMI_HOST/admin                # expect 401
+curl -sI --cacert toimi-ca.crt -u admin:PW https://$TOIMI_HOST/admin    # expect 200
+curl -sI --cacert toimi-ca.crt https://$ADMINER_HOST/                   # expect 401
+curl -sI --cacert toimi-ca.crt https://$QDRANT_HOST/                    # expect 401
+curl -sI http://$ADMINER_HOST/                                          # expect 301/308 → https
+curl -sI http://$QDRANT_HOST/                                           # expect 301/308 → https
+curl -sI --cacert toimi-ca.crt https://$TOIMI_HOST/api/admin/summary    # expect 401
+curl -sI --cacert toimi-ca.crt https://$TOIMI_HOST/ruutu/               # expect 200 (no auth — display surface)
+kubectl top pods -n apps; kubectl top pods -n data                      # all within limits
+kubectl get certificates -A                                             # all Ready=True
+```
+
+On the k3s server, `kubectl` above means `sudo k3s kubectl` or
+`export KUBECONFIG=/etc/rancher/k3s/k3s.yaml` first (see the note in
+`docs/ops/disaster-recovery.md`).
+
+## 5. First-deploy order
+
+1. `scripts/server-setup.sh` — installs cert-manager, PostgreSQL, and applies
+   the infrastructure overlay (including the CA bootstrap: the self-signed
+   `ClusterIssuer`, the `toimi-ca` `Certificate`, and the `toimi-ca-issuer`
+   that signs everything else).
+2. Wait for the CA issuer to be ready:
+   `kubectl get clusterissuer toimi-ca-issuer` → `READY: True`.
+3. `scripts/deploy.sh server <app>` (or `scripts/deploy-all.sh server`) for
+   each application pod.
+4. Run the smoke checklist (section 4).

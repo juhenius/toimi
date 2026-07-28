@@ -1,0 +1,22 @@
+# Companion HTTP ingress: redirects plain-HTTP adminer requests to HTTPS.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: adminer-http-redirect
+  namespace: data
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.middlewares: data-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: ${ADMINER_HOST}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: adminer
+                port:
+                  number: 80
