@@ -27,7 +27,7 @@ public class EntityEventStoreTests
     var e = Guid.NewGuid();
     await store.RecordAsync(e, Occ, "complete", "done", null);
 
-    Assert.True(await store.OccurrenceHandledAsync(e, Occ, "notify"));
+    Assert.Equal(ClaimResult.AlreadyHandled, await store.TryClaimAsync(e, Occ, "notify", Occ));
   }
 
   [Fact]
@@ -35,7 +35,7 @@ public class EntityEventStoreTests
   {
     using var db = TestDb.New();
     var store = new EntityEventStore(db);
-    Assert.False(await store.OccurrenceHandledAsync(Guid.NewGuid(), Occ, "notify"));
+    Assert.Equal(ClaimResult.Claimed, await store.TryClaimAsync(Guid.NewGuid(), Occ, "notify", Occ));
   }
 
   [Fact]
@@ -48,6 +48,6 @@ public class EntityEventStoreTests
     await store.CompleteAsync(e, Occ);
     await store.CompleteAsync(e, Occ);
 
-    Assert.True(await store.OccurrenceHandledAsync(e, Occ, "notify"));
+    Assert.Equal(ClaimResult.AlreadyHandled, await store.TryClaimAsync(e, Occ, "notify", Occ));
   }
 }

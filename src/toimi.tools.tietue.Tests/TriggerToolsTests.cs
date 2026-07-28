@@ -42,7 +42,8 @@ public class TriggerToolsTests
 
     var result = await new CompleteOccurrenceTool(store).CompleteOccurrence(entityId.ToString(), "2026-06-20T09:00:00Z");
 
+    var occ = new DateTimeOffset(2026, 6, 20, 9, 0, 0, TimeSpan.Zero);
     Assert.Contains("completed", result);
-    Assert.True(await store.OccurrenceHandledAsync(entityId, new DateTimeOffset(2026, 6, 20, 9, 0, 0, TimeSpan.Zero), "notify"));
+    Assert.Equal(ClaimResult.AlreadyHandled, await store.TryClaimAsync(entityId, occ, "notify", occ));
   }
 }

@@ -40,50 +40,63 @@ public class SchedulerTick(TietueDbContext db, HandlerRegistry handlers, EntityE
       var entity = await db.Entities.FirstOrDefaultAsync(e => e.Id == trigger.EntityId, ct);
 
       var deletedDuringHandling = false;
-      if (entity is not null && !await events.OccurrenceHandledAsync(trigger.EntityId, occurrence, trigger.HandlerKind, ct))
+      if (entity is not null)
       {
-        var handler = handlers.Resolve(trigger.HandlerKind);
-        if (handler is not null)
+        var claim = await events.TryClaimAsync(trigger.EntityId, occurrence, trigger.HandlerKind, now, ct);
+        if (claim == ClaimResult.InProgress)
         {
-          string status;
-          string? resultJson;
-          try
-          {
-            var result = await handler.HandleAsync(new HandlerContext(entity, trigger.HandlerConfig, occurrence), ct);
-            status = result.Status;
-            resultJson = result.Result;
-          }
-          catch (Exception ex)
-          {
-            status = "error";
-            resultJson = System.Text.Json.JsonSerializer.Serialize(new { error = ex.Message });
-            _logger.LogError(ex, "Handler {HandlerKind} failed for trigger {TriggerId} (entity {EntityId}).",
-              trigger.HandlerKind, trigger.Id, trigger.EntityId);
-          }
+          // Another instance (or a crashed one, within the stale window) owns this
+          // occurrence. Leave the trigger un-advanced so it stays due for retry.
+          continue;
+        }
 
-          if (_logger.IsEnabled(LogLevel.Information))
+        if (claim == ClaimResult.Claimed)
+        {
+          var handler = handlers.Resolve(trigger.HandlerKind);
+          if (handler is not null)
           {
-            _logger.LogInformation("Trigger {TriggerId} ({HandlerKind}) fired for entity {EntityId}: {Status}",
-              trigger.Id, trigger.HandlerKind, trigger.EntityId, status);
-          }
+            string status;
+            string? resultJson;
+            try
+            {
+              var result = await handler.HandleAsync(new HandlerContext(entity, trigger.HandlerConfig, occurrence), ct);
+              status = result.Status;
+              resultJson = result.Result;
+            }
+            catch (Exception ex)
+            {
+              status = "error";
+              resultJson = System.Text.Json.JsonSerializer.Serialize(new { error = ex.Message });
+              _logger.LogError(ex, "Handler {HandlerKind} failed for trigger {TriggerId} (entity {EntityId}).",
+                trigger.HandlerKind, trigger.Id, trigger.EntityId);
+            }
 
-          // The handler may have deleted the entity (delete handler, or an agent run).
-          // Only record an event while the entity exists (the event FKs to it); if it is gone,
-          // its trigger was cascade-deleted, so skip advancing the trigger too.
-          if (await db.Entities.AnyAsync(e => e.Id == trigger.EntityId, ct))
-          {
-            await events.RecordAsync(trigger.EntityId, occurrence, trigger.HandlerKind, status, resultJson, ct);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+              _logger.LogInformation("Trigger {TriggerId} ({HandlerKind}) fired for entity {EntityId}: {Status}",
+                trigger.Id, trigger.HandlerKind, trigger.EntityId, status);
+            }
+
+            // The handler may have deleted the entity (delete handler, or an agent run).
+            // FinalizeAsync no-ops if the claim row was cascade-deleted with it; skip
+            // advancing the trigger too — it was cascade-deleted as well.
+            if (await db.Entities.AnyAsync(e => e.Id == trigger.EntityId, ct))
+            {
+              await events.FinalizeAsync(trigger.EntityId, occurrence, trigger.HandlerKind, status, resultJson, ct);
+            }
+            else
+            {
+              deletedDuringHandling = true;
+            }
           }
           else
           {
-            deletedDuringHandling = true;
+            _logger.LogWarning("No handler registered for kind {HandlerKind} (trigger {TriggerId}, entity {EntityId}); trigger advances without firing.",
+              trigger.HandlerKind, trigger.Id, trigger.EntityId);
+            await events.FinalizeAsync(trigger.EntityId, occurrence, trigger.HandlerKind, "error", /*lang=json,strict*/ """{"error":"no handler registered"}""", ct);
           }
         }
-        else
-        {
-          _logger.LogWarning("No handler registered for kind {HandlerKind} (trigger {TriggerId}, entity {EntityId}); trigger advances without firing.",
-            trigger.HandlerKind, trigger.Id, trigger.EntityId);
-        }
+        // ClaimResult.AlreadyHandled falls through: advance the trigger without firing.
       }
 
       if (deletedDuringHandling)
