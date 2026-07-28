@@ -32,8 +32,8 @@ public static class RecurrenceCalculator
     calendar.Events.Add(new CalendarEvent
     {
       Start = startCal,
-      Duration = TimeSpan.FromHours(1),
-      RecurrenceRules = [new RecurrencePattern(rrule)],
+      Duration = Duration.FromHours(1),
+      RecurrenceRule = new RecurrencePattern(rrule),
     });
 
     // Anchor the window at the later of `after` and DTSTART so a far-future start is still in range.
@@ -41,10 +41,13 @@ public static class RecurrenceCalculator
     var from = windowBase.AddSeconds(-1).UtcDateTime;
     var to = windowBase.Add(Window).UtcDateTime;
 
-    return calendar.GetOccurrences(new CalDateTime(from), new CalDateTime(to))
-      // AsDateTimeOffset carries the occurrence's local offset; compare instants in UTC so the
+    // Ical.Net 5: GetOccurrences takes only a start and yields an ordered, unbounded sequence;
+    // TakeWhileBefore re-applies the historical window cap.
+    return calendar.GetOccurrences(new CalDateTime(from))
+      .TakeWhileBefore(new CalDateTime(to))
+      // AsUtc carries the occurrence's instant in UTC; compare instants in UTC so the
       // inclusive/exclusive boundary is correct regardless of the zone.
-      .Select(o => o.Period.StartTime.AsDateTimeOffset.ToUniversalTime())
+      .Select(o => new DateTimeOffset(o.Period.StartTime.AsUtc))
       .Where(o => inclusive ? o >= after : o > after)
       .OrderBy(o => o)
       .Cast<DateTimeOffset?>()
