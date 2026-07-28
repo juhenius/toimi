@@ -38,6 +38,8 @@ public class AgentRunner(ToimiConfiguration config, ILogger<AgentRunner>? logger
 
       var response = await client.GetResponseAsync(messages, options, token);
       var responseText = response.Text ?? "";
+      var promptTokens = (int?)response.Usage?.InputTokenCount;
+      var completionTokens = (int?)response.Usage?.OutputTokenCount;
 
       var toolCalls = new List<object>();
       while (notifier.TryDequeueEvent(out var evt))
@@ -46,7 +48,7 @@ public class AgentRunner(ToimiConfiguration config, ILogger<AgentRunner>? logger
       }
 
       var toolCallsJson = toolCalls.Count > 0 ? JsonSerializer.Serialize(toolCalls) : null;
-      return new AgentRunResult(true, responseText, toolCallsJson, null);
+      return new AgentRunResult(true, responseText, toolCallsJson, null, promptTokens, completionTokens);
     }
     catch (OperationCanceledException) when (!ct.IsCancellationRequested)
     {

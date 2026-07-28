@@ -4,6 +4,7 @@ const links = [
   { to: '/admin', label: 'Dashboard', end: true },
   { to: '/admin/data', label: 'Data' },
   { to: '/admin/types', label: 'Types' },
+  { to: '/admin/usage', label: 'Usage' },
 ]
 
 export function AdminLayout() {

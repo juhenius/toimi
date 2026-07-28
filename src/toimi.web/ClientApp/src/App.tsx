@@ -6,6 +6,7 @@ import { DataPage } from './admin/DataPage.tsx'
 import { EntityDetailPage } from './admin/EntityDetailPage.tsx'
 import { TypesPage } from './admin/TypesPage.tsx'
 import { TypeDetailPage } from './admin/TypeDetailPage.tsx'
+import { UsagePage } from './admin/UsagePage.tsx'
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="data/:id" element={<EntityDetailPage />} />
           <Route path="types" element={<TypesPage />} />
           <Route path="types/:name" element={<TypeDetailPage />} />
+          <Route path="usage" element={<UsagePage />} />
         </Route>
       </Routes>
     </BrowserRouter>

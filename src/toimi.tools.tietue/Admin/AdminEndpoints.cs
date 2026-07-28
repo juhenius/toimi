@@ -120,6 +120,44 @@ public static class AdminEndpoints
         : Results.Ok(new TypeItem(t.Name, t.JsonSchema.RootElement.GetRawText(), t.Behaviors, t.DefaultTriggers, t.CreatedAt, t.UpdatedAt));
     });
 
+    admin.MapGet("/usage", async (TietueDbContext db) =>
+    {
+      var since = DateTimeOffset.UtcNow.AddDays(-30);
+      var events = await db.EntityEvents
+        .Where(e => e.Kind == "message" && e.CreatedAt >= since && e.Result != null)
+        .Select(e => new { e.CreatedAt, e.Result })
+        .ToListAsync();
+
+      // Aggregate in C# (no jsonb operators): provider-agnostic and trivially fast at single-user volume.
+      var rows = events
+        .Select(e =>
+        {
+          // Guard per row: one malformed/non-object Result must not 500 the whole report.
+          var prompt = 0L;
+          var completion = 0L;
+          try
+          {
+            using var doc = System.Text.Json.JsonDocument.Parse(e.Result!);
+            if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+              prompt = doc.RootElement.TryGetProperty("promptTokens", out var p) && p.ValueKind == System.Text.Json.JsonValueKind.Number ? p.GetInt64() : 0L;
+              completion = doc.RootElement.TryGetProperty("completionTokens", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.Number ? c.GetInt64() : 0L;
+            }
+          }
+          catch (System.Text.Json.JsonException)
+          {
+            // jsonb should make this unreachable; count the row as zero tokens.
+          }
+          return (Date: DateOnly.FromDateTime(e.CreatedAt.UtcDateTime), Prompt: prompt, Completion: completion);
+        })
+        .GroupBy(r => r.Date)
+        .Select(g => new { date = g.Key, promptTokens = g.Sum(r => r.Prompt), completionTokens = g.Sum(r => r.Completion) })
+        .OrderBy(r => r.date)
+        .ToList();
+
+      return Results.Ok(rows);
+    });
+
     admin.MapGet("/outbox", async (TietueDbContext db) =>
     {
       var rows = await db.IndexOutbox.OrderBy(o => o.CreatedAt).ToListAsync();

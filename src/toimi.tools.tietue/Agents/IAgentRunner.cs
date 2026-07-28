@@ -2,7 +2,7 @@ using toimi.tools.tietue.Data;
 
 namespace toimi.tools.tietue.Agents;
 
-public record AgentRunResult(bool Success, string Response, string? ToolCallsJson, string? Error);
+public record AgentRunResult(bool Success, string Response, string? ToolCallsJson, string? Error, int? PromptTokens = null, int? CompletionTokens = null);
 
 public interface IAgentRunner
 {

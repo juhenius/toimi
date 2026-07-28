@@ -169,6 +169,74 @@ public class AdminEndpointsTests : IDisposable
     Assert.Equal("sent", events.RootElement[0].GetProperty("status").GetString());
   }
 
+  [Fact]
+  public async Task Usage_sums_message_event_tokens_by_day()
+  {
+    var id = Guid.NewGuid();
+    // Anchor mid-day so hour offsets never straddle a UTC midnight.
+    var day1 = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero).AddDays(-2).AddHours(12);
+    var day2 = day1.AddDays(1);
+    using (var scope = _factory.Services.CreateScope())
+    {
+      var db = scope.ServiceProvider.GetRequiredService<TietueDbContext>();
+      db.Entities.Add(new Entity { Id = id, Type = "schedule", Data = JsonDocument.Parse("{}"), CreatedAt = day1, UpdatedAt = day1 });
+      db.EntityEvents.Add(new EntityEvent
+      {
+        Id = Guid.NewGuid(),
+        EntityId = id,
+        OccurrenceUtc = day1,
+        Kind = "message",
+        Status = "ran",
+        Result = /*lang=json,strict*/ """{"response":"a","success":true,"error":null,"promptTokens":1000,"completionTokens":200}""",
+        CreatedAt = day1,
+      });
+      db.EntityEvents.Add(new EntityEvent
+      {
+        Id = Guid.NewGuid(),
+        EntityId = id,
+        OccurrenceUtc = day1.AddHours(2),
+        Kind = "message",
+        Status = "ran",
+        Result = /*lang=json,strict*/ """{"response":"b","success":true,"error":null,"promptTokens":500,"completionTokens":100}""",
+        CreatedAt = day1.AddHours(2),
+      });
+      // Null usage (run without token info) counts as zero.
+      db.EntityEvents.Add(new EntityEvent
+      {
+        Id = Guid.NewGuid(),
+        EntityId = id,
+        OccurrenceUtc = day2,
+        Kind = "message",
+        Status = "ran",
+        Result = /*lang=json,strict*/ """{"response":"c","success":true,"error":null,"promptTokens":null,"completionTokens":null}""",
+        CreatedAt = day2,
+      });
+      // Non-message kinds are ignored.
+      db.EntityEvents.Add(new EntityEvent
+      {
+        Id = Guid.NewGuid(),
+        EntityId = id,
+        OccurrenceUtc = day2.AddHours(1),
+        Kind = "notify",
+        Status = "sent",
+        Result = /*lang=json,strict*/ """{"promptTokens":9999}""",
+        CreatedAt = day2.AddHours(1),
+      });
+      await db.SaveChangesAsync();
+    }
+
+    var client = _factory.CreateClient();
+    using var doc = JsonDocument.Parse(await client.GetStringAsync("/admin/usage"));
+    var rows = doc.RootElement.EnumerateArray().ToList();
+    Assert.Equal(2, rows.Count);
+    Assert.Equal(day1.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), rows[0].GetProperty("date").GetString());
+    Assert.Equal(1500, rows[0].GetProperty("promptTokens").GetInt64());
+    Assert.Equal(300, rows[0].GetProperty("completionTokens").GetInt64());
+    Assert.Equal(day2.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), rows[1].GetProperty("date").GetString());
+    Assert.Equal(0, rows[1].GetProperty("promptTokens").GetInt64());
+    Assert.Equal(0, rows[1].GetProperty("completionTokens").GetInt64());
+  }
+
   public void Dispose()
   {
     _factory.Dispose();

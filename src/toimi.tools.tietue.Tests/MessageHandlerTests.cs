@@ -35,6 +35,18 @@ public class MessageHandlerTests
   }
 
   [Fact]
+  public async Task Serializes_usage_into_result_json()
+  {
+    var runner = new FakeAgentRunner { Result = new(true, "done", null, null, PromptTokens: 1200, CompletionTokens: 340) };
+    var handler = new MessageHandler(runner);
+
+    var result = await handler.HandleAsync(new HandlerContext(Schedule("x"), /*lang=json,strict*/ """{"promptTemplate":"{prompt}"}""", DateTimeOffset.UtcNow));
+
+    Assert.Contains("\"promptTokens\":1200", result.Result);
+    Assert.Contains("\"completionTokens\":340", result.Result);
+  }
+
+  [Fact]
   public async Task Reports_error_status_when_run_fails()
   {
     var runner = new FakeAgentRunner { Result = new(false, "", null, "boom") };

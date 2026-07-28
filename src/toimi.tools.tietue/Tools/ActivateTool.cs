@@ -45,7 +45,7 @@ public class ActivateTool(EntityRepository entities, IAgentRunner runner, Entity
     var now = DateTimeOffset.UtcNow;
     var run = await runner.RunAsync(entity, message, default);
     await events.RecordAsync(id, now, "message", run.Success ? "ran" : "error",
-      JsonSerializer.Serialize(new { run.Response, run.Success, run.Error }));
+      JsonSerializer.Serialize(new { run.Response, run.Success, run.Error, promptTokens = run.PromptTokens, completionTokens = run.CompletionTokens }));
     return JsonSerializer.Serialize(new { ran = true, run.Success, run.Response, run.Error });
   }
 }

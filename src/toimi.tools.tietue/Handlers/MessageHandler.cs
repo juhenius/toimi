@@ -21,7 +21,14 @@ public class MessageHandler(IAgentRunner runner) : INativeHandler
 
     var prompt = TemplateRenderer.Render(promptTemplate, ctx.Entity.Data);
     var run = await runner.RunAsync(ctx.Entity, prompt, ct);
-    var result = JsonSerializer.Serialize(new { run.Response, run.Success, run.Error });
+    var result = JsonSerializer.Serialize(new
+    {
+      run.Response,
+      run.Success,
+      run.Error,
+      promptTokens = run.PromptTokens,
+      completionTokens = run.CompletionTokens,
+    });
     return new HandlerResult(run.Success ? "ran" : "error", result);
   }
 }

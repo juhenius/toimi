@@ -1,4 +1,7 @@
+using Microsoft.EntityFrameworkCore;
 using Toimi.Core.Admin;
+using Toimi.Core.Configuration;
+using Toimi.Core.Data;
 
 namespace Toimi.Web.Admin;
 
@@ -14,7 +17,36 @@ public static class AdminEndpoints
       return Results.Ok(result);
     });
 
+    // Literal route: outranks the /api/admin/{tool}/{**path} template below.
+    app.MapGet("/api/admin/usage", async (ToimiDbContext db, ToimiConfiguration config) =>
+    {
+      var since = DateTimeOffset.UtcNow.AddDays(-30);
+      var messages = await db.ConversationMessages
+        .Where(m => m.CreatedAt >= since)
+        .ToListAsync();
+      return Results.Ok(UsageReport.Build(messages, config.TokenPriceInputPer1M, config.TokenPriceOutputPer1M));
+    });
+
     app.Map("/api/admin/{tool}/{**path}", AdminForwarder.ForwardAsync);
+  }
+}
+
+public record UsageRow(DateOnly Date, long PromptTokens, long CompletionTokens, decimal CostUsd);
+
+public static class UsageReport
+{
+  public static List<UsageRow> Build(IEnumerable<ConversationMessage> messages, decimal inputPricePer1M, decimal outputPricePer1M)
+  {
+    return [.. messages
+      .GroupBy(m => DateOnly.FromDateTime(m.CreatedAt.UtcDateTime))
+      .Select(g =>
+      {
+        var prompt = g.Sum(m => (long)(m.PromptTokens ?? 0));
+        var completion = g.Sum(m => (long)(m.CompletionTokens ?? 0));
+        var cost = (prompt / 1_000_000m * inputPricePer1M) + (completion / 1_000_000m * outputPricePer1M);
+        return new UsageRow(g.Key, prompt, completion, cost);
+      })
+      .OrderBy(r => r.Date)];
   }
 }
 

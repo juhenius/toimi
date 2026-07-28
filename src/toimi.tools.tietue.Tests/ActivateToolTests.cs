@@ -51,6 +51,21 @@ public class ActivateToolTests
   }
 
   [Fact]
+  public async Task Activate_now_records_token_usage_in_event()
+  {
+    using var db = TestDb.New();
+    var (entities, runner, events, triggers, id) = await SetupAsync(db);
+    runner.Result = new Agents.AgentRunResult(true, "ok", null, null, PromptTokens: 1200, CompletionTokens: 340);
+    var tool = new ActivateTool(entities, runner, events, triggers);
+
+    await tool.Activate(id.ToString(), "do the thing", null);
+
+    var evt = Assert.Single(db.EntityEvents.Where(e => e.EntityId == id && e.Kind == "message"));
+    Assert.Contains("\"promptTokens\":1200", evt.Result);
+    Assert.Contains("\"completionTokens\":340", evt.Result);
+  }
+
+  [Fact]
   public async Task Activate_unknown_entity_returns_message()
   {
     using var db = TestDb.New();

@@ -110,6 +110,7 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
     {
       var fullResponse = new StringBuilder();
       var toolCallEvents = new List<object>();
+      UsageDetails? usage = null;
 
       await foreach (var update in session.ChatClient.GetStreamingResponseAsync(
           session.Messages, session.ChatOptions, Context.ConnectionAborted))
@@ -123,6 +124,11 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
           {
             fullResponse.Append(textContent.Text);
             await Clients.Caller.SendAsync("ReceiveToken", textContent.Text);
+          }
+
+          if (content is UsageContent usageContent)
+          {
+            usage = usageContent.Details;
           }
         }
       }
@@ -138,16 +144,16 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
         ? JsonSerializer.Serialize(toolCallEvents)
         : null;
 
-      // Estimate token usage (streaming doesn't provide exact counts)
-      var estimatedPromptTokens = session.Messages.Sum(m => m.Text?.Length ?? 0) / 4;
-      var estimatedCompletionTokens = responseText.Length / 4;
-      var estimatedTotalTokens = estimatedPromptTokens + estimatedCompletionTokens;
+      // Prefer real usage from the final streaming update; fall back to a rough estimate.
+      var promptTokens = (int?)usage?.InputTokenCount ?? (session.Messages.Sum(m => m.Text?.Length ?? 0) / 4);
+      var completionTokens = (int?)usage?.OutputTokenCount ?? (responseText.Length / 4);
+      var totalTokens = (int?)usage?.TotalTokenCount ?? (promptTokens + completionTokens);
 
       // Save assistant message to DB
       await _repository.AddMessageAsync(session.ConversationId, "assistant", responseText, toolCallsJson,
-        promptTokens: estimatedPromptTokens,
-        completionTokens: estimatedCompletionTokens,
-        totalTokens: estimatedTotalTokens);
+        promptTokens: promptTokens,
+        completionTokens: completionTokens,
+        totalTokens: totalTokens);
 
       // Auto-title: set title on first exchange
       if (session.Messages.Count(m => m.Role == ChatRole.User) == 1)
