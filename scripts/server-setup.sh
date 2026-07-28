@@ -4,11 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+"$SCRIPT_DIR/render-config.sh" server
+
 CONFIG_FILE="$ROOT_DIR/config.env"
-if [ ! -f "$CONFIG_FILE" ]; then
-  echo "ERROR: $CONFIG_FILE not found. Copy it: cp config.env.example config.env"
-  exit 1
-fi
 set -a; # shellcheck disable=SC1090
 source "$CONFIG_FILE"; set +a
 # shellcheck disable=SC2016
@@ -72,13 +70,7 @@ fi
 
 # --- Read secrets ---
 INFRA_SECRETS="$ROOT_DIR/infrastructure/overlays/server/secrets.env"
-if [ -f "$INFRA_SECRETS" ]; then
-  PG_PASSWORD=$(grep '^postgres-password=' "$INFRA_SECRETS" | cut -d= -f2-)
-else
-  echo "WARNING: $INFRA_SECRETS not found, using default password"
-  echo "  Copy from template: cp infrastructure/secrets.env.example infrastructure/overlays/server/secrets.env"
-  PG_PASSWORD="changeme-in-production"
-fi
+PG_PASSWORD=$(grep '^postgres-password=' "$INFRA_SECRETS" | cut -d= -f2-)
 
 # --- PostgreSQL (Helm) ---
 echo "Installing PostgreSQL..."
@@ -127,14 +119,6 @@ sudo k3s kubectl rollout status deployment/registry --namespace infra --timeout=
 # --- Database init ---
 echo "Waiting for PostgreSQL..."
 sudo k3s kubectl rollout status statefulset/postgresql --namespace data --timeout=120s
-
-# --- Check secrets ---
-if [ ! -f "$ROOT_DIR/k8s/overlays/server/secrets.env" ]; then
-  echo ""
-  echo "WARNING: Service secrets not found. Copy from template:"
-  echo "  cp k8s/secrets.env.example k8s/overlays/server/secrets.env"
-  echo "  # Then edit with real values"
-fi
 
 SERVER_IP=$(hostname -I | awk '{print $1}')
 

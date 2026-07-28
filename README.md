@@ -41,17 +41,21 @@ former servers — memory, skills, reminders, scheduling; see `CLAUDE.md`.)
 
 ## Configure
 
-Everything environment-specific lives in three gitignored files copied from
-tracked templates. **You never edit tracked files.**
+Everything environment-specific lives in one gitignored file, `toimi.env`,
+copied from the tracked `toimi.env.example` template. **You never edit tracked
+files.**
 
 ```bash
-cp config.env.example config.env                 # non-secret: hosts, registry, model
-cp infrastructure/secrets.env.example infrastructure/overlays/<env>/secrets.env
-cp k8s/secrets.env.example          k8s/overlays/<env>/secrets.env
-# <env> = dev (kind) or server (k3s). Edit all three with your values.
+cp toimi.env.example toimi.env                   # edit with your values
+# The setup/deploy scripts run scripts/render-config.sh <env> first, which
+# generates config.env and the per-overlay secrets.env / admin-auth.env files
+# (all gitignored) from this one file — no per-overlay copies to maintain.
 ```
 
-`config.env` keys:
+`toimi.env` is the single source: it holds the non-secret ingress hosts,
+registry, and model, plus every secret. Setting `POSTGRES_PASSWORD` once
+composes all three DB connection strings, and `ADMIN_USER`/`ADMIN_PASSWORD`
+(server only) derives the admin basic-auth htpasswd for you.
 
 | Key | Meaning |
 |---|---|
@@ -59,12 +63,13 @@ cp k8s/secrets.env.example          k8s/overlays/<env>/secrets.env
 | `ADMINER_HOST` | Ingress host for the Adminer DB UI |
 | `QDRANT_HOST` | Ingress host for the Qdrant dashboard |
 | `IMAGE_REGISTRY` | Registry `deploy.sh` pushes to and pods pull from |
-| `HOMEASSISTANT_BASE_URL` | Home Assistant URL for `koti` |
-| `OPENAI_MODEL` | OpenAI chat model name |
+| `HOMEASSISTANT_BASE_URL` / `HA_BEARER_TOKEN` | Home Assistant URL + token for `koti` |
+| `OPENAI_MODEL` / `OPENAI_API_KEY` | OpenAI chat model name + API key |
+| `POSTGRES_PASSWORD` | PostgreSQL password (composes every connection string) |
+| `NTFY_BASE_URL` / `NTFY_TOPIC` / `NTFY_USERNAME` / `NTFY_PASSWORD` | ntfy push notifications |
+| `ADMIN_USER` / `ADMIN_PASSWORD` | Admin basic-auth (server overlay only) |
 
-`secrets.env` keys are documented in the two `*.example` files (OpenAI API
-key, Home Assistant token, PostgreSQL password, connection strings, ntfy
-credentials).
+See `toimi.env.example` for the full list with inline notes.
 
 ## Run it
 

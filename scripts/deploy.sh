@@ -4,24 +4,21 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-CONFIG_FILE="$ROOT_DIR/config.env"
-if [ ! -f "$CONFIG_FILE" ]; then
-  echo "ERROR: $CONFIG_FILE not found. Copy it: cp config.env.example config.env"
-  exit 1
-fi
-set -a; # shellcheck disable=SC1090
-source "$CONFIG_FILE"; set +a
-REGISTRY="${IMAGE_REGISTRY:?IMAGE_REGISTRY missing from config.env}"
-# shellcheck disable=SC2016
-SUBST='${TOIMI_HOST} ${ADMINER_HOST} ${QDRANT_HOST} ${IMAGE_REGISTRY} ${HOMEASSISTANT_BASE_URL} ${OPENAI_MODEL}'
-command -v envsubst >/dev/null || { echo "ERROR: envsubst not installed (gettext)"; exit 1; }
-
 if [ $# -lt 2 ]; then
   echo "Usage: $0 <dev|server> <app>"
   echo "  <app> = a src/ project dir name, with or without the 'toimi.' prefix"
   echo "  Examples: $0 dev web   |   $0 server tools.koti   |   $0 dev toimi.tools.tietue"
   exit 1
 fi
+
+"$SCRIPT_DIR/render-config.sh" "$1"
+CONFIG_FILE="$ROOT_DIR/config.env"
+set -a; # shellcheck disable=SC1090
+source "$CONFIG_FILE"; set +a
+REGISTRY="${IMAGE_REGISTRY:?IMAGE_REGISTRY missing from config.env}"
+# shellcheck disable=SC2016
+SUBST='${TOIMI_HOST} ${ADMINER_HOST} ${QDRANT_HOST} ${IMAGE_REGISTRY} ${HOMEASSISTANT_BASE_URL} ${OPENAI_MODEL}'
+command -v envsubst >/dev/null || { echo "ERROR: envsubst not installed (gettext)"; exit 1; }
 
 ENV="$1"
 APP_ARG="$2"

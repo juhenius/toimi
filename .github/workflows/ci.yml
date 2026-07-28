@@ -45,12 +45,11 @@ jobs:
       - run: yamllint -c .yamllint.yaml .
       - run: kubectl kustomize k8s/base > /dev/null
       - run: kubectl kustomize infrastructure/base > /dev/null
-      - name: Render server overlays with dummy secrets
+      - name: Render server overlays from toimi.env
         run: |
-          cp k8s/overlays/server/secrets.env.example k8s/overlays/server/secrets.env
-          cp infrastructure/secrets.env.example infrastructure/overlays/server/secrets.env
-          cp k8s/overlays/server/admin-auth.env.example k8s/overlays/server/admin-auth.env
-          cp infrastructure/overlays/server/admin-auth.env.example infrastructure/overlays/server/admin-auth.env
+          sudo apt-get update && sudo apt-get install -y apache2-utils
+          cp toimi.env.example toimi.env
+          scripts/render-config.sh server
           kubectl kustomize k8s/overlays/server > /dev/null
           kubectl kustomize infrastructure/overlays/server > /dev/null
 

@@ -9,11 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 ENV="${1:-dev}"
+"$SCRIPT_DIR/render-config.sh" "$ENV"
 INFRA_SECRETS="$ROOT_DIR/infrastructure/overlays/$ENV/secrets.env"
-if [ ! -f "$INFRA_SECRETS" ]; then
-  echo "Missing $INFRA_SECRETS (copy infrastructure/secrets.env.example)" >&2
-  exit 1
-fi
 PG_PASSWORD=$(grep '^postgres-password=' "$INFRA_SECRETS" | cut -d= -f2-)
 
 DATABASES=(tietue toimi ruutu)

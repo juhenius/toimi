@@ -40,36 +40,38 @@ Then trust `toimi-ca.crt` on each device:
 
 ## 2. Admin credential rotation
 
-The admin basicAuth password is stored as an htpasswd line in two gitignored
-files (`admin-auth.env`, one per Traefik namespace) — `k8s/overlays/server/`
-guards the web `/admin` + `/api/admin` paths, `infrastructure/overlays/server/`
-guards adminer and qdrant.
+The admin basicAuth password lives once in `toimi.env` (`ADMIN_PASSWORD`).
+`scripts/render-config.sh server` derives a bcrypt htpasswd line from it and
+writes it into two gitignored files (`admin-auth.env`, one per Traefik
+namespace) — `k8s/overlays/server/` guards the web `/admin` + `/api/admin`
+paths, `infrastructure/overlays/server/` guards adminer and qdrant. Because
+the bcrypt salt is random, the render step regenerates these files only when
+they are absent, so rotation is a delete-then-re-render:
 
-1. Generate a new bcrypt htpasswd line:
+1. Edit `ADMIN_PASSWORD` in `toimi.env`.
+
+2. Delete both generated htpasswd files so the next render re-derives them:
 
    ```bash
-   htpasswd -nbB admin 'your-new-password'
-   # or, without apache2-utils installed:
-   docker run --rm httpd:2.4-alpine htpasswd -nbB admin 'your-new-password'
+   rm -f k8s/overlays/server/admin-auth.env \
+         infrastructure/overlays/server/admin-auth.env
    ```
 
-2. Replace the `users=` line in **both**:
-   - `k8s/overlays/server/admin-auth.env`
-   - `infrastructure/overlays/server/admin-auth.env`
+   (One admin password, enforced by two separate Traefik Middlewares/
+   namespaces — the render step writes the same freshly-generated line to
+   both.)
 
-   (Same credential in both files — there is one admin password, enforced by
-   two separate Traefik Middlewares/namespaces.)
-
-3. Re-apply:
+3. Re-render and re-apply:
    - `k8s/overlays/server` (the `admin-basic-auth` secret + `/admin` guard):
-     `scripts/deploy.sh server <any-app>` re-renders and re-applies the whole
-     overlay, so any app works, e.g. `scripts/deploy.sh server web`.
+     `scripts/deploy.sh server <any-app>` runs render-config first, then
+     re-applies the whole overlay, so any app works, e.g.
+     `scripts/deploy.sh server web`.
    - `infrastructure/overlays/server` (adminer/qdrant guard): re-run
-     `scripts/server-setup.sh`. It is idempotent by design (`helm upgrade
-     --install` for PostgreSQL/cert-manager, `k3s` restart only if already
-     installed, kustomize apply for the rest) and safe to run end-to-end on a
-     live server for this purpose — it does not touch `k8s/overlays/server` or
-     restart application deployments.
+     `scripts/server-setup.sh`. It renders config first and is idempotent by
+     design (`helm upgrade --install` for PostgreSQL/cert-manager, `k3s`
+     restart only if already installed, kustomize apply for the rest) — safe
+     to run end-to-end on a live server for this purpose; it does not touch
+     `k8s/overlays/server` or restart application deployments.
 
 4. Verify with the smoke checklist below, in particular the `-u admin:PW`
    and unauthenticated `401` lines.

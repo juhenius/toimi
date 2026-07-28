@@ -589,6 +589,8 @@ src/toimi.web/wwwroot/
 
 # Non-secret per-env config (real file is local-only)
 /config.env
+# Single config source holding real secrets (render-config.sh reads this)
+/toimi.env
 
 # Brainstorm session artifacts (mockups, server state)
 /.superpowers/

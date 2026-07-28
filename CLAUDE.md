@@ -115,13 +115,24 @@ tietue's `notify` handler.
 
 ## Configuration model
 
-- **Non-secret per-env values** → root `config.env` (template
-  `config.env.example`): `TOIMI_HOST`, `ADMINER_HOST`, `QDRANT_HOST`,
-  `IMAGE_REGISTRY`, `HOMEASSISTANT_BASE_URL`, `OPENAI_MODEL`.
-- **Secrets** → `k8s/overlays/<env>/secrets.env` and
-  `infrastructure/overlays/<env>/secrets.env` (templates: matching
-  `secrets.env.example`), injected via Kustomize `secretGenerator`.
-- Manifests carry `${VAR}` placeholders. Rendering pipeline (scripts only):
+- **Single source of truth** → root `toimi.env` (gitignored; template
+  `toimi.env.example`). Holds every per-machine value: hostnames,
+  `IMAGE_REGISTRY`, `OPENAI_MODEL`/`OPENAI_API_KEY`, `HOMEASSISTANT_BASE_URL`/
+  `HA_BEARER_TOKEN`, `POSTGRES_PASSWORD` (set ONCE), ntfy creds, and
+  `ADMIN_USER`/`ADMIN_PASSWORD`.
+- `scripts/render-config.sh <dev|server>` (run first by dev-setup/server-setup/
+  deploy) generates the derived, gitignored files from `toimi.env`:
+  `config.env` (non-secret vars sourced for envsubst), the per-overlay
+  `secrets.env` (app secrets → `toimi-secrets`; the three DB connection strings
+  are COMPOSED from `POSTGRES_PASSWORD`), the infra `secrets.env`
+  (`postgres-password`), and — server only — the two `admin-auth.env`
+  (`admin-basic-auth`; htpasswd DERIVED from `ADMIN_PASSWORD`). `toimi.env` is
+  parsed literally (never shell-sourced), so secret values may contain `$`,
+  spaces, etc. Rotate admin creds by editing `toimi.env` + deleting the two
+  generated `admin-auth.env` files, then re-rendering.
+- Kustomize `secretGenerator` consumes the generated `secrets.env`/
+  `admin-auth.env` files unchanged. Manifests carry `${VAR}` placeholders;
+  rendering pipeline (scripts only):
   `kubectl kustomize <overlay> | envsubst '<allowlist>' | kubectl apply -f -`.
   envsubst uses an explicit allowlist so secret/`$` content is never touched.
 - MCP server URLs are cluster-internal (`*.apps.svc.cluster.local/sse`) —

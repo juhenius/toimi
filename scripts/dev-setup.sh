@@ -4,11 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+"$SCRIPT_DIR/render-config.sh" dev
+
 CONFIG_FILE="$ROOT_DIR/config.env"
-if [ ! -f "$CONFIG_FILE" ]; then
-  echo "ERROR: $CONFIG_FILE not found. Copy it: cp config.env.example config.env"
-  exit 1
-fi
 set -a; # shellcheck disable=SC1090
 source "$CONFIG_FILE"; set +a
 # shellcheck disable=SC2016
@@ -99,13 +97,7 @@ helm upgrade --install traefik traefik/traefik \
 
 # --- Read secrets ---
 INFRA_SECRETS="$ROOT_DIR/infrastructure/overlays/dev/secrets.env"
-if [ -f "$INFRA_SECRETS" ]; then
-  PG_PASSWORD=$(grep '^postgres-password=' "$INFRA_SECRETS" | cut -d= -f2-)
-else
-  echo "WARNING: $INFRA_SECRETS not found, using default password"
-  echo "  Copy from template: cp infrastructure/secrets.env.example infrastructure/overlays/dev/secrets.env"
-  PG_PASSWORD="changeme-in-production"
-fi
+PG_PASSWORD=$(grep '^postgres-password=' "$INFRA_SECRETS" | cut -d= -f2-)
 
 # --- PostgreSQL (Helm) ---
 echo "Installing PostgreSQL..."
@@ -158,14 +150,6 @@ for DB_NAME in toimi ruutu tietue; do
     kubectl exec -n data svc/postgresql -- env PGPASSWORD="$PG_PASSWORD" \
     psql -U postgres -c "CREATE DATABASE $DB_NAME;"
 done
-
-# --- Check secrets ---
-if [ ! -f "$ROOT_DIR/k8s/overlays/dev/secrets.env" ]; then
-  echo ""
-  echo "WARNING: Service secrets not found. Copy from template:"
-  echo "  cp k8s/secrets.env.example k8s/overlays/dev/secrets.env"
-  echo "  # Then edit with real values"
-fi
 
 # --- Deploy all services (on reset) ---
 if [ "$RESET" = true ]; then
