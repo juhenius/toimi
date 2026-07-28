@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Json.Schema;
 
@@ -22,14 +23,14 @@ public class SchemaValidator
       return ValidationResult.Invalid($"Invalid schema: {ex.Message}");
     }
 
-    var results = schema.Evaluate(data, Options);
+    var results = schema.Evaluate(JsonSerializer.SerializeToElement(data), Options);
     if (results.IsValid)
     {
       return ValidationResult.Valid();
     }
 
     var errors = results.Details
-      .Where(d => d.HasErrors)
+      .Where(d => d.Errors is { Count: > 0 })
       .SelectMany(d => d.Errors!.Select(e =>
         string.IsNullOrEmpty(d.InstanceLocation.ToString())
           ? e.Value
