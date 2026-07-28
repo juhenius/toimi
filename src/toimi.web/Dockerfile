@@ -1,6 +1,6 @@
 # Build context = REPO ROOT (this file COPYs toimi.sln and src/).
 # Build: docker build -f src/toimi.web/Dockerfile -t <registry>/<image>:latest .
-FROM node:24.18.0-slim AS frontend
+FROM node:26.5.0-slim AS frontend
 WORKDIR /app
 COPY src/toimi.web/ClientApp/package.json src/toimi.web/ClientApp/package-lock.json* ./
 RUN npm ci
