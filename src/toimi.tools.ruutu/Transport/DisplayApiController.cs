@@ -168,11 +168,12 @@ public class DisplayApiController(
 
   private static string NotConfiguredPage(string identifier)
   {
+    var encodedIdentifier = System.Net.WebUtility.HtmlEncode(identifier);
     return $$"""
     <!DOCTYPE html><html><head><meta charset="utf-8"><title>not configured</title>
     <style>body{font-family:-apple-system,system-ui,sans-serif;background:#f5f3ef;padding:40px;text-align:center;color:#444}</style>
     </head><body>
-      <h1>Display '{{identifier}}' is not configured.</h1>
+      <h1>Display '{{encodedIdentifier}}' is not configured.</h1>
       <p>Ask Toimi to register this display, then refresh this page.</p>
     </body></html>
     """;

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using ModelContextProtocol.Server;
+using toimi.tools.ruutu.Data.Entities;
 using toimi.tools.ruutu.Data.Repositories;
 
 namespace toimi.tools.ruutu.Tools;
@@ -19,7 +20,16 @@ public class DisplayManagementTools(DisplayRepository displays)
       return "Error: capabilityTierOverride must be 'modern', 'legacy', or null.";
     }
 
-    var d = await displays.RegisterAsync(identifier, capabilityTierOverride, ct);
+    Display d;
+    try
+    {
+      d = await displays.RegisterAsync(identifier, capabilityTierOverride, ct);
+    }
+    catch (ArgumentException ex)
+    {
+      return $"Error: {ex.Message}";
+    }
+
     return JsonSerializer.Serialize(new { d.Identifier, d.Tier, d.TierOverride, url = $"/ruutu/{d.Identifier}" });
   }
 

@@ -8,6 +8,9 @@ builder.Services.AddHttpClient<WebFetcher>(client =>
 {
   client.Timeout = TimeSpan.FromSeconds(15);
   client.DefaultRequestHeaders.UserAgent.ParseAdd("Toimi/1.0 (personal assistant)");
+  // Refuse oversized bodies before buffering them into memory (OOM guard).
+  // Slightly above the 50k the fetcher keeps, so truncation still applies to normal pages.
+  client.MaxResponseContentBufferSize = 8_000_000;
 })
 .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
 {
