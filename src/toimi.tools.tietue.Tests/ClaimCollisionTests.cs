@@ -15,23 +15,6 @@ public class ClaimCollisionTests
   private const string Schema = /*lang=json,strict*/ """{"type":"object","properties":{"title":{"type":"string"}},"required":["title"]}""";
   private static readonly DateTimeOffset Occurrence = new(2026, 6, 1, 9, 0, 0, TimeSpan.Zero);
 
-  // The EF InMemory provider does not enforce unique indexes, so the DbUpdateException
-  // catch path in TryClaimAsync is unreachable unless forced: throw once on demand.
-  private sealed class ThrowOnceDbContext(DbContextOptions<TietueDbContext> options) : TietueDbContext(options)
-  {
-    public bool ThrowNext { get; set; }
-
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-    {
-      if (ThrowNext)
-      {
-        ThrowNext = false;
-        throw new DbUpdateException("simulated unique-index collision");
-      }
-      return base.SaveChangesAsync(cancellationToken);
-    }
-  }
-
   [Fact]
   public async Task Collision_detaches_only_the_claim_and_keeps_other_tracked_entities_saveable()
   {

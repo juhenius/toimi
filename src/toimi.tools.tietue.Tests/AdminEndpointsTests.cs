@@ -232,9 +232,13 @@ public class AdminEndpointsTests : IDisposable
     Assert.Equal(day1.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), rows[0].GetProperty("date").GetString());
     Assert.Equal(1500, rows[0].GetProperty("promptTokens").GetInt64());
     Assert.Equal(300, rows[0].GetProperty("completionTokens").GetInt64());
+    // Test host doesn't override Toimi:TokenPriceInputPer1M/TokenPriceOutputPer1M, so ToimiConfiguration
+    // falls back to its defaults (2.50 / 10.00 per 1M tokens, tracking gpt-4o).
+    Assert.Equal((1500m / 1_000_000m * 2.50m) + (300m / 1_000_000m * 10.00m), rows[0].GetProperty("costUsd").GetDecimal());
     Assert.Equal(day2.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), rows[1].GetProperty("date").GetString());
     Assert.Equal(0, rows[1].GetProperty("promptTokens").GetInt64());
     Assert.Equal(0, rows[1].GetProperty("completionTokens").GetInt64());
+    Assert.Equal(0m, rows[1].GetProperty("costUsd").GetDecimal());
   }
 
   public void Dispose()

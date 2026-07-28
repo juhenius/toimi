@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { EmptyState } from './EmptyState'
 
 interface WebUsageRow { date: string; promptTokens: number; completionTokens: number; costUsd: number }
-interface AgentUsageRow { date: string; promptTokens: number; completionTokens: number }
+interface AgentUsageRow { date: string; promptTokens: number; completionTokens: number; costUsd: number }
 
 export function UsagePage() {
   const [web, setWeb] = useState<WebUsageRow[] | null>(null)
@@ -52,7 +52,7 @@ export function UsagePage() {
               <th className="px-3 py-2">Day</th>
               <th className="px-3 py-2">Web tokens (in / out)</th>
               <th className="px-3 py-2">Agent tokens (in / out)</th>
-              <th className="px-3 py-2">Est. cost (web)</th>
+              <th className="px-3 py-2">Est. cost</th>
             </tr>
           </thead>
           <tbody>
@@ -69,7 +69,7 @@ export function UsagePage() {
                     {a ? `${a.promptTokens.toLocaleString()} / ${a.completionTokens.toLocaleString()}` : '—'}
                   </td>
                   <td className="px-3 py-2 border-t border-zinc-800">
-                    {w ? `$${w.costUsd.toFixed(2)}` : '—'}
+                    {w || a ? `$${((w?.costUsd ?? 0) + (a?.costUsd ?? 0)).toFixed(2)}` : '—'}
                   </td>
                 </tr>
               )

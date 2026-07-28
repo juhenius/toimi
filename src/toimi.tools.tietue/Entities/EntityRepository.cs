@@ -29,8 +29,8 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Sem
       CreatedAt = now,
       UpdatedAt = now,
     };
-    db.Entities.Add(entity);
     await EnforceUniqueOnCreateAsync(entity, typeDef.Behaviors, ct);
+    db.Entities.Add(entity);
     var indexOp = outbox?.Enqueue(entity, typeDef.Behaviors, "upsert");
     await SaveGuardingUniqueAsync(entity.Type, ct);
     if (outbox is not null)
@@ -70,10 +70,13 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Sem
     {
       var typeDef = await GetTypeDefOrThrowAsync(entity.Type, ct);
       Validate(typeDef.JsonSchema.RootElement.GetRawText(), data);
-      var previous = entity.Data;
-      entity.Data = JsonSerializer.SerializeToDocument(data);
-      previous.Dispose();
-      await EnforceUniqueOnUpdateAsync(entity, typeDef.Behaviors, ct);
+      var newData = JsonSerializer.SerializeToDocument(data);
+      await EnforceUniqueOnUpdateAsync(entity, newData, typeDef.Behaviors, ct);
+      // Mutate only after all pre-checks: a caught validation failure inside a scheduler
+      // tick must not leave half-applied tracked state for the tick's later saves to flush.
+      // The previous JsonDocument is intentionally NOT disposed — the change tracker's
+      // original-values snapshot still references it (see ResetPendingChanges).
+      entity.Data = newData;
       behaviorsForExpiry = typeDef.Behaviors;
       indexOp = outbox?.Enqueue(entity, typeDef.Behaviors, "upsert");
     }
@@ -182,7 +185,7 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Sem
     db.UniqueKeys.Add(new UniqueKey { Type = entity.Type, Field = cfg.Field, Value = value, EntityId = entity.Id });
   }
 
-  private async Task EnforceUniqueOnUpdateAsync(Entity entity, string? behaviorsJson, CancellationToken ct)
+  private async Task EnforceUniqueOnUpdateAsync(Entity entity, JsonDocument newData, string? behaviorsJson, CancellationToken ct)
   {
     var cfg = BehaviorSpec.UniqueNameOf(behaviorsJson);
     if (cfg is null)
@@ -190,7 +193,7 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Sem
       return;
     }
 
-    var value = KeyValue(entity.Data, cfg.Field);
+    var value = KeyValue(newData, cfg.Field);
     var existing = await db.UniqueKeys.FirstOrDefaultAsync(k => k.EntityId == entity.Id && k.Field == cfg.Field, ct);
 
     if (value is null)
@@ -226,7 +229,32 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Sem
     }
     catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: "23505" })
     {
+      ResetPendingChanges();
       throw new TietueValidationException([$"A '{type}' with a duplicate unique field already exists."]);
+    }
+  }
+
+  // Reverts everything the failed save was about to write, WITHOUT detaching unrelated
+  // tracked entities (the scheduler tick's trigger batch shares this scoped context).
+  private void ResetPendingChanges()
+  {
+    foreach (var entry in db.ChangeTracker.Entries()
+      .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+      .ToList())
+    {
+      if (entry.State == EntityState.Added)
+      {
+        entry.State = EntityState.Detached;
+      }
+      else if (entry.State == EntityState.Modified)
+      {
+        entry.CurrentValues.SetValues(entry.OriginalValues);
+        entry.State = EntityState.Unchanged;
+      }
+      else // Deleted
+      {
+        entry.State = EntityState.Unchanged;
+      }
     }
   }
 

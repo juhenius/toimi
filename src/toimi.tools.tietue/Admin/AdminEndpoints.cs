@@ -120,7 +120,7 @@ public static class AdminEndpoints
         : Results.Ok(new TypeItem(t.Name, t.JsonSchema.RootElement.GetRawText(), t.Behaviors, t.DefaultTriggers, t.CreatedAt, t.UpdatedAt));
     });
 
-    admin.MapGet("/usage", async (TietueDbContext db) =>
+    admin.MapGet("/usage", async (TietueDbContext db, Toimi.Core.Configuration.ToimiConfiguration config) =>
     {
       var since = DateTimeOffset.UtcNow.AddDays(-30);
       var events = await db.EntityEvents
@@ -151,7 +151,14 @@ public static class AdminEndpoints
           return (Date: DateOnly.FromDateTime(e.CreatedAt.UtcDateTime), Prompt: prompt, Completion: completion);
         })
         .GroupBy(r => r.Date)
-        .Select(g => new { date = g.Key, promptTokens = g.Sum(r => r.Prompt), completionTokens = g.Sum(r => r.Completion) })
+        .Select(g => new
+        {
+          date = g.Key,
+          promptTokens = g.Sum(r => r.Prompt),
+          completionTokens = g.Sum(r => r.Completion),
+          costUsd = (g.Sum(r => r.Prompt) / 1_000_000m * config.TokenPriceInputPer1M)
+            + (g.Sum(r => r.Completion) / 1_000_000m * config.TokenPriceOutputPer1M),
+        })
         .OrderBy(r => r.date)
         .ToList();
 

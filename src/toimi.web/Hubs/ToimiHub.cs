@@ -137,13 +137,16 @@ public class ToimiHub(ToimiConfiguration config, ConversationRepository reposito
       await DrainToolEvents(session.Notifier, toolCallEvents);
 
       var responseText = fullResponse.ToString();
-      session.Messages.Add(new(ChatRole.Assistant, responseText));
 
-      // Anchor the budget to real prompt usage (covers the list as sent plus the response).
+      // Anchor the budget to the real prompt-token count of the messages AS SENT.
+      // The assistant response (appended below) then counts into the chars-delta,
+      // keeping the estimate conservative rather than undercounting by one response.
       if (usage?.InputTokenCount is not null)
       {
         session.Budget.RecordUsage((int)usage.InputTokenCount.Value, session.Messages);
       }
+
+      session.Messages.Add(new(ChatRole.Assistant, responseText));
 
       // Serialize tool calls JSON
       var toolCallsJson = toolCallEvents.Count > 0

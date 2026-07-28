@@ -36,17 +36,40 @@ public static class SemanticReconciler
     var missing = dbIds.Except(pointIds).ToList();
     var orphans = pointIds.Except(dbIds).ToList();
 
+    // Skip entities that already have a live (retryable) row for the same op —
+    // the worker will handle them; a duplicate would double-process.
+    var live = (await db.IndexOutbox
+      .Where(o => o.Type == type && o.Attempts < SemanticOutbox.MaxAttempts)
+      .Select(o => new { o.EntityId, o.Op })
+      .ToListAsync(ct))
+      .Select(o => (o.EntityId, o.Op))
+      .ToHashSet();
+
+    var missingEnqueued = 0;
     foreach (var id in missing)
     {
+      if (live.Contains((id, "upsert")))
+      {
+        continue;
+      }
+
       db.IndexOutbox.Add(new IndexOutbox { Id = Guid.NewGuid(), EntityId = id, Type = type, Op = "upsert", CreatedAt = now });
+      missingEnqueued++;
     }
 
+    var orphansEnqueued = 0;
     foreach (var id in orphans)
     {
+      if (live.Contains((id, "delete")))
+      {
+        continue;
+      }
+
       db.IndexOutbox.Add(new IndexOutbox { Id = Guid.NewGuid(), EntityId = id, Type = type, Op = "delete", CreatedAt = now });
+      orphansEnqueued++;
     }
 
     await db.SaveChangesAsync(ct);
-    return new ReconcileResult(missing.Count, orphans.Count);
+    return new ReconcileResult(missingEnqueued, orphansEnqueued);
   }
 }

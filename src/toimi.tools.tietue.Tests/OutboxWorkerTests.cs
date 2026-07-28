@@ -166,6 +166,26 @@ public class OutboxWorkerTests
   }
 
   [Fact]
+  public async Task Due_row_behind_a_wall_of_backoff_rows_still_processes()
+  {
+    using var db = TestDb.New();
+    var index = new FailingIndex { Fail = false };
+    var now = DateTimeOffset.UtcNow;
+    for (var i = 0; i < 25; i++)
+    {
+      // In backoff (attempts 3 → 8-min backoff, attempted 1 min ago), older than the due row.
+      db.IndexOutbox.Add(Row(attempts: 3, lastAttempt: now.AddMinutes(-1), created: now.AddHours(-2)));
+    }
+
+    db.IndexOutbox.Add(Row(attempts: 1, lastAttempt: now.AddMinutes(-5), created: now.AddMinutes(-10)));
+    await db.SaveChangesAsync();
+
+    var processed = await OutboxWorker.RunOnceAsync(db, new SemanticOutbox(db, index), now, default);
+
+    Assert.Equal(1, processed);
+  }
+
+  [Fact]
   public async Task Attempted_row_with_null_last_attempt_is_immediately_due()
   {
     using var db = TestDb.New();

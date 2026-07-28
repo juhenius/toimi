@@ -40,3 +40,7 @@ prunes orphaned vectors. The outbox worker drains the queue within minutes.
 
 Run `scripts/verify-backup.sh <env>` monthly. It restores the newest dump of each
 database into a scratch `<db>_verify` database, asserts tables exist, and drops it.
+
+> **Note (k3s server):** on the k3s server, `kubectl` means `sudo k3s kubectl`
+> or `export KUBECONFIG=/etc/rancher/k3s/k3s.yaml`. `scripts/verify-backup.sh`
+> assumes a working `kubectl` context on the machine that runs it.

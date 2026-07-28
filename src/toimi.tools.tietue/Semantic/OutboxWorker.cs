@@ -13,6 +13,7 @@ public class OutboxWorker(IServiceScopeFactory scopeFactory, ILogger<OutboxWorke
   private static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
   private static readonly TimeSpan UndrainedGrace = TimeSpan.FromMinutes(2);
   private const int BatchSize = 20;
+  private const int CandidateWindow = 200;
 
   protected override async Task ExecuteAsync(CancellationToken stoppingToken)
   {
@@ -47,11 +48,12 @@ public class OutboxWorker(IServiceScopeFactory scopeFactory, ILogger<OutboxWorke
     var candidates = await db.IndexOutbox
       .Where(o => o.Attempts < SemanticOutbox.MaxAttempts)
       .OrderBy(o => o.CreatedAt)
-      .Take(BatchSize)
+      .Take(CandidateWindow) // wide fetch: due-ness (backoff math) isn't SQL-translatable,
+                             // and a narrow window of purely-backoff rows would starve newer due rows
       .ToListAsync(ct);
 
     var processed = 0;
-    foreach (var row in candidates.Where(r => IsDue(r, now)))
+    foreach (var row in candidates.Where(r => IsDue(r, now)).Take(BatchSize))
     {
       try
       {

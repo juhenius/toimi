@@ -102,6 +102,61 @@ public class ReconcileTests
   }
 
   [Fact]
+  public async Task Reconcile_skips_entities_with_a_live_outbox_row()
+  {
+    using var db = TestDb.New();
+    await new TypeRepository(db).DefineAsync("memory", Schema, Behaviors);
+    var repo = new EntityRepository(db, new SchemaValidator()); // no outbox: entity exists but was never indexed
+    var e1 = await repo.CreateAsync("memory", JsonNode.Parse("""{"name":"a"}"""), []);
+
+    // A live (retryable) upsert row for the same entity already exists.
+    db.IndexOutbox.Add(new IndexOutbox
+    {
+      Id = Guid.NewGuid(),
+      EntityId = e1.Id,
+      Type = "memory",
+      Op = "upsert",
+      Attempts = 1,
+      CreatedAt = DateTimeOffset.UtcNow,
+    });
+    await db.SaveChangesAsync();
+
+    var index = new StubIndex { Ids = [] }; // e1 missing from Qdrant
+    var result = await SemanticReconciler.ReconcileAsync(db, index, "memory", default);
+
+    Assert.Equal(0, result.MissingEnqueued);
+    var rows = await db.IndexOutbox.Where(r => r.EntityId == e1.Id).ToListAsync();
+    Assert.Single(rows); // no duplicate enqueued
+  }
+
+  [Fact]
+  public async Task Reconcile_skips_orphans_with_a_live_delete_row()
+  {
+    using var db = TestDb.New();
+    await new TypeRepository(db).DefineAsync("memory", Schema, Behaviors);
+    var orphan = Guid.NewGuid(); // in Qdrant, not in the DB
+
+    // A live (retryable) delete row for the orphan already exists.
+    db.IndexOutbox.Add(new IndexOutbox
+    {
+      Id = Guid.NewGuid(),
+      EntityId = orphan,
+      Type = "memory",
+      Op = "delete",
+      Attempts = 1,
+      CreatedAt = DateTimeOffset.UtcNow,
+    });
+    await db.SaveChangesAsync();
+
+    var index = new StubIndex { Ids = [orphan] };
+    var result = await SemanticReconciler.ReconcileAsync(db, index, "memory", default);
+
+    Assert.Equal(0, result.OrphansEnqueued);
+    var rows = await db.IndexOutbox.Where(r => r.EntityId == orphan).ToListAsync();
+    Assert.Single(rows); // no duplicate delete enqueued
+  }
+
+  [Fact]
   public async Task Unindexed_type_is_rejected()
   {
     using var db = TestDb.New();
