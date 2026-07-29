@@ -27,7 +27,10 @@ public class ScriptEngine
   //     degrades a scheduler tick rather than hanging it forever. Closing this
   //     residual belongs at the handler/tick level (e.g. a wall-clock watchdog
   //     around the whole script invocation, or a process-level timeout), not inside
-  //     ScriptEngine.
+  //     ScriptEngine. ScriptHandler now enforces such a wall-clock budget
+  //     (Scripts:TimeoutSeconds) around the whole evaluation, so this residual
+  //     degrades a single handler run (recorded as a "timeout" result) rather than
+  //     the tick — the underlying ~5s stall on the abandoned thread still happens.
   //   - String.prototype.repeat can allocate a multi-gigabyte string in one native
   //     call. padStart/padEnd of the same magnitude were observed to fail safely
   //     (bounded to a caught exception); repeat's allocation was not — it reliably

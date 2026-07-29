@@ -9,6 +9,7 @@ namespace toimi.tools.tietue.Scheduling;
 public class SchedulerTick(TietueDbContext db, HandlerRegistry handlers, EntityEventStore events, ILogger<SchedulerTick>? logger = null, ITickLock? tickLock = null)
 {
   private readonly ILogger<SchedulerTick> _logger = logger ?? NullLogger<SchedulerTick>.Instance;
+  private const int MaxErrorMessageChars = 1000;
 
   public async Task RunDueAsync(DateTimeOffset now, CancellationToken ct)
   {
@@ -66,7 +67,11 @@ public class SchedulerTick(TietueDbContext db, HandlerRegistry handlers, EntityE
             catch (Exception ex)
             {
               status = "error";
-              resultJson = System.Text.Json.JsonSerializer.Serialize(new { error = ex.Message });
+              // Generic insurance: any handler's exception message lands in a jsonb column.
+              var message = ex.Message.Length > MaxErrorMessageChars
+                ? ex.Message[..MaxErrorMessageChars] + "… [truncated]"
+                : ex.Message;
+              resultJson = System.Text.Json.JsonSerializer.Serialize(new { error = message });
               _logger.LogError(ex, "Handler {HandlerKind} failed for trigger {TriggerId} (entity {EntityId}).",
                 trigger.HandlerKind, trigger.Id, trigger.EntityId);
             }

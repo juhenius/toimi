@@ -17,6 +17,20 @@ describe('useAdminList', () => {
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.error).toEqual({ status: 0 })
   })
+
+  it('surfaces an HTTP error response as status + body', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve({ message: 'stale' }),
+    }))
+
+    const { result } = renderHook(() => useAdminList('tietue', 'entities'))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.error).toEqual({ status: 409, body: { message: 'stale' } })
+    expect(result.current.data).toBeNull()
+  })
 })
 
 describe('useAdminSummary', () => {

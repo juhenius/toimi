@@ -199,4 +199,25 @@ public class NtfyClientTests
 
     Assert.Contains("forbidden", ex.Message);
   }
+
+  [Fact]
+  public async Task Error_body_is_truncated_so_it_cannot_flood_the_event_log()
+  {
+    // The message is serialized into tietue's EntityEvent.Result (jsonb) by SchedulerTick.
+    // A proxy returning a large HTML error page must not land whole in the database.
+    var handler = new StubHandler
+    {
+      ResponseStatusCode = HttpStatusCode.BadGateway,
+      ResponseBody = new string('x', 10_000),
+    };
+    var client = new NtfyClient(
+      new NtfyOptions { BaseUrl = "http://ntfy.test", Topic = "toimi" },
+      new HttpClient(handler));
+
+    var ex = await Assert.ThrowsAsync<HttpRequestException>(() => client.SendAsync("m"));
+
+    Assert.Contains("502", ex.Message);
+    Assert.True(ex.Message.Length < 1000, $"message was {ex.Message.Length} chars; expected a truncated body");
+    Assert.Contains("truncated", ex.Message, StringComparison.OrdinalIgnoreCase);
+  }
 }

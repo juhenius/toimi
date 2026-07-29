@@ -4,6 +4,10 @@ using Xunit;
 
 namespace toimi.tools.tietue.Tests;
 
+// Shares a collection with ScriptHandlerTests: the watchdog test there abandons a thread
+// that keeps burning CPU on a 2-core box, which thins the headroom this file's
+// < 2s timing assertion depends on if the two ran in parallel.
+[Collection("script-sandbox")]
 public class ScriptEngineTests
 {
   private readonly ScriptEngine _engine = new();

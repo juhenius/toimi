@@ -132,6 +132,40 @@ public class SchedulerTickTests
     Assert.NotNull(trigger.LastFiredAt);
   }
 
+  private sealed class ExplodingHandler(string message) : INativeHandler
+  {
+    public string Kind => "notify";
+
+    public Task<HandlerResult> HandleAsync(HandlerContext ctx, CancellationToken ct = default)
+    {
+      throw new InvalidOperationException(message);
+    }
+  }
+
+  [Fact]
+  public async Task Handler_error_text_is_capped_before_it_reaches_the_event_log()
+  {
+    // A handler's exception message is serialized straight into EntityEvent.Result
+    // (jsonb) by SchedulerTick. Cap it generically so any handler's failure — not just
+    // ntfy's — is bounded before it reaches the database.
+    using var db = TestDb.New();
+    await new TypeRepository(db).DefineAsync("reminder", Schema);
+    var repo = new EntityRepository(db, new SchemaValidator());
+    var e = await repo.CreateAsync("reminder", JsonNode.Parse("""{"title":"x"}"""), []);
+    var registry = new HandlerRegistry([new ExplodingHandler(new string('y', 20_000))]);
+    var tick = new SchedulerTick(db, registry, new EntityEventStore(db));
+    await new TriggerRepository(db, TestConfig.Default).CreateAsync(e.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "notify", null,
+      new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
+
+    await tick.RunDueAsync(new DateTimeOffset(2026, 6, 1, 9, 1, 0, TimeSpan.Zero), default);
+
+    var evt = await db.EntityEvents.SingleAsync(ev => ev.EntityId == e.Id && ev.Kind == "notify");
+    Assert.Equal("error", evt.Status);
+    Assert.NotNull(evt.Result);
+    Assert.True(evt.Result.Length < 2000, $"result was {evt.Result.Length} chars; expected the message to be capped");
+    Assert.Contains("yyy", evt.Result);
+  }
+
   [Fact]
   public async Task Entity_deleted_by_handler_does_not_throw_and_removes_entity()
   {

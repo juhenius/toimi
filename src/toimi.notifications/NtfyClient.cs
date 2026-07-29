@@ -8,6 +8,7 @@ public class NtfyClient(NtfyOptions options, HttpClient? httpClient = null)
 {
   private static readonly HttpClient DefaultHttp = new() { Timeout = TimeSpan.FromSeconds(10) };
   private readonly HttpClient _http = httpClient ?? DefaultHttp;
+  private const int MaxErrorBodyChars = 500;
   private static readonly Dictionary<string, int> PriorityMap = new(StringComparer.OrdinalIgnoreCase)
   {
     ["min"] = 1,
@@ -60,6 +61,13 @@ public class NtfyClient(NtfyOptions options, HttpClient? httpClient = null)
     if (!response.IsSuccessStatusCode)
     {
       var body = await response.Content.ReadAsStringAsync(ct);
+      // The message ends up in tietue's EntityEvent.Result (jsonb) — cap it so an
+      // HTML error page from a proxy cannot flood the event log.
+      if (body.Length > MaxErrorBodyChars)
+      {
+        body = body[..MaxErrorBodyChars] + "… [truncated]";
+      }
+
       throw new HttpRequestException(
         $"ntfy returned {(int)response.StatusCode} ({response.StatusCode}): {body}", null, response.StatusCode);
     }
