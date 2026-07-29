@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.AI;
 
 namespace Toimi.Core;
@@ -39,6 +40,23 @@ public class ContextBudget
 
   internal static int TotalChars(List<ChatMessage> messages)
   {
-    return messages.Sum(m => m.Text?.Length ?? 0);
+    return messages.Sum(MessageChars);
+  }
+
+  private static int MessageChars(ChatMessage m)
+  {
+    var total = 0;
+    foreach (var content in m.Contents)
+    {
+      total += content switch
+      {
+        TextContent t => t.Text?.Length ?? 0,
+        FunctionCallContent fc => fc.Name.Length + (fc.Arguments is null ? 0 : JsonSerializer.Serialize(fc.Arguments).Length),
+        FunctionResultContent fr => fr.Result?.ToString()?.Length ?? 0,
+        _ => 0,
+      };
+    }
+
+    return total;
   }
 }

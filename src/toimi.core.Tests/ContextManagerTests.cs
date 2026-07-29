@@ -117,4 +117,64 @@ public class ContextManagerTests
     Assert.False(compacted);
     Assert.Empty(client.Requests);
   }
+
+  [Fact]
+  public async Task Second_compaction_folds_the_prior_summary_instead_of_accumulating()
+  {
+    var client = new FakeChatClient();
+    var messages = new List<ChatMessage> { new(ChatRole.System, "base prompt") };
+    for (var i = 0; i < 40; i++)
+    {
+      messages.Add(Text(ChatRole.User, 100));
+    }
+
+    Assert.True(await ContextManager.CompactIfNeeded(messages, client, budget: null, maxTokens: 1, ct: default));
+
+    for (var i = 0; i < 20; i++)
+    {
+      messages.Add(Text(ChatRole.User, 100));
+    }
+
+    Assert.True(await ContextManager.CompactIfNeeded(messages, client, budget: null, maxTokens: 1, ct: default));
+
+    // The old summary must be summarized INTO the new one, not protected beside it —
+    // otherwise every compaction leaves one more permanent System message and the
+    // reclaimable window shrinks to nothing.
+    Assert.Equal(1, messages.Count(m =>
+      m.Role == ChatRole.System && (m.Text?.StartsWith("Summary of earlier conversation:", StringComparison.Ordinal) ?? false)));
+    Assert.Equal("base prompt", messages[0].Text); // the real system prompt survives
+  }
+
+  [Fact]
+  public void Estimate_counts_function_call_and_result_content()
+  {
+    var budget = new ContextBudget();
+    var payload = new string('r', 8000);
+    var messages = new List<ChatMessage>
+    {
+      new(ChatRole.Assistant, [new FunctionCallContent("call1", "search", new Dictionary<string, object?> { ["query"] = "milk" })]),
+      new(ChatRole.Tool, [new FunctionResultContent("call1", payload)]),
+    };
+
+    // Tool-only messages have no TextContent; the estimate must still see their bulk
+    // or tool-heavy histories never trigger compaction.
+    Assert.True(budget.Estimate(messages) >= payload.Length / 4);
+  }
+
+  [Fact]
+  public async Task Tool_result_heavy_history_triggers_compaction_without_an_anchor()
+  {
+    var client = new FakeChatClient();
+    var messages = new List<ChatMessage>();
+    for (var i = 0; i < 30; i++)
+    {
+      messages.Add(new ChatMessage(ChatRole.Tool, [new FunctionResultContent($"call{i}", new string('r', 1000))]));
+    }
+
+    // 30k chars of tool results ≈ 7.5k tokens — over a 5k budget. This is the
+    // AgentRunner path (budget: null, chars/4 fallback only).
+    var compacted = await ContextManager.CompactIfNeeded(messages, client, budget: null, maxTokens: 5000, ct: default);
+
+    Assert.True(compacted);
+  }
 }

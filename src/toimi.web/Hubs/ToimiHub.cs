@@ -99,20 +99,32 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
       return;
     }
 
-    // Lazily create the conversation row on the first message, so no-param
-    // connects / reconnects / abandoned "New" sessions never leave orphan rows.
-    if (session.ConversationId is null)
-    {
-      var created = await _repository.CreateAsync();
-      session = session with { ConversationId = created.Id };
-      Sessions[Context.ConnectionId] = session;
-      await Clients.Caller.SendAsync("ConversationCreated", created.Id);
-    }
-
     session.Messages.Add(new(ChatRole.User, message));
 
-    // Save user message to DB
-    await _repository.AddMessageAsync(session.ConversationId.Value, "user", message);
+    try
+    {
+      // Lazily create the conversation row on the first message, so no-param
+      // connects / reconnects / abandoned "New" sessions never leave orphan rows.
+      if (session.ConversationId is null)
+      {
+        var created = await _repository.CreateAsync();
+        session = session with { ConversationId = created.Id };
+        Sessions[Context.ConnectionId] = session;
+        await Clients.Caller.SendAsync("ConversationCreated", created.Id);
+      }
+
+      // Save user message to DB
+      await _repository.AddMessageAsync(session.ConversationId.Value, "user", message);
+    }
+    catch (Exception ex)
+    {
+      // The user message never reached the DB; drop it from in-memory context too so
+      // session and DB stay in step, and surface a client-visible Error instead of
+      // letting SignalR fault the invocation with a generic HubException.
+      session.Messages.RemoveAt(session.Messages.Count - 1);
+      await Clients.Caller.SendAsync("Error", $"Failed to save your message: {ex.Message}");
+      return;
+    }
 
     // Update current time
     ToimiClientFactory.RefreshDynamicContext(session.Messages);

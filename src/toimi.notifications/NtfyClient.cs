@@ -8,7 +8,7 @@ public class NtfyClient(NtfyOptions options, HttpClient? httpClient = null)
 {
   private static readonly HttpClient DefaultHttp = new() { Timeout = TimeSpan.FromSeconds(10) };
   private readonly HttpClient _http = httpClient ?? DefaultHttp;
-  private static readonly Dictionary<string, int> PriorityMap = new()
+  private static readonly Dictionary<string, int> PriorityMap = new(StringComparer.OrdinalIgnoreCase)
   {
     ["min"] = 1,
     ["low"] = 2,

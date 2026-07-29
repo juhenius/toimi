@@ -107,6 +107,7 @@ export function useToimi() {
     // message creates the row (and ConversationCreated hands us the new id).
     connection.on('ConversationReset', () => {
       setMessages([])
+      setIsStreaming(false)
       setCurrentConversationId(null)
       currentConversationIdRef.current = null
       conversationIdRef.current = undefined
@@ -232,6 +233,9 @@ export function useToimi() {
 
   const loadConversation = useCallback((id: string) => {
     connectionRef.current?.stop()
+    // The old connection is gone mid-stream: MessageComplete will never arrive,
+    // so clear the flag here or the composer stays disabled forever.
+    setIsStreaming(false)
     conversationIdRef.current = id
     setReconnectCounter(c => c + 1)
   }, [])

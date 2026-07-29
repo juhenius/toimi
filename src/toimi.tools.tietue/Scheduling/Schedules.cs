@@ -65,6 +65,11 @@ public static class Schedules
     {
       using var doc = JsonDocument.Parse(scheduleJson);
       var root = doc.RootElement;
+      if (root.ValueKind != JsonValueKind.Object)
+      {
+        return null;
+      }
+
       DateTimeOffset? at = root.TryGetProperty("at", out var a) && a.ValueKind == JsonValueKind.String
         ? DateTimeOffset.Parse(a.GetString()!, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal)
         : null;

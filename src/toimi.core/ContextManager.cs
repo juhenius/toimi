@@ -8,6 +8,7 @@ public static class ContextManager
   private const int RecentMessagesToKeep = 10;
   private const int MaxToolResultCharsInSummary = 500;
   private const int MaxSummaryInputChars = 300_000;
+  private const string SummaryPrefix = "Summary of earlier conversation:";
 
   public static async Task<bool> CompactIfNeeded(
     List<ChatMessage> messages,
@@ -16,7 +17,7 @@ public static class ContextManager
     int maxTokens = 100_000,
     CancellationToken ct = default)
   {
-    var estimated = budget?.Estimate(messages) ?? messages.Sum(m => (m.Text?.Length ?? 0) / 4);
+    var estimated = budget?.Estimate(messages) ?? (ContextBudget.TotalChars(messages) / 4);
     if (estimated < maxTokens)
     {
       return false;
@@ -34,6 +35,15 @@ public static class ContextManager
       {
         break;
       }
+    }
+
+    // Prior compaction summaries are System messages sitting at the end of the
+    // protected block. Treat them as summarizable content, not protection —
+    // otherwise each compaction adds one more permanent summary and the
+    // reclaimable window shrinks every cycle.
+    while (systemCount > 0 && (messages[systemCount - 1].Text?.StartsWith(SummaryPrefix, StringComparison.Ordinal) ?? false))
+    {
+      systemCount--;
     }
 
     var nonSystemCount = messages.Count - systemCount;
@@ -77,7 +87,7 @@ public static class ContextManager
     }
 
     messages.RemoveRange(systemCount, summarizeCount);
-    messages.Insert(systemCount, new(ChatRole.System, $"Summary of earlier conversation:\n{summary}"));
+    messages.Insert(systemCount, new(ChatRole.System, $"{SummaryPrefix}\n{summary}"));
     budget?.Reset();
 
     return true;

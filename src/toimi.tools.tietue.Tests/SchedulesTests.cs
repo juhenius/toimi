@@ -70,4 +70,20 @@ public class SchedulesTests
     const string json = "{ not json";
     Assert.Equal(json, Schedules.WithDefaultTimeZone(json, "Europe/Helsinki"));
   }
+
+  [Theory]
+  [InlineData("[]")]
+  [InlineData("5")]
+  [InlineData("null")]
+  [InlineData("\"daily\"")]
+  [InlineData("true")]
+  public void Non_object_schedule_json_yields_null_not_a_crash(string scheduleJson)
+  {
+    // Valid JSON that is not an object must behave like any other unparseable
+    // schedule: null fire time, spec passed through unchanged — not an
+    // InvalidOperationException escaping the MCP tool.
+    Assert.Null(Schedules.InitialNextFireAt(scheduleJson, Now));
+    Assert.Null(Schedules.NextAfter(scheduleJson, Now));
+    Assert.Equal(scheduleJson, Schedules.WithDefaultTimeZone(scheduleJson, "Europe/Helsinki"));
+  }
 }

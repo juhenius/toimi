@@ -58,6 +58,11 @@ public class HomeAssistantClient
       {
         foreach (var prop in data.Value.EnumerateObject())
         {
+          if (entityId is not null && prop.NameEquals("entity_id"))
+          {
+            continue; // the explicit entityId parameter wins over a duplicate in data
+          }
+
           prop.WriteTo(writer);
         }
       }
@@ -71,7 +76,10 @@ public class HomeAssistantClient
     var response = await _http.PostAsync($"api/services/{domain}/{service}", content, ct);
     response.EnsureSuccessStatusCode();
     var json = await response.Content.ReadAsStringAsync(ct);
-    return JsonDocument.Parse(json).RootElement;
+    // HA returns an empty body for some service endpoints; that is still success.
+    return string.IsNullOrWhiteSpace(json)
+      ? JsonDocument.Parse("null").RootElement
+      : JsonDocument.Parse(json).RootElement;
   }
 
   public async Task<string> RenderTemplateAsync(string template, CancellationToken ct = default)

@@ -24,7 +24,12 @@ public class CallServiceTool(HomeAssistantClient ha)
       }
       catch (JsonException)
       {
-        return "Invalid JSON in data parameter.";
+        return "Invalid JSON in data parameter. Expected a JSON object, e.g. {\"brightness\": 128}.";
+      }
+
+      if (parsedData.Value.ValueKind != JsonValueKind.Object)
+      {
+        return "Invalid JSON in data parameter. Expected a JSON object, e.g. {\"brightness\": 128}.";
       }
     }
 
