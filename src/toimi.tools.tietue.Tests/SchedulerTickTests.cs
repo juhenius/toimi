@@ -107,6 +107,32 @@ public class SchedulerTickTests
   }
 
   [Fact]
+  public async Task Unregistered_handler_kind_records_an_error_and_still_advances_the_trigger()
+  {
+    // A trigger persisted by an older build can reference a handler that no longer
+    // exists. It must not wedge the scheduler: error event recorded, trigger advances
+    // (a one-shot is consumed/disabled).
+    using var db = TestDb.New();
+    await new TypeRepository(db).DefineAsync("reminder", Schema);
+    var repo = new EntityRepository(db, new SchemaValidator());
+    var e = await repo.CreateAsync("reminder", JsonNode.Parse("""{"title":"Call"}"""), []);
+    var handlerConfig = /*lang=json,strict*/ """{"titleTemplate":"{title}"}""";
+    await new TriggerRepository(db, TestConfig.Default).CreateAsync(e.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "notify", handlerConfig,
+      new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
+    var registry = new HandlerRegistry([]);
+    var tick = new SchedulerTick(db, registry, new EntityEventStore(db));
+
+    await tick.RunDueAsync(new DateTimeOffset(2026, 6, 1, 9, 1, 0, TimeSpan.Zero), default);
+
+    var evt = await db.EntityEvents.SingleAsync(ev => ev.EntityId == e.Id && ev.Kind == "notify");
+    Assert.Equal("error", evt.Status);
+    Assert.Contains("no handler registered", evt.Result);
+    var trigger = (await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(e.Id))[0];
+    Assert.False(trigger.Enabled); // one-shot consumed, not wedged
+    Assert.NotNull(trigger.LastFiredAt);
+  }
+
+  [Fact]
   public async Task Entity_deleted_by_handler_does_not_throw_and_removes_entity()
   {
     using var db = TestDb.New();

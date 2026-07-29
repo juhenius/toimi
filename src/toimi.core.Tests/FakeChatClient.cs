@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 
 namespace Toimi.Core.Tests;
@@ -6,6 +7,8 @@ public sealed class FakeChatClient : IChatClient
 {
   public List<List<ChatMessage>> Requests { get; } = [];
   public string NextResponseText { get; set; } = "summary text";
+  public ChatMessage? NextResponseMessage { get; set; }
+  public List<ChatResponseUpdate> StreamUpdates { get; set; } = [];
   public bool Throw { get; set; }
 
   public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
@@ -13,12 +16,18 @@ public sealed class FakeChatClient : IChatClient
     Requests.Add([.. messages]);
     return Throw
       ? throw new InvalidOperationException("simulated summarization failure")
-      : Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, NextResponseText)));
+      : Task.FromResult(new ChatResponse(NextResponseMessage ?? new ChatMessage(ChatRole.Assistant, NextResponseText)));
   }
 
-  public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+  public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
   {
-    throw new NotSupportedException();
+    Requests.Add([.. messages]);
+    foreach (var update in StreamUpdates)
+    {
+      yield return update;
+    }
+
+    await Task.CompletedTask;
   }
 
   public object? GetService(Type serviceType, object? serviceKey = null)

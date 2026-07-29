@@ -10,11 +10,11 @@ public class WebFetcher(HttpClient httpClient)
     var contentType = response.Content.Headers.ContentType?.MediaType ?? "unknown";
     var raw = await response.Content.ReadAsStringAsync(ct);
 
-    var content = contentType switch
-    {
-      "text/html" => HtmlExtractor.ExtractText(raw),
-      _ => raw
-    };
+    // Media-type case is insensitive (RFC 9110), and XHTML deserves the same
+    // extraction; match loosely rather than on the exact lowercase literal.
+    var content = contentType.Contains("html", StringComparison.OrdinalIgnoreCase)
+      ? HtmlExtractor.ExtractText(raw)
+      : raw;
 
     if (content.Length > MaxContentLength)
     {

@@ -64,4 +64,82 @@ public class RecurrenceCalculatorTests
     Assert.Equal(new DateTimeOffset(2026, 3, 28, 7, 0, 0, TimeSpan.Zero), beforeDst!.Value.ToUniversalTime());
     Assert.Equal(new DateTimeOffset(2026, 3, 30, 6, 0, 0, TimeSpan.Zero), afterDst!.Value.ToUniversalTime());
   }
+
+  [Fact]
+  public void Nonexistent_wall_clock_in_spring_forward_gap_does_not_throw_or_vanish()
+  {
+    // 2026-03-29 Helsinki jumps 03:00 -> 04:00; a daily 03:30 rule has no valid
+    // wall-clock that day. Whatever Ical.Net does (skip/shift), the schedule must
+    // survive: the occurrence after the gap day must land back on 03:30 local.
+    var start = new DateTimeOffset(2026, 3, 27, 3, 30, 0, TimeSpan.FromHours(2));
+
+    var gapDay = RecurrenceCalculator.NextOccurrenceAfter(
+      start, "FREQ=DAILY", new DateTimeOffset(2026, 3, 28, 12, 0, 0, TimeSpan.Zero), "Europe/Helsinki");
+    Assert.NotNull(gapDay);
+
+    var afterGap = RecurrenceCalculator.NextOccurrenceAfter(
+      start, "FREQ=DAILY", gapDay!.Value, "Europe/Helsinki");
+    // 03:30 EEST (UTC+3) on 2026-03-30 == 00:30Z.
+    Assert.Equal(new DateTimeOffset(2026, 3, 30, 0, 30, 0, TimeSpan.Zero), afterGap!.Value.ToUniversalTime());
+  }
+
+  [Fact]
+  public void Ambiguous_wall_clock_in_fall_back_hour_fires_exactly_once()
+  {
+    // 2026-10-25 Helsinki repeats 03:00-04:00; a daily 03:30 rule has two candidate
+    // instants that day. Consecutive occurrences must stay ~a day apart — a
+    // double-fire inside the repeated hour would send duplicate notifications.
+    var start = new DateTimeOffset(2026, 10, 23, 3, 30, 0, TimeSpan.FromHours(3));
+
+    var first = RecurrenceCalculator.NextOccurrenceAfter(
+      start, "FREQ=DAILY", new DateTimeOffset(2026, 10, 24, 12, 0, 0, TimeSpan.Zero), "Europe/Helsinki");
+    Assert.NotNull(first);
+    var second = RecurrenceCalculator.NextOccurrenceAfter(start, "FREQ=DAILY", first.Value, "Europe/Helsinki");
+    Assert.NotNull(second);
+
+    Assert.True(second.Value - first.Value >= TimeSpan.FromHours(20),
+      $"occurrences {first:o} and {second:o} are suspiciously close — double fire in the repeated hour");
+  }
+
+  [Fact]
+  public void Count_bounded_rule_across_dst_yields_exactly_count_occurrences_at_stable_wall_clock()
+  {
+    // Daily 09:00 Helsinki, 5 occurrences spanning the 2026-03-29 spring-forward.
+    var start = new DateTimeOffset(2026, 3, 27, 9, 0, 0, TimeSpan.FromHours(2));
+    var occurrences = new List<DateTimeOffset>();
+    var current = RecurrenceCalculator.NextOccurrenceOnOrAfter(
+      start, "FREQ=DAILY;COUNT=5", start, "Europe/Helsinki");
+    while (current is not null)
+    {
+      occurrences.Add(current.Value);
+      current = RecurrenceCalculator.NextOccurrenceAfter(start, "FREQ=DAILY;COUNT=5", current.Value, "Europe/Helsinki");
+    }
+
+    Assert.Equal(5, occurrences.Count);
+    // 09:00 EET (UTC+2) -> 07:00Z before the transition; 09:00 EEST (UTC+3) -> 06:00Z after.
+    Assert.Equal(new DateTimeOffset(2026, 3, 27, 7, 0, 0, TimeSpan.Zero), occurrences[0].ToUniversalTime());
+    Assert.Equal(new DateTimeOffset(2026, 3, 28, 7, 0, 0, TimeSpan.Zero), occurrences[1].ToUniversalTime());
+    Assert.Equal(new DateTimeOffset(2026, 3, 29, 6, 0, 0, TimeSpan.Zero), occurrences[2].ToUniversalTime());
+    Assert.Equal(new DateTimeOffset(2026, 3, 30, 6, 0, 0, TimeSpan.Zero), occurrences[3].ToUniversalTime());
+    Assert.Equal(new DateTimeOffset(2026, 3, 31, 6, 0, 0, TimeSpan.Zero), occurrences[4].ToUniversalTime());
+  }
+
+  [Fact]
+  public void Rules_sparser_than_the_two_year_window_return_null()
+  {
+    // Documented limitation (RecurrenceCalculator.Window): the next occurrence of
+    // FREQ=YEARLY;INTERVAL=3 is beyond the search window, so scheduling returns
+    // null — and SchedulerTick then DISABLES the trigger. Pinned so a future
+    // window change is a conscious decision.
+    var next = RecurrenceCalculator.NextOccurrenceAfter(Start, "FREQ=YEARLY;INTERVAL=3", Start);
+    Assert.Null(next);
+  }
+
+  [Fact]
+  public void Unknown_timezone_falls_back_to_utc_expansion_without_throwing()
+  {
+    var withBogusTz = RecurrenceCalculator.NextOccurrenceAfter(Start, "FREQ=DAILY", Start, "Mars/Olympus");
+    var pureUtc = RecurrenceCalculator.NextOccurrenceAfter(Start, "FREQ=DAILY", Start);
+    Assert.Equal(pureUtc, withBogusTz);
+  }
 }

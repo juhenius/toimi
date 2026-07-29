@@ -16,14 +16,39 @@ public class ListEntitiesTool(HomeAssistantClient ha)
   {
     limit = Math.Clamp(limit, 1, 500);
     var states = await ha.GetStatesAsync();
-    var areas = await ha.GetEntityAreasAsync();
+    if (states.ValueKind != JsonValueKind.Array)
+    {
+      return "Unexpected response from Home Assistant when listing entities.";
+    }
+
+    Dictionary<string, string> areas;
+    try
+    {
+      areas = await ha.GetEntityAreasAsync();
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+    {
+      if (area is not null)
+      {
+        // Degrading to "no areas" here would return [] — indistinguishable from a
+        // genuinely empty room. Report the real cause instead.
+        return "Area lookup failed (template API unavailable) — cannot filter by area right now. Retry without the area filter.";
+      }
+
+      areas = [];
+    }
+
     var prefix = domain is not null ? domain + "." : null;
 
     var truncated = false;
     var entities = new List<object>();
     foreach (var entity in states.EnumerateArray())
     {
-      var entityId = entity.GetProperty("entity_id").GetString()!;
+      if (!entity.TryGetProperty("entity_id", out var idProperty) || idProperty.GetString() is not { } entityId)
+      {
+        continue; // malformed entity — skip it rather than failing the whole listing
+      }
+
       if (prefix is not null && !entityId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
       {
         continue;
@@ -42,7 +67,7 @@ public class ListEntitiesTool(HomeAssistantClient ha)
         break;
       }
 
-      var state = entity.GetProperty("state").GetString();
+      var state = entity.TryGetProperty("state", out var stateProperty) ? stateProperty.GetString() : null;
       string? friendlyName = null;
       if (entity.TryGetProperty("attributes", out var attributes) &&
           attributes.TryGetProperty("friendly_name", out var name))

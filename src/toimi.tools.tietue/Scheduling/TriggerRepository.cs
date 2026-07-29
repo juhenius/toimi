@@ -66,6 +66,19 @@ public class TriggerRepository(TietueDbContext db, Toimi.Core.Configuration.Toim
       trigger.Enabled = enabled.Value;
     }
 
+    // Re-enabling an exhausted trigger must not produce Enabled=true with a null
+    // NextFireAt — such a trigger is invisible to the scheduler's due query forever.
+    // Recompute from the schedule; a one-shot 'at' in the past resolves to a non-null
+    // but already-elapsed instant (InitialNextFireAt does not compare 'at' to 'now'),
+    // so also require the recomputed fire time to still be in the future before
+    // allowing the re-enable; otherwise refuse it and leave NextFireAt null.
+    if (trigger.Enabled && trigger.NextFireAt is null)
+    {
+      var recomputed = Schedules.InitialNextFireAt(trigger.Schedule, now);
+      trigger.NextFireAt = recomputed is not null && recomputed > now ? recomputed : null;
+      trigger.Enabled = trigger.NextFireAt is not null;
+    }
+
     trigger.UpdatedAt = now;
     await db.SaveChangesAsync(ct);
     return trigger;

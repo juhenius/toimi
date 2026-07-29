@@ -19,10 +19,13 @@ public class ToimiHubTests
   private sealed class ThrowingDbContext(DbContextOptions<ToimiDbContext> options) : ToimiDbContext(options)
   {
     public bool ThrowOnSave { get; set; }
+    public int SaveCalls { get; private set; }
+    public int? FailOnSaveCall { get; set; }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-      if (!ThrowOnSave)
+      SaveCalls++;
+      if (!ThrowOnSave && SaveCalls != FailOnSaveCall)
       {
         return base.SaveChangesAsync(cancellationToken);
       }
@@ -39,6 +42,10 @@ public class ToimiHubTests
 
   private sealed class StreamingFakeChatClient : IChatClient
   {
+    public List<ChatResponseUpdate> Updates { get; set; } = [new(ChatRole.Assistant, "hello from fake")];
+    public int? ThrowAfterEmit { get; set; }
+    public List<List<ChatMessage>> Requests { get; } = [];
+
     public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
       return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "summary")));
@@ -46,7 +53,18 @@ public class ToimiHubTests
 
     public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-      yield return new ChatResponseUpdate(ChatRole.Assistant, "hello from fake");
+      Requests.Add([.. messages]);
+      var emitted = 0;
+      foreach (var update in Updates)
+      {
+        yield return update;
+        emitted++;
+        if (ThrowAfterEmit is { } n && emitted >= n)
+        {
+          throw new InvalidOperationException("simulated stream failure");
+        }
+      }
+
       await Task.CompletedTask;
     }
 
@@ -62,9 +80,11 @@ public class ToimiHubTests
 
   private sealed class FakeLlmProvider : ILlmClientProvider
   {
+    public StreamingFakeChatClient ChatClient { get; } = new();
+
     public (IChatClient Client, ToolCallNotifier Notifier) Create()
     {
-      var notifier = new ToolCallNotifier(new StreamingFakeChatClient());
+      var notifier = new ToolCallNotifier(ChatClient);
       return (notifier, notifier);
     }
   }
@@ -167,13 +187,14 @@ public class ToimiHubTests
     }
   }
 
-  private static async Task<(ToimiHub Hub, FakeHubCallerClients Clients, ThrowingDbContext Db)> ConnectedHub()
+  private static async Task<(ToimiHub Hub, FakeHubCallerClients Clients, ThrowingDbContext Db, StreamingFakeChatClient Chat)> ConnectedHub()
   {
     var db = new ThrowingDbContext(new DbContextOptionsBuilder<ToimiDbContext>()
       .UseInMemoryDatabase($"hub-{Guid.NewGuid()}").Options);
+    var llm = new FakeLlmProvider();
     var hub = new ToimiHub(
       new ToimiConfiguration { OpenAI = new OpenAIOptions { ApiKey = "test" } }, // empty McpServers: aggregator connects to nothing, fully offline
-      new FakeLlmProvider(),
+      llm,
       new ConversationRepository(db),
       NullLogger<ToimiHub>.Instance)
     {
@@ -184,13 +205,13 @@ public class ToimiHubTests
     await hub.OnConnectedAsync();
     var clients = (FakeHubCallerClients)hub.Clients;
     Assert.Contains(clients.CallerProxy.Sent, s => s.Method == "Connected");
-    return (hub, clients, db);
+    return (hub, clients, db, llm.ChatClient);
   }
 
   [Fact]
   public async Task SendMessage_streams_and_persists_user_and_assistant_messages()
   {
-    var (hub, clients, db) = await ConnectedHub();
+    var (hub, clients, db, _) = await ConnectedHub();
 
     await hub.SendMessage("hello");
 
@@ -210,7 +231,7 @@ public class ToimiHubTests
   [Fact]
   public async Task Persistence_failure_sends_Error_and_keeps_session_consistent()
   {
-    var (hub, clients, db) = await ConnectedHub();
+    var (hub, clients, db, _) = await ConnectedHub();
 
     db.ThrowOnSave = true;
     // Must not throw a raw HubException out of the hub method.
@@ -229,6 +250,108 @@ public class ToimiHubTests
     var messages = db.ConversationMessages.Where(m => m.ConversationId == conversation.Id).ToList();
     Assert.Equal(2, messages.Count);
     Assert.DoesNotContain(messages, m => m.Content == "first try");
+
+    await hub.OnDisconnectedAsync(null);
+  }
+
+  [Fact]
+  public async Task Tool_call_events_reach_the_client_and_persist_with_pascal_case_keys()
+  {
+    var (hub, clients, db, chat) = await ConnectedHub();
+    chat.Updates =
+    [
+      new(ChatRole.Assistant, [new FunctionCallContent("c1", "search", new Dictionary<string, object?> { ["query"] = "milk" })]),
+      new(ChatRole.Assistant, "found it"),
+    ];
+
+    await hub.SendMessage("find milk");
+
+    Assert.Contains(clients.CallerProxy.Sent, s => s.Method == "ToolCallStart" && (string?)s.Args[0] == "c1");
+
+    // The persisted shape is the client's replay contract (useToimi.ts reads
+    // CallId/Name/Arguments in PascalCase). A serializer-options change would
+    // break conversation replay with no other signal — pin it.
+    var assistant = db.ConversationMessages.Single(m => m.Role == "assistant");
+    Assert.NotNull(assistant.ToolCallsJson);
+    Assert.Contains("\"type\":\"call\"", assistant.ToolCallsJson);
+    Assert.Contains("\"CallId\":\"c1\"", assistant.ToolCallsJson);
+    Assert.Contains("search", assistant.ToolCallsJson);
+
+    await hub.OnDisconnectedAsync(null);
+  }
+
+  [Fact]
+  public async Task Mid_stream_failure_keeps_the_user_message_and_persists_no_assistant_row()
+  {
+    var (hub, clients, db, chat) = await ConnectedHub();
+    chat.Updates = [new(ChatRole.Assistant, "partial ")];
+    chat.ThrowAfterEmit = 1;
+
+    await hub.SendMessage("doomed turn");
+
+    // The user message persisted BEFORE the stream started; a mid-stream failure
+    // must send Error, keep that row, and persist no assistant row.
+    Assert.Contains(clients.CallerProxy.Sent, s => s.Method == "Error");
+    Assert.DoesNotContain(clients.CallerProxy.Sent, s => s.Method == "MessageComplete");
+    var rows = db.ConversationMessages.ToList();
+    var failedUser = Assert.Single(rows);
+    Assert.Equal("user", failedUser.Role);
+    Assert.Equal("doomed turn", failedUser.Content);
+
+    // Recovery: the in-memory session must not carry a phantom assistant message.
+    chat.ThrowAfterEmit = null;
+    chat.Updates = [new(ChatRole.Assistant, "second answer")];
+    await hub.SendMessage("second turn");
+
+    Assert.Contains(clients.CallerProxy.Sent, s => s.Method == "MessageComplete");
+    rows = [.. db.ConversationMessages];
+    Assert.Equal(3, rows.Count); // failed user + second turn's user/assistant pair
+    Assert.Contains(rows, m => m.Role == "assistant" && m.Content == "second answer");
+
+    // The user message of the failed turn was persisted and must have STAYED in the
+    // in-memory context — a blind rollback that strips it would desync session from DB.
+    Assert.Contains(chat.Requests[^1], m => (m.Text ?? "").Contains("doomed turn"));
+
+    await hub.OnDisconnectedAsync(null);
+  }
+
+  [Fact]
+  public async Task Assistant_persist_failure_rolls_the_appended_message_back_out_of_context()
+  {
+    var (hub, clients, db, chat) = await ConnectedHub();
+    chat.Updates = [new(ChatRole.Assistant, "partial answer")];
+    // A fresh conversation's first SendMessage does 3 saves: 1 = CreateAsync,
+    // 2 = user AddMessageAsync, 3 = assistant AddMessageAsync. Failing on save 3
+    // means the stream completes and the assistant message IS appended to
+    // session.Messages before the persist fails — this is what exercises the
+    // assistantAppended && !assistantPersisted rollback guard.
+    db.FailOnSaveCall = 3;
+
+    await hub.SendMessage("first");
+
+    Assert.Contains(clients.CallerProxy.Sent, s => s.Method == "Error");
+    Assert.DoesNotContain(clients.CallerProxy.Sent, s => s.Method == "MessageComplete");
+    var rows = db.ConversationMessages.ToList();
+    var failedUser = Assert.Single(rows);
+    Assert.Equal("user", failedUser.Role);
+
+    // Recovery: the in-memory session must not carry the phantom assistant message
+    // that was appended (for the streamed response) but never persisted.
+    db.FailOnSaveCall = null;
+    chat.Updates = [new(ChatRole.Assistant, "second answer")];
+    await hub.SendMessage("second");
+
+    Assert.Contains(clients.CallerProxy.Sent, s => s.Method == "MessageComplete");
+
+    // The key assertion: if the guard didn't strip the un-persisted assistant
+    // message out of session.Messages, it would ride along as context on the
+    // next request.
+    var lastRequest = chat.Requests[^1];
+    Assert.DoesNotContain(lastRequest, m => (m.Text ?? "").Contains("partial answer"));
+
+    rows = [.. db.ConversationMessages];
+    Assert.Equal(3, rows.Count); // failed user + second turn's user/assistant pair
+    Assert.Contains(rows, m => m.Role == "assistant" && m.Content == "second answer");
 
     await hub.OnDisconnectedAsync(null);
   }

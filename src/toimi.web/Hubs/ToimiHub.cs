@@ -185,7 +185,7 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
         : null;
 
       // Prefer real usage from the final streaming update; fall back to a rough estimate.
-      var promptTokens = (int?)usage?.InputTokenCount ?? (session.Messages.Sum(m => m.Text?.Length ?? 0) / 4);
+      var promptTokens = (int?)usage?.InputTokenCount ?? (ContextBudget.TotalChars(session.Messages) / 4);
       var completionTokens = (int?)usage?.OutputTokenCount ?? (responseText.Length / 4);
       var totalTokens = (int?)usage?.TotalTokenCount ?? (promptTokens + completionTokens);
 

@@ -38,7 +38,7 @@ public class ContextBudget
     _charsAtAnchor = 0;
   }
 
-  internal static int TotalChars(List<ChatMessage> messages)
+  public static int TotalChars(List<ChatMessage> messages)
   {
     return messages.Sum(MessageChars);
   }
