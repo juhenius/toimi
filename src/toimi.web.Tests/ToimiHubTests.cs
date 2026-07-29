@@ -1,5 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Connections.Features;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -168,7 +170,7 @@ public class ToimiHubTests
     }
   }
 
-  private sealed class FakeHubCallerContext(string connectionId) : HubCallerContext
+  private sealed class FakeHubCallerContext(string connectionId, string? conversationId = null) : HubCallerContext
   {
     public override string ConnectionId => connectionId;
 
@@ -178,28 +180,51 @@ public class ToimiHubTests
 
     public override IDictionary<object, object?> Items { get; } = new Dictionary<object, object?>();
 
-    public override IFeatureCollection Features { get; } = new FeatureCollection();
+    public override IFeatureCollection Features { get; } = BuildFeatures(conversationId);
 
     public override CancellationToken ConnectionAborted => CancellationToken.None;
 
     public override void Abort()
     {
     }
+
+    private static FeatureCollection BuildFeatures(string? conversationId)
+    {
+      var features = new FeatureCollection();
+      if (conversationId is not null)
+      {
+        var http = new DefaultHttpContext();
+        http.Request.QueryString = new QueryString($"?conversationId={conversationId}");
+        // Microsoft.AspNetCore.Http.Features has no public HttpContextFeature in .NET 10;
+        // SignalR's HubCallerContext.GetHttpContext() reads Http.Connections' own
+        // IHttpContextFeature (verified empirically), so implement that one-property
+        // interface inline.
+        features.Set<IHttpContextFeature>(new FakeHttpContextFeature { HttpContext = http });
+      }
+
+      return features;
+    }
   }
 
-  private static async Task<(ToimiHub Hub, FakeHubCallerClients Clients, ThrowingDbContext Db, StreamingFakeChatClient Chat)> ConnectedHub()
+  private sealed class FakeHttpContextFeature : IHttpContextFeature
   {
-    var db = new ThrowingDbContext(new DbContextOptionsBuilder<ToimiDbContext>()
+    public HttpContext? HttpContext { get; set; }
+  }
+
+  private static async Task<(ToimiHub Hub, FakeHubCallerClients Clients, ThrowingDbContext Db, StreamingFakeChatClient Chat)> ConnectedHub(
+    string? conversationId = null, ToimiConfiguration? config = null, ThrowingDbContext? existingDb = null)
+  {
+    var db = existingDb ?? new ThrowingDbContext(new DbContextOptionsBuilder<ToimiDbContext>()
       .UseInMemoryDatabase($"hub-{Guid.NewGuid()}").Options);
     var llm = new FakeLlmProvider();
     var hub = new ToimiHub(
-      new ToimiConfiguration { OpenAI = new OpenAIOptions { ApiKey = "test" } }, // empty McpServers: aggregator connects to nothing, fully offline
+      config ?? new ToimiConfiguration { OpenAI = new OpenAIOptions { ApiKey = "test" } }, // empty McpServers: aggregator connects to nothing, fully offline
       llm,
       new ConversationRepository(db),
       NullLogger<ToimiHub>.Instance)
     {
       Clients = new FakeHubCallerClients(),
-      Context = new FakeHubCallerContext($"conn-{Guid.NewGuid()}"),
+      Context = new FakeHubCallerContext($"conn-{Guid.NewGuid()}", conversationId),
     };
 
     await hub.OnConnectedAsync();
@@ -224,6 +249,53 @@ public class ToimiHubTests
     Assert.Equal(2, messages.Count);
     Assert.Contains(messages, m => m.Role == "user" && m.Content == "hello");
     Assert.Contains(messages, m => m.Role == "assistant" && m.Content == "hello from fake");
+    Assert.Equal("hello", conversation.Title);
+
+    await hub.OnDisconnectedAsync(null);
+  }
+
+  [Fact]
+  public async Task Compaction_must_not_retrigger_auto_title_on_an_old_conversation()
+  {
+    var db = new ThrowingDbContext(new DbContextOptionsBuilder<ToimiDbContext>()
+      .UseInMemoryDatabase($"hub-{Guid.NewGuid()}").Options);
+
+    var conversation = new Conversation { Title = "original title" };
+    db.Conversations.Add(conversation);
+
+    // Stagger CreatedAt: InMemory ignores the OrderBy-relevant DB defaults, and the
+    // GetByIdAsync include orders by CreatedAt, so the replay must see the user row
+    // first and the twelve assistant rows after it, in order.
+    var baseTime = DateTimeOffset.UtcNow.AddHours(-1);
+    db.ConversationMessages.Add(new ConversationMessage
+    {
+      ConversationId = conversation.Id,
+      Role = "user",
+      Content = "old question",
+      CreatedAt = baseTime,
+    });
+    for (var i = 0; i < 12; i++)
+    {
+      db.ConversationMessages.Add(new ConversationMessage
+      {
+        ConversationId = conversation.Id,
+        Role = "assistant",
+        Content = $"old answer {i}",
+        CreatedAt = baseTime.AddSeconds(i + 1),
+      });
+    }
+
+    await db.SaveChangesAsync();
+
+    var (hub, clients, _, _) = await ConnectedHub(
+      conversationId: conversation.Id.ToString(),
+      config: new ToimiConfiguration { OpenAI = new OpenAIOptions { ApiKey = "test" }, MaxContextTokens = 1 },
+      existingDb: db);
+
+    await hub.SendMessage("brand new topic that must not become the title");
+
+    Assert.DoesNotContain(clients.CallerProxy.Sent, s => s.Method == "Error");
+    Assert.Equal("original title", db.Conversations.Single().Title);
 
     await hub.OnDisconnectedAsync(null);
   }

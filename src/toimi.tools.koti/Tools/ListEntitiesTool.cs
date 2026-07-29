@@ -15,7 +15,20 @@ public class ListEntitiesTool(HomeAssistantClient ha)
     [Description("Maximum entities to return (default 100)")] int limit = 100)
   {
     limit = Math.Clamp(limit, 1, 500);
-    var states = await ha.GetStatesAsync();
+    JsonElement states;
+    try
+    {
+      states = await ha.GetStatesAsync();
+    }
+    catch (HttpRequestException ex)
+    {
+      return $"Home Assistant request failed: {ex.Message}";
+    }
+    catch (TaskCanceledException)
+    {
+      return "Home Assistant request timed out.";
+    }
+
     if (states.ValueKind != JsonValueKind.Array)
     {
       return "Unexpected response from Home Assistant when listing entities.";

@@ -11,6 +11,7 @@ public class TriggerRepository(TietueDbContext db, Toimi.Core.Configuration.Toim
     // persisted schedule is self-describing and its wall-clock survives DST forever.
     scheduleJson = Schedules.WithDefaultTimeZone(scheduleJson, config.UserTimeZone);
 
+    var nextFireAt = Schedules.InitialNextFireAt(scheduleJson, now);
     var trigger = new Trigger
     {
       Id = Guid.NewGuid(),
@@ -19,8 +20,9 @@ public class TriggerRepository(TietueDbContext db, Toimi.Core.Configuration.Toim
       HandlerKind = handlerKind,
       HandlerConfig = handlerConfig,
       Source = source,
-      Enabled = true,
-      NextFireAt = Schedules.InitialNextFireAt(scheduleJson, now),
+      // A trigger that can never fire must not sit enabled and invisible to the scheduler.
+      Enabled = nextFireAt is not null,
+      NextFireAt = nextFireAt,
       CreatedAt = now,
       UpdatedAt = now,
     };

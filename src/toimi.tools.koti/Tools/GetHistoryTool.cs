@@ -17,11 +17,22 @@ public class GetHistoryTool(HomeAssistantClient ha)
       return "Hours must be between 1 and 168.";
     }
 
-    var result = await ha.GetHistoryAsync(entityId, hours);
-    var json = result.GetRawText();
-    const int maxChars = 50_000;
-    return json.Length <= maxChars
-      ? json
-      : json[..maxChars] + "\n[truncated — request fewer hours]";
+    try
+    {
+      var result = await ha.GetHistoryAsync(entityId, hours);
+      var json = result.GetRawText();
+      const int maxChars = 50_000;
+      return json.Length <= maxChars
+        ? json
+        : json[..maxChars] + "\n[truncated — request fewer hours]";
+    }
+    catch (HttpRequestException ex)
+    {
+      return $"Home Assistant request failed: {ex.Message}";
+    }
+    catch (TaskCanceledException)
+    {
+      return "Home Assistant request timed out.";
+    }
   }
 }

@@ -93,4 +93,17 @@ public class TriggerRepositoryTests
 
     Assert.Equal("expiry", t.Source);
   }
+
+  [Fact]
+  public async Task Create_with_unresolvable_schedule_yields_a_disabled_trigger()
+  {
+    using var db = TestDb.New();
+    var repo = new TriggerRepository(db, TestConfig.Default);
+
+    var t = await repo.CreateAsync(Guid.NewGuid(), /*lang=json,strict*/ """{"at":"soon"}""", "notify", null, Now);
+
+    // A trigger that can never fire must not sit enabled and invisible to the scheduler.
+    Assert.False(t.Enabled && t.NextFireAt is null);
+    Assert.False(t.Enabled);
+  }
 }

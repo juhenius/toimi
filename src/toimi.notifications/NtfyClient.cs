@@ -57,6 +57,11 @@ public class NtfyClient(NtfyOptions options, HttpClient? httpClient = null)
     }
 
     var response = await _http.SendAsync(request, ct);
-    response.EnsureSuccessStatusCode();
+    if (!response.IsSuccessStatusCode)
+    {
+      var body = await response.Content.ReadAsStringAsync(ct);
+      throw new HttpRequestException(
+        $"ntfy returned {(int)response.StatusCode} ({response.StatusCode}): {body}", null, response.StatusCode);
+    }
   }
 }

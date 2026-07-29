@@ -11,7 +11,18 @@ public class GetEntityStateTool(HomeAssistantClient ha)
   public async Task<string> GetEntityState(
     [Description("Entity ID (e.g. 'light.living_room', 'sensor.temperature', 'switch.tv')")] string entityId)
   {
-    var state = await ha.GetStateAsync(entityId);
-    return state is null ? "Entity not found." : state.Value.ToString();
+    try
+    {
+      var state = await ha.GetStateAsync(entityId);
+      return state is null ? "Entity not found." : state.Value.ToString();
+    }
+    catch (HttpRequestException ex)
+    {
+      return $"Home Assistant request failed: {ex.Message}";
+    }
+    catch (TaskCanceledException)
+    {
+      return "Home Assistant request timed out.";
+    }
   }
 }

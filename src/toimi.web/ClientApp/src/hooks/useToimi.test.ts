@@ -128,3 +128,66 @@ describe('useToimi streaming state', () => {
     expect(result.current.messages).toEqual([])
   })
 })
+
+describe('useToimi tool-call indicators', () => {
+  beforeEach(() => {
+    fakes.length = 0
+  })
+
+  it('unmatched ToolCallEnd is dropped silently', async () => {
+    const { result } = renderHook(() => useToimi())
+    await waitFor(() => expect(result.current.connectionStatus).toBe('connected'))
+    const connection = fakes[fakes.length - 1]
+
+    await act(async () => {
+      await result.current.sendMessage('hello')
+    })
+    act(() => {
+      connection.fire('ToolCallStart', 'a', 'search', '{}')
+    })
+
+    expect(() => {
+      act(() => {
+        connection.fire('ToolCallEnd', 'never-started', 'result', 42)
+      })
+    }).not.toThrow()
+
+    const last = result.current.messages[result.current.messages.length - 1]
+    expect(last.toolCalls).toEqual([{ id: 'a', name: 'search', arguments: '{}', status: 'running' }])
+  })
+
+  it('interleaved tool calls complete independently', async () => {
+    const { result } = renderHook(() => useToimi())
+    await waitFor(() => expect(result.current.connectionStatus).toBe('connected'))
+    const connection = fakes[fakes.length - 1]
+
+    await act(async () => {
+      await result.current.sendMessage('hello')
+    })
+    act(() => {
+      connection.fire('ToolCallStart', 'a', 'search', '{}')
+    })
+    act(() => {
+      connection.fire('ToolCallStart', 'b', 'fetch', '{}')
+    })
+    act(() => {
+      connection.fire('ToolCallEnd', 'b', 'b-result', 10)
+    })
+
+    const midpoint = result.current.messages[result.current.messages.length - 1]
+    const midA = midpoint.toolCalls?.find(tc => tc.id === 'a')
+    const midB = midpoint.toolCalls?.find(tc => tc.id === 'b')
+    expect(midA).toMatchObject({ status: 'running' })
+    expect(midB).toMatchObject({ status: 'complete', result: 'b-result', durationMs: 10 })
+
+    act(() => {
+      connection.fire('ToolCallEnd', 'a', 'a-result', 20)
+    })
+
+    const final = result.current.messages[result.current.messages.length - 1]
+    const finalA = final.toolCalls?.find(tc => tc.id === 'a')
+    const finalB = final.toolCalls?.find(tc => tc.id === 'b')
+    expect(finalA).toMatchObject({ status: 'complete', result: 'a-result', durationMs: 20 })
+    expect(finalB).toMatchObject({ status: 'complete', result: 'b-result', durationMs: 10 })
+  })
+})

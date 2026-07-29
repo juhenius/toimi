@@ -99,6 +99,13 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
       return;
     }
 
+    // Captured BEFORE compaction can rewrite session.Messages: a compaction that
+    // leaves exactly one ChatRole.User message in the retained window must not be
+    // mistaken for the conversation's true first message. The row is created exactly
+    // once, on the true first message, so ConversationId being null here IS "this is
+    // the first message" — durable state, not the in-memory window shape.
+    var isFirstMessage = session.ConversationId is null;
+
     session.Messages.Add(new(ChatRole.User, message));
 
     try
@@ -197,7 +204,7 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
       assistantPersisted = true;
 
       // Auto-title: set title on first exchange
-      if (session.Messages.Count(m => m.Role == ChatRole.User) == 1)
+      if (isFirstMessage)
       {
         var title = message.Length > 50 ? message[..50] : message;
         await _repository.UpdateTitleAsync(session.ConversationId.Value, title);

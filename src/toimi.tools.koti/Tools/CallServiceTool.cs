@@ -33,7 +33,18 @@ public class CallServiceTool(HomeAssistantClient ha)
       }
     }
 
-    _ = await ha.CallServiceAsync(domain, service, entityId, parsedData);
-    return "Service called successfully.";
+    try
+    {
+      _ = await ha.CallServiceAsync(domain, service, entityId, parsedData);
+      return "Service called successfully.";
+    }
+    catch (HttpRequestException ex)
+    {
+      return $"Home Assistant request failed: {ex.Message}";
+    }
+    catch (TaskCanceledException)
+    {
+      return "Home Assistant request timed out.";
+    }
   }
 }

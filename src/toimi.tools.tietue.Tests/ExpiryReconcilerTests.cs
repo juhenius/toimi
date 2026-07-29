@@ -94,4 +94,27 @@ public class ExpiryReconcilerTests
 
     Assert.Equal(1, await db.Triggers.CountAsync(x => x.EntityId == e.Id && x.Source == "expiry"));
   }
+
+  [Fact]
+  public async Task Garbage_expiry_date_does_not_arm_a_zombie_trigger()
+  {
+    using var db = TestDb.New();
+    var repo = await SetupAsync(db, DeleteExpiry);
+    var e = await repo.CreateAsync("temp", JsonNode.Parse("""{"name":"x","expiresAt":"soon"}"""), []);
+
+    var t = await db.Triggers.SingleOrDefaultAsync(x => x.EntityId == e.Id && x.Source == "expiry");
+    Assert.False(t is not null && t.Enabled && t.NextFireAt is null);
+  }
+
+  [Fact]
+  public async Task Past_expiry_date_arms_an_immediately_due_trigger()
+  {
+    using var db = TestDb.New();
+    var repo = await SetupAsync(db, DeleteExpiry);
+    var e = await repo.CreateAsync("temp", JsonNode.Parse("""{"name":"x","expiresAt":"2020-01-01T00:00:00Z"}"""), []);
+
+    var t = await db.Triggers.SingleAsync(x => x.EntityId == e.Id && x.Source == "expiry");
+    Assert.True(t.Enabled);
+    Assert.Equal(new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero), t.NextFireAt);
+  }
 }

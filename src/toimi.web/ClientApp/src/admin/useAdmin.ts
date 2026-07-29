@@ -12,7 +12,7 @@ export function useAdminList<T>(tool: string, path: string) {
       const resp = await fetch(`/api/admin/${tool}/${path}`)
       if (!resp.ok) { setError({ status: resp.status, body: await safeJson(resp) }); return }
       setData(await resp.json() as T)
-    } finally { setLoading(false) }
+    } catch { setError({ status: 0 }) } finally { setLoading(false) }
   }, [tool, path])
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void reload() }, [reload])

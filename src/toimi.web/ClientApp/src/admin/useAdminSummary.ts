@@ -26,7 +26,7 @@ export function useAdminSummary(query: string) {
       if (cancelled) return
       if (r.ok) setData(await r.json() as AggregatedSummary)
       setLoading(false)
-    })
+    }).catch(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [query])
   return { data, loading }
