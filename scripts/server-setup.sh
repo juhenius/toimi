@@ -73,12 +73,16 @@ INFRA_SECRETS="$ROOT_DIR/infrastructure/overlays/server/secrets.env"
 PG_PASSWORD=$(grep '^postgres-password=' "$INFRA_SECRETS" | cut -d= -f2-)
 
 # --- PostgreSQL (Helm) ---
+# Chart pin ships PostgreSQL 18.x. Bumping across a PostgreSQL major needs a
+# dump/restore of the data dir, and the backup CronJob image
+# (infrastructure/base/backup) must move to the same major.
 echo "Installing PostgreSQL..."
 helm repo add bitnami https://charts.bitnami.com/bitnami --force-update >/dev/null
 helm repo update >/dev/null
 helm upgrade --install postgresql bitnami/postgresql \
   --namespace data \
   --create-namespace \
+  --version "18.4.0" \
   --values "$ROOT_DIR/infrastructure/base/helm/postgresql-values.yaml" \
   --set auth.postgresPassword="$PG_PASSWORD" \
   --wait

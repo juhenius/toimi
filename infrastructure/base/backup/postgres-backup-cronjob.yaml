@@ -17,7 +17,10 @@ spec:
           restartPolicy: Never
           containers:
             - name: pg-dump
-              image: postgres:17-alpine
+              # pg_dump must be >= the server's major version (it refuses to
+              # dump a newer server). Keep in sync with the bitnami/postgresql
+              # chart's shipped major.
+              image: postgres:18-alpine
               env:
                 - name: PGHOST
                   value: postgresql.data.svc.cluster.local
