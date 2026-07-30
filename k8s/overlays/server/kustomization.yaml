@@ -11,6 +11,7 @@ resources:
 patches:
   - path: tls/web-ingress-patch.yaml
   - path: tls/ruutu-ingress-patch.yaml
+  - path: tls/selain-ingress-patch.yaml
 
 secretGenerator:
   - name: toimi-secrets

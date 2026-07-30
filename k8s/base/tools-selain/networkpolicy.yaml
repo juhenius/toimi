@@ -1,0 +1,35 @@
+# SSRF containment (spec §5): the browser may egress to DNS and the public
+# internet only — never to cluster services or the local network. Enforced by
+# the CNI on k3s (kube-router); kind's default CNI does not enforce
+# NetworkPolicy, which is why BrowserHost's route guard exists as a second layer.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: toimi-tools-selain-egress
+  namespace: apps
+spec:
+  podSelector:
+    matchLabels:
+      app: toimi-tools-selain
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10

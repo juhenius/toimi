@@ -10,15 +10,38 @@ namespace Toimi.Core.Net;
 /// </summary>
 public static class PrivateAddress
 {
+  // Cluster-internal DNS suffixes, blocked by name rather than by resolving —
+  // hostname-level callers (e.g. selain's route guard) reject before any DNS
+  // lookup happens, so a syntactic suffix check is the only guard available
+  // there. Verkko's connect-time IP re-check (UrlGuard.GuardedConnectAsync)
+  // remains the second layer for callers that do resolve. ".svc.cluster.local"
+  // is subsumed by ".cluster.local" but kept as a separate entry for clarity
+  // of intent (it's the Kubernetes-specific form callers actually see).
+  private static readonly string[] BlockedHostSuffixes =
+  [
+    ".svc.cluster.local",
+    ".cluster.local",
+    ".localhost",
+  ];
+
   public static bool IsBlockedHost(string host)
   {
     if (string.IsNullOrWhiteSpace(host))
     {
       return true;
     }
+    // A trailing root-label dot ("example.com.") is a resolver no-op — DNS and
+    // Chromium treat it identically to the same name without the dot — but it
+    // defeats every string check below (suffix match, single-label fallback,
+    // even IP literal parsing), so strip it first.
+    host = host.TrimEnd('.');
     if (IPAddress.TryParse(host, out var ip))
     {
       return IsPrivate(ip);
+    }
+    if (BlockedHostSuffixes.Any(suffix => host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)))
+    {
+      return true;
     }
     // Single-label hostname (router, localhost, cluster service) — not externally routable.
     return !host.Contains('.');

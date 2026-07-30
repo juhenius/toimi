@@ -7,7 +7,7 @@ namespace toimi.tools.verkko.Tools;
 [McpServerToolType]
 public class FetchUrlTool(WebFetcher fetcher, FetchCache cache)
 {
-  [McpServerTool, Description("Fetch a URL and extract its text content. Works with web pages (HTML extracted to readable text), JSON APIs, and plain text. Results are cached for 5 minutes.")]
+  [McpServerTool, Description("Fetch a URL and extract its text content. Works with web pages (HTML extracted to readable text), JSON APIs, and plain text. Results are cached for 5 minutes. If the result looks like an empty shell or says JavaScript is required, use selain's browse tool instead.")]
   public async Task<string> FetchUrl(
     [Description("The URL to fetch (must start with http:// or https://)")] string url,
     [Description("Skip cache and fetch fresh content (default false)")] bool skipCache = false)

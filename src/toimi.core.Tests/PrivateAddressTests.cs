@@ -60,4 +60,23 @@ public class PrivateAddressTests
   {
     Assert.False(PrivateAddress.IsBlockedHost(host));
   }
+
+  [Theory]
+  [InlineData("toimi-tools-tietue.apps.svc.cluster.local")]
+  [InlineData("foo.cluster.local")]
+  [InlineData("sub.example.localhost")]
+  public void IsBlockedHost_true_for_cluster_internal_suffixes(string host)
+  {
+    Assert.True(PrivateAddress.IsBlockedHost(host));
+  }
+
+  [Theory]
+  [InlineData("toimi-tools-tietue.apps.svc.cluster.local.")]
+  [InlineData("localhost.")]
+  [InlineData("127.0.0.1.")]
+  [InlineData("FOO.CLUSTER.LOCAL")]
+  public void IsBlockedHost_true_for_trailing_dot_and_case_variants(string host)
+  {
+    Assert.True(PrivateAddress.IsBlockedHost(host));
+  }
 }

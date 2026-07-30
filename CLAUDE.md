@@ -24,7 +24,7 @@ docs/superpowers/      design specs + phase implementation plans (e.g. the tietu
 (`toimi.tools.koti` → `toimi-tools-koti`). `toimi.core` and
 `toimi.notifications` are libraries (no Dockerfile, not deployed).
 
-Deployable pods: **tietue, koti, verkko, ruutu** (tool servers) + **toimi.web**.
+Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers) + **toimi.web**.
 
 > **History:** `tietue` is a generic entity engine that replaced four
 > single-purpose servers — `muistio` (memory), `taidot` (skills),
@@ -91,6 +91,18 @@ Deployable pods: **tietue, koti, verkko, ruutu** (tool servers) + **toimi.web**.
 - Owns: dashboard/webview templates seeded into its DB; rendering surfaces.
 - Extend when: adding display/template behavior.
 
+**selain — Headless browser (Playwright/Chromium).**
+- Owns: real-browser page reading (aria snapshots with refs), page actions
+  (click/type/hover/select), screenshots, and per-tab display feeds
+  (`/tabs/{id}/view` + CDP-screencast stream) that ruutu's `webview` template
+  embeds for live pages (e.g. delivery tracking). Stateless: no DB, no PVC;
+  tabs die with the pod. SSRF containment = egress NetworkPolicy + request
+  routing; `Selain:Enabled` kill switch.
+- Extend when: adding browse/act verbs or display-feed behavior.
+- Deliberately deferred (design doc): VNC/headful mode, logins + credential
+  store. Cost ladder: verkko `fetch_url` first, selain `browse` when a page
+  needs JS/interaction.
+
 **toimi.web — Transport only (SignalR hub + React UI).**
 - Owns: SignalR transport, React chat UI, conversation streaming, and the
   federated `/admin` panel (proxies to surviving servers' admin endpoints —
@@ -135,7 +147,8 @@ tietue's `notify` handler.
   rendering pipeline (scripts only):
   `kubectl kustomize <overlay> | envsubst '<allowlist>' | kubectl apply -f -`.
   envsubst uses an explicit allowlist so secret/`$` content is never touched.
-- MCP server URLs are cluster-internal (`*.apps.svc.cluster.local/sse`) —
+- MCP server URLs are cluster-internal (`*.apps.svc.cluster.local/`, the
+  Streamable HTTP root — the MCP SDK ≥1.4 no longer maps legacy `/sse`) —
   configured in `src/toimi.web/appsettings.json` (`Toimi:McpServers`) AND in
   `src/toimi.tools.tietue/appsettings.json` (the agent runner's `Toimi:McpServers`,
   which includes tietue itself so an agent run can self-schedule). Not
@@ -220,4 +233,4 @@ raw `kubectl apply -k` (it skips envsubst).
 
 `<service>.<namespace>.svc.cluster.local` —
 `postgresql.data:5432`, `qdrant.data:6334`,
-`toimi-tools-<x>.apps` (tietue, koti, verkko, ruutu), `toimi-web.apps`.
+`toimi-tools-<x>.apps` (tietue, koti, verkko, ruutu, selain), `toimi-web.apps`.
