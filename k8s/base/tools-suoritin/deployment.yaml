@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: toimi-tools-suoritin
+  namespace: apps
+  labels:
+    app: toimi-tools-suoritin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: toimi-tools-suoritin
+  template:
+    metadata:
+      labels:
+        app: toimi-tools-suoritin
+    spec:
+      # Runs hostile code: no credentials of any kind (spec §3 layer 3).
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: toimi-tools-suoritin
+          image: ${IMAGE_REGISTRY}/toimi-tools-suoritin:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DENO_DIR
+              value: /tmp/deno-cache
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 3
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi

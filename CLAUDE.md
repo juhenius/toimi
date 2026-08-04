@@ -6,7 +6,7 @@ MCP, deployed on Kubernetes (kind dev / k3s server). One product, repo root.
 ## Layout
 
 ```
-src/<app>/            .NET project. Dir WITH a Dockerfile = deployable pod;
+src/<app>/            .NET project (suoritin: Deno). Dir WITH a Dockerfile = deployable pod;
                        WITHOUT = library (toimi.core, toimi.notifications).
 src/<app>/Dockerfile   build CONTEXT IS THE REPO ROOT (COPYs toimi.sln, src/)
 toimi.sln              solution at root
@@ -24,7 +24,8 @@ docs/superpowers/      design specs + phase implementation plans (e.g. the tietu
 (`toimi.tools.koti` → `toimi-tools-koti`). `toimi.core` and
 `toimi.notifications` are libraries (no Dockerfile, not deployed).
 
-Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers) + **toimi.web**.
+Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers),
+**suoritin** (plain HTTP, not MCP) + **toimi.web**.
 
 > **History:** `tietue` is a generic entity engine that replaced four
 > single-purpose servers — `muistio` (memory), `taidot` (skills),
@@ -52,16 +53,21 @@ Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers) + **toim
   set, runs an agent that deletes it or pushes the date forward).
 - **Handlers** (reactive, fired by the scheduler — a cost ladder):
   deterministic native `notify` (ntfy) / `set-field`; sandboxed `script`
-  (Jint, capability-gated, no CLR/IO); `message` (a full headless agent run
-  via `toimi.core`). `script` can `escalate` to a `message` run.
+  (executed on the suoritin pod, capability-gated); `message` (a full
+  headless agent run via `toimi.core`). Script effects: `setField`
+  (schema-revalidated field writes) + `mcpCall` (one `mcp:<toolName>` grant
+  per callable tool). Caution: `mcp:update`/`mcp:set_trigger` grants let a
+  script rewrite its own code/schedule — grant only deliberately.
 - **Seeded standard types** (`TypeSeeder`, idempotent): `memory` +
   `skill` (SemanticIndex), `reminder` (default notify trigger from
   `dueAt`/`rrule`), `schedule` (default message/agent trigger from
-  `prompt`/`startAt`/`rrule`).
+  `prompt`/`startAt`/`rrule`), `job` (default script trigger from
+  `code`/`startAt`/`rrule`, with `allowedHosts`/`grants`/`enabled`).
 - **MCP surface:** `define_type`/`list_types`/`get_type`/`delete_type`;
   `create`/`get`/`update`/`delete`/`list`/`search`;
   `set_trigger`/`update_trigger`/`delete_trigger`/`list_triggers`;
-  `complete_occurrence`; `activate`.
+  `complete_occurrence`; `activate`; `run_trigger` (fire now, synchronous
+  result — for testing jobs/scripts right after authoring them).
 - Extend when: adding a native handler, a declarative behavior, a seeded
   type, or an MCP verb over entities/triggers. A new *capability* the agent
   needs is usually a new type + handler/behavior here, NOT a new pod.
@@ -102,6 +108,17 @@ Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers) + **toim
 - Deliberately deferred (design doc): VNC/headful mode, logins + credential
   store. Cost ladder: verkko `fetch_url` first, selain `browse` when a page
   needs JS/interaction.
+
+**suoritin — Sandboxed script runner (Deno, not .NET, not MCP).**
+- Owns: executing all AI-authored scripts (`job` entities + inline trigger
+  scripts) in per-run Deno Workers. `POST /execute {code, input, timeoutMs,
+  allowedHosts, grants, runToken, callbackUrl}` → `{ok, effects, logs, stats}`.
+  Credential-free and stateless; per-script net allowlist enforced by Deno
+  worker permissions; egress NetworkPolicy allows DNS + public internet + a
+  tietue pinhole (the token-gated `extract()` LLM callback) only; ingress
+  from tietue only. Only tietue calls it — it is NOT in any `Toimi:McpServers`.
+- Extend when: adding runtime capabilities scripts need (new input helpers,
+  execution limits). Effects vocabulary and grants live in tietue, not here.
 
 **toimi.web — Transport only (SignalR hub + React UI).**
 - Owns: SignalR transport, React chat UI, conversation streaming, and the
@@ -170,17 +187,24 @@ tietue's `notify` handler.
   a `complete` event suppresses an occurrence; a throwing handler is isolated
   (recorded as `error`, trigger still advances).
 - **Handler cost ladder** — deterministic native (`notify`/`set-field`) →
-  sandboxed `script` → `message` (full agent run); `script` may `escalate` to
-  an agent. The agent run reuses the `toimi.core` stack and reaches all MCP
-  tools (including tietue's own), so entities **self-schedule** via `set_trigger`.
+  sandboxed `script` (whose `llm` grant adds `extract()`, one structured LLM
+  completion — the rung below an agent) → `message` (full agent run). The
+  agent run reuses the `toimi.core` stack and reaches all MCP tools
+  (including tietue's own), so entities **self-schedule** via `set_trigger`.
 - **Copy-down default triggers** — `TriggerProvisioner` stamps a type's
   `DefaultTriggers` onto each new entity at create, resolving `Data` fields
   (e.g. a `reminder`'s `dueAt`/`rrule` → a concrete notify trigger).
-- **Sandboxed scripts** — the `script` handler runs AI-authored JS in `Jint`
-  (no CLR/IO; timeout + statement + memory + recursion caps) as a pure
-  `data → effects` function; the host applies only the effects the script's
-  capability grant allows (`setField`/`notify`/`trigger`/`escalate`). Global
-  `Scripts:Enabled` kill switch.
+  Create-time only: editing schedule fields later does not reprovision the
+  trigger — use `update_trigger`.
+- **Sandboxed scripts** — the `script` handler ships AI-authored JS to the
+  credential-free suoritin pod, which runs it in a per-run Deno Worker
+  (worker net permission = the script's `allowedHosts`; timeout/memory/log
+  caps) as a pure `input → effects` function; tietue applies only granted
+  effects — `setField` (reserved job control fields excluded, schema
+  re-validated) and `mcpCall` per `mcp:<tool>` grant. The `llm` grant gives
+  scripts `extract(prompt, text, schema)`, a run-token-gated callback to
+  tietue for one structured LLM completion. Global `Scripts:Enabled` kill
+  switch in tietue.
 - **Thin web transport** — all AI logic lives in `toimi.core`; `toimi.web` is
   transport only so future transports (CLI, Telegram) inherit the same
   experience.
@@ -233,4 +257,5 @@ raw `kubectl apply -k` (it skips envsubst).
 
 `<service>.<namespace>.svc.cluster.local` —
 `postgresql.data:5432`, `qdrant.data:6334`,
-`toimi-tools-<x>.apps` (tietue, koti, verkko, ruutu, selain), `toimi-web.apps`.
+`toimi-tools-<x>.apps` (tietue, koti, verkko, ruutu, selain, suoritin),
+`toimi-web.apps`.

@@ -1,3 +1,4 @@
+using toimi.tools.tietue.Handlers;
 using toimi.tools.tietue.Types;
 
 namespace toimi.tools.tietue.Seed;
@@ -66,6 +67,27 @@ public class TypeSeeder(TypeRepository repository)
       null,
       /*lang=json,strict*/
                            """[{"when":{"atField":"startAt","rruleField":"rrule"},"handler":{"kind":"message","config":{"promptTemplate":"{prompt}"}}}]"""
+    ),
+    (
+      ScriptHandler.JobTypeName,
+      /*lang=json,strict*/
+                           """
+      {"type":"object","properties":{
+        "name":{"type":"string","description":"short unique job name"},
+        "description":{"type":"string","description":"what the job does"},
+        "code":{"type":"string","description":"ES module source. Must default-export an async function(input) returning an effects object: {\"setField\":[{\"path\":\"field\",\"value\":...}],\"mcpCall\":[{\"tool\":\"tool_name\",\"args\":{...}}]}. input has data (this entity's fields), entityId, entityType, occurrence, and — with the llm grant — extract(prompt, text, schema) for LLM-parsing fetched content. fetch() works for hosts listed in allowedHosts."},
+        "allowedHosts":{"type":"array","items":{"type":"string"},"description":"hostnames the script may fetch, e.g. api.open-meteo.com"},
+        "grants":{"type":"array","items":{"type":"string"},"description":"capability grants: setField, llm, and mcp:<toolName> per MCP tool the effects may call (e.g. mcp:display_show, mcp:send_notification). WARNING: granting mcp:update or mcp:set_trigger lets the job rewrite its own code or schedule — grant these only deliberately."},
+        "startAt":{"type":"string","description":"first run, ISO 8601 UTC. Editing startAt/rrule/tz after creation does NOT reschedule the existing trigger (copy-down happens at create only) — use update_trigger instead."},
+        "rrule":{"type":"string","description":"optional RFC 5545 RRULE for recurrence (e.g. FREQ=MINUTELY;INTERVAL=30). Sub-daily rules (MINUTELY/HOURLY) must use plain INTERVAL form — BY-part filters combined with tz are not supported; use FREQ=DAILY with BYHOUR/BYMINUTE for wall-clock times"},
+        "tz":{"type":"string","description":"IANA tz for recurrence, e.g. Europe/Helsinki"},
+        "enabled":{"type":"boolean","description":"set false to pause the job"}
+      },"required":["name","code","startAt"]}
+      """,
+      /*lang=json,strict*/
+                           """[{"behavior":"UniqueName","config":{"field":"name"}}]""",
+      /*lang=json,strict*/
+                           """[{"when":{"atField":"startAt","rruleField":"rrule","tzField":"tz"},"handler":{"kind":"script","config":{"fromEntity":true}}}]"""
     ),
   ];
 

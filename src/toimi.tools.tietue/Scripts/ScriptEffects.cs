@@ -3,15 +3,18 @@ using System.Text.Json;
 namespace toimi.tools.tietue.Scripts;
 
 public record SetFieldEffect(string Path, string ValueJson);
-public record NotifyEffect(string Message, string? Title, string? Priority);
-public record TriggerEffect(string ScheduleJson, string HandlerKind, string? HandlerConfigJson);
+public record McpCallEffect(string Tool, string ArgsJson);
 
-public record ScriptEffects(
-  SetFieldEffect? SetField,
-  NotifyEffect? Notify,
-  TriggerEffect? Trigger,
-  string? Escalate)
+/// <summary>
+/// The declarative result of a script run: the script computes, the host acts.
+/// Vocabulary (spec §5.2): setField (entity field writes, applied in-process
+/// with schema re-validation) and mcpCall (everything else — notifications,
+/// display pushes, triggers — via granted MCP tools).
+/// </summary>
+public record ScriptEffects(IReadOnlyList<SetFieldEffect> SetFields, IReadOnlyList<McpCallEffect> McpCalls)
 {
+  public static readonly ScriptEffects Empty = new([], []);
+
   public static ScriptEffects Parse(string effectsJson)
   {
     try
@@ -20,11 +23,7 @@ public record ScriptEffects(
       var root = doc.RootElement;
       return root.ValueKind != JsonValueKind.Object
         ? Empty
-        : new ScriptEffects(
-        ParseSetField(root),
-        ParseNotify(root),
-        ParseTrigger(root),
-        Str(root, "escalate"));
+        : new ScriptEffects(ParseSetFields(root), ParseMcpCalls(root));
     }
     catch (JsonException)
     {
@@ -32,41 +31,54 @@ public record ScriptEffects(
     }
   }
 
-  private static readonly ScriptEffects Empty = new(null, null, null, null);
-
-  private static SetFieldEffect? ParseSetField(JsonElement root)
+  private static List<SetFieldEffect> ParseSetFields(JsonElement root)
   {
-    if (!root.TryGetProperty("setField", out var sf) || sf.ValueKind != JsonValueKind.Object)
+    var result = new List<SetFieldEffect>();
+    if (!root.TryGetProperty("setField", out var arr) || arr.ValueKind != JsonValueKind.Array)
     {
-      return null;
+      return result;
     }
 
-    var path = Str(sf, "path");
-    return path is null || !sf.TryGetProperty("value", out var v) ? null : new SetFieldEffect(path, v.GetRawText());
+    foreach (var item in arr.EnumerateArray())
+    {
+      if (item.ValueKind != JsonValueKind.Object)
+      {
+        continue;
+      }
+
+      var path = Str(item, "path");
+      if (path is not null && item.TryGetProperty("value", out var v))
+      {
+        result.Add(new SetFieldEffect(path, v.GetRawText()));
+      }
+    }
+
+    return result;
   }
 
-  private static NotifyEffect? ParseNotify(JsonElement root)
+  private static List<McpCallEffect> ParseMcpCalls(JsonElement root)
   {
-    if (!root.TryGetProperty("notify", out var n) || n.ValueKind != JsonValueKind.Object)
+    var result = new List<McpCallEffect>();
+    if (!root.TryGetProperty("mcpCall", out var arr) || arr.ValueKind != JsonValueKind.Array)
     {
-      return null;
+      return result;
     }
 
-    var message = Str(n, "message");
-    return message is null ? null : new NotifyEffect(message, Str(n, "title"), Str(n, "priority"));
-  }
-
-  private static TriggerEffect? ParseTrigger(JsonElement root)
-  {
-    if (!root.TryGetProperty("trigger", out var t) || t.ValueKind != JsonValueKind.Object)
+    foreach (var item in arr.EnumerateArray())
     {
-      return null;
+      if (item.ValueKind != JsonValueKind.Object)
+      {
+        continue;
+      }
+
+      var tool = Str(item, "tool");
+      if (tool is not null)
+      {
+        result.Add(new McpCallEffect(tool, item.TryGetProperty("args", out var a) ? a.GetRawText() : "{}"));
+      }
     }
 
-    var kind = Str(t, "handlerKind");
-    return kind is null || !t.TryGetProperty("schedule", out var s)
-      ? null
-      : new TriggerEffect(s.GetRawText(), kind, t.TryGetProperty("handlerConfig", out var c) ? c.GetRawText() : null);
+    return result;
   }
 
   private static string? Str(JsonElement e, string name)

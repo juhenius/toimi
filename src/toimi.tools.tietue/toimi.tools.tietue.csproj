@@ -24,7 +24,6 @@
     <PackageReference Include="JsonSchema.Net" Version="9.4.0" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.8.3" />
     <PackageReference Include="Qdrant.Client" Version="1.18.1" />
-    <PackageReference Include="Jint" Version="4.15.1" />
   </ItemGroup>
 
 </Project>

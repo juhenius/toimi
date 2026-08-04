@@ -14,7 +14,7 @@ public sealed class DockerFactAttribute : FactAttribute
   {
     if (!DockerAvailable.Value)
     {
-      Skip = "Docker is not available; skipping the Postgres integration test.";
+      Skip = "Docker is not available; skipping this integration test.";
     }
   }
 

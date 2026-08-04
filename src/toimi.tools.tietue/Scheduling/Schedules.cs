@@ -57,6 +57,16 @@ public static class Schedules
     }
   }
 
+  /// <summary>
+  /// True when the schedule's recurrence is a sub-daily BY-part rule anchored to a DST-observing
+  /// zone — unsupported (see <see cref="RecurrenceCalculator.IsUnsupportedSubDaily(string, string?)"/>).
+  /// </summary>
+  public static bool HasUnsupportedSubDailyRule(string scheduleJson)
+  {
+    var spec = Parse(scheduleJson);
+    return spec?.Rrule is { } rrule && RecurrenceCalculator.IsUnsupportedSubDaily(rrule, spec.Tz);
+  }
+
   private sealed record Spec(DateTimeOffset? At, DateTimeOffset? Start, string? Rrule, string? Tz);
 
   private static Spec? Parse(string scheduleJson)

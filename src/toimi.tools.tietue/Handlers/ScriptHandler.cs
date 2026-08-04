@@ -3,9 +3,29 @@ using toimi.tools.tietue.Scripts;
 
 namespace toimi.tools.tietue.Handlers;
 
-public class ScriptHandler(ScriptEngine engine, ScriptEffectApplier applier, ScriptOptions options) : INativeHandler
+public class ScriptHandler(
+  ISuoritinClient suoritin,
+  ScriptEffectApplier applier,
+  RunTokenStore tokens,
+  ScriptOptions options,
+  SuoritinOptions suoritinOptions) : INativeHandler
 {
   public string Kind => "script";
+
+  /// <summary>
+  /// The seeded job type's name. Shared with <c>TypeSeeder</c> so a rename of the
+  /// seeded type cannot silently detach the reserved-field hardening below.
+  /// </summary>
+  public const string JobTypeName = "job";
+
+  /// <summary>
+  /// Job-entity control fields a script's own setField effects may never write:
+  /// rewriting them would grant the (untrusted) script arbitrary code, grants,
+  /// or egress on its next scheduled run.
+  /// </summary>
+  public static readonly string[] ReservedJobFields = ["code", "grants", "allowedHosts", "enabled"];
+
+  private sealed record ResolvedScript(string Source, string[] AllowedHosts, string[] Grants, bool Enabled, bool FromEntity);
 
   public async Task<HandlerResult> HandleAsync(HandlerContext ctx, CancellationToken ct = default)
   {
@@ -14,60 +34,135 @@ public class ScriptHandler(ScriptEngine engine, ScriptEffectApplier applier, Scr
       return new HandlerResult("disabled");
     }
 
-    string source = "", capabilitiesRaw = "[]";
-    if (ctx.ConfigJson is not null)
+    var script = Resolve(ctx);
+    if (script is null)
     {
-      using var cfg = JsonDocument.Parse(ctx.ConfigJson);
-      if (cfg.RootElement.TryGetProperty("source", out var s) && s.ValueKind == JsonValueKind.String)
-      {
-        source = s.GetString() ?? "";
-      }
-
-      if (cfg.RootElement.TryGetProperty("capabilities", out var c) && c.ValueKind == JsonValueKind.Array)
-      {
-        capabilitiesRaw = c.GetRawText();
-      }
+      return new HandlerResult("error", /*lang=json,strict*/ """{"error":"no script source configured"}""");
     }
 
-    var capabilities = JsonSerializer.Deserialize<string[]>(capabilitiesRaw) ?? [];
-    var effectsJson = await EvaluateWithWatchdogAsync(source, ctx.Entity.Data.RootElement.GetRawText(), ct);
-    if (effectsJson is null)
+    if (!script.Enabled)
     {
-      return new HandlerResult("timeout", /*lang=json,strict*/ """{"error":"script exceeded its wall-clock budget"}""");
+      return new HandlerResult("disabled", /*lang=json,strict*/ """{"reason":"job entity has enabled:false"}""");
     }
 
-    var effects = ScriptEffects.Parse(effectsJson);
-    var applied = await applier.ApplyAsync(ctx.Entity, effects, capabilities, ct);
+    string? token = null;
+    if (script.Grants.Contains("llm", StringComparer.OrdinalIgnoreCase))
+    {
+      token = tokens.Issue(ctx.Entity.Id, script.Grants, TimeSpan.FromSeconds(options.TimeoutSeconds + 30));
+    }
 
-    return new HandlerResult("ran", JsonSerializer.Serialize(new { applied }));
-  }
+    var request = new SuoritinRequest(
+      script.Source,
+      BuildInput(ctx),
+      options.TimeoutSeconds * 1000,
+      script.AllowedHosts,
+      script.Grants,
+      token,
+      token is null ? null : suoritinOptions.CallbackBaseUrl);
 
-  /// <summary>
-  /// Evaluates on a pool thread and stops WAITING at the configured budget. Jint's own
-  /// limits are cooperative, so a single atomic native call (a dynamically-built
-  /// catastrophic regex, a large allocation) can outrun them. The scheduler tick holds
-  /// the Postgres advisory tick lock while a handler runs, so an unbounded script stalls
-  /// every replica's scheduler — this bounds that to the budget.
-  ///
-  /// .NET cannot abort the abandoned thread: it keeps burning a thread-pool thread until
-  /// Jint's internal caps end it. What this guarantees is that the TICK moves on, not that
-  /// the runaway stops immediately.
-  ///
-  /// Deliberate: passing `ct` to WaitAsync makes script evaluation cancellation-aware for
-  /// the first time — a shutdown mid-script now surfaces as an OperationCanceledException
-  /// out of HandleAsync (SchedulerTick records an error event and advances) instead of the
-  /// script silently running to completion. Shutdown should not wait on untrusted scripts.
-  /// </summary>
-  private async Task<string?> EvaluateWithWatchdogAsync(string source, string dataJson, CancellationToken ct)
-  {
+    SuoritinResult run;
     try
     {
-      return await Task.Run(() => engine.Evaluate(source, dataJson), ct)
-        .WaitAsync(TimeSpan.FromSeconds(options.TimeoutSeconds), ct);
+      // Outer watchdog: the scheduler tick holds the advisory tick lock while a
+      // handler runs, so even a hung suoritin connection must be bounded.
+      run = await suoritin.ExecuteAsync(request, ct)
+        .WaitAsync(TimeSpan.FromSeconds(options.TimeoutSeconds + 10), ct);
     }
     catch (TimeoutException)
     {
-      return null;
+      return new HandlerResult("timeout", /*lang=json,strict*/ """{"error":"suoritin did not respond within the watchdog budget"}""");
     }
+    catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+    {
+      return new HandlerResult("timeout", /*lang=json,strict*/ """{"error":"suoritin request timed out (HTTP client timeout)"}""");
+    }
+    catch (HttpRequestException ex)
+    {
+      return new HandlerResult("error", JsonSerializer.Serialize(new { error = $"suoritin unreachable: {ex.Message}" }));
+    }
+    finally
+    {
+      if (token is not null)
+      {
+        tokens.Revoke(token);
+      }
+    }
+
+    if (!run.Ok)
+    {
+      // run.Error is untrusted suoritin output; cap it like the log lines.
+      return new HandlerResult("error", JsonSerializer.Serialize(new
+      {
+        error = run.Error is null ? null : SuoritinClient.Truncate(run.Error),
+        logs = run.Logs,
+      }));
+    }
+
+    var effects = ScriptEffects.Parse(run.EffectsJson ?? "{}");
+    // Control fields are reserved for any job entity, not just fromEntity runs:
+    // an inline trigger script attached to a job must not rewrite the code,
+    // grants, or egress its next scheduled (fromEntity) run will execute with.
+    var reserved = script.FromEntity || ctx.Entity.Type == JobTypeName ? ReservedJobFields : [];
+    var applied = await applier.ApplyAsync(
+      ctx.Entity, effects, script.Grants, reserved,
+      TimeSpan.FromSeconds(options.EffectsTimeoutSeconds), ct);
+    return new HandlerResult("ran", JsonSerializer.Serialize(new { applied, logs = run.Logs, durationMs = run.DurationMs }));
+  }
+
+  private static ResolvedScript? Resolve(HandlerContext ctx)
+  {
+    var fromEntity = false;
+    string? source = null;
+    string[] hosts = [], grants = [];
+
+    if (ctx.ConfigJson is not null)
+    {
+      using var cfg = JsonDocument.Parse(ctx.ConfigJson);
+      // fromEntity:true means the job entity is authoritative: any inline
+      // source/capabilities/allowedHosts in the trigger config are ignored.
+      fromEntity = cfg.RootElement.TryGetProperty("fromEntity", out var fe) && fe.ValueKind == JsonValueKind.True;
+      if (!fromEntity)
+      {
+        source = Str(cfg.RootElement, "source");
+        hosts = StrArray(cfg.RootElement, "allowedHosts");
+        grants = StrArray(cfg.RootElement, "capabilities");
+      }
+    }
+
+    var enabled = true;
+    if (fromEntity)
+    {
+      var data = ctx.Entity.Data.RootElement;
+      source = Str(data, "code");
+      hosts = StrArray(data, "allowedHosts");
+      grants = StrArray(data, "grants");
+      enabled = !(data.TryGetProperty("enabled", out var en) && en.ValueKind == JsonValueKind.False);
+    }
+
+    return string.IsNullOrWhiteSpace(source) ? null : new ResolvedScript(source, hosts, grants, enabled, fromEntity);
+  }
+
+  private static JsonElement BuildInput(HandlerContext ctx)
+  {
+    using var doc = JsonDocument.Parse(JsonSerializer.Serialize(new
+    {
+      data = ctx.Entity.Data.RootElement,
+      entityId = ctx.Entity.Id.ToString(),
+      entityType = ctx.Entity.Type,
+      occurrence = ctx.OccurrenceUtc.ToString("o"),
+    }));
+    return doc.RootElement.Clone();
+  }
+
+  private static string? Str(JsonElement e, string name)
+  {
+    return e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+  }
+
+  private static string[] StrArray(JsonElement e, string name)
+  {
+    return e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Array
+      ? [.. v.EnumerateArray().Where(i => i.ValueKind == JsonValueKind.String).Select(i => i.GetString()!)]
+      : [];
   }
 }

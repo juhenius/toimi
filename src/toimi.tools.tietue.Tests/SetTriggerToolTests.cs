@@ -91,6 +91,41 @@ public class SetTriggerToolTests
     Assert.Empty(await db.Triggers.ToListAsync());
   }
 
+  [Theory]
+  [InlineData(/*lang=json,strict*/ """{"start":"2026-01-01T00:00:00Z","rrule":"FREQ=MINUTELY;INTERVAL=30;BYHOUR=9","tz":"Europe/Helsinki"}""")]
+  // No tz: WithDefaultTimeZone stamps the user's DST zone, so the pre-check must run on the stamped schedule.
+  [InlineData(/*lang=json,strict*/ """{"start":"2026-01-01T00:00:00Z","rrule":"FREQ=MINUTELY;INTERVAL=30;BYHOUR=9"}""")]
+  public async Task Rejects_subdaily_by_part_rule_in_dst_timezone_with_specific_message(string schedule)
+  {
+    using var db = TestDb.New();
+    var e = await SeedEntityAsync(db);
+    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers(), TestConfig.Default);
+
+    var result = await tool.SetTrigger(e.Id.ToString(), schedule, "notify");
+
+    Assert.Contains("not supported in DST timezones", result);
+    Assert.Contains("tz:\"UTC\"", result);
+    Assert.Empty(await db.Triggers.ToListAsync());
+  }
+
+  [Fact]
+  public async Task Accepts_subdaily_by_part_rule_with_utc_tz()
+  {
+    // The documented escape hatch: tz "UTC" has no DST transitions, so the rule is safe.
+    using var db = TestDb.New();
+    var e = await SeedEntityAsync(db);
+    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers(), TestConfig.Default);
+
+    var result = await tool.SetTrigger(
+      e.Id.ToString(),
+      /*lang=json,strict*/ """{"start":"2026-01-01T00:00:00Z","rrule":"FREQ=MINUTELY;INTERVAL=30;BYHOUR=9","tz":"UTC"}""",
+      "notify");
+
+    using var doc = JsonDocument.Parse(result);
+    Assert.True(doc.RootElement.TryGetProperty("id", out _));
+    Assert.Single(await db.Triggers.ToListAsync());
+  }
+
   [Fact]
   public async Task Rejects_malformed_schedule()
   {

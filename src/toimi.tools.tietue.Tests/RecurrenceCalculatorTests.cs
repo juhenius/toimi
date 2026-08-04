@@ -142,4 +142,139 @@ public class RecurrenceCalculatorTests
     var pureUtc = RecurrenceCalculator.NextOccurrenceAfter(Start, "FREQ=DAILY", Start);
     Assert.Equal(pureUtc, withBogusTz);
   }
+
+  // ---- Sub-daily rules (arithmetic fast path; Ical.Net 5.2.3 cannot cross a DST
+  // fall-back for tz-anchored sub-daily rules — see RecurrenceCalculator.FirstOccurrence).
+
+  private static readonly DateTimeOffset SubDailyStart = new(2026, 7, 31, 6, 30, 0, TimeSpan.Zero);
+
+  [Fact]
+  public void Zoned_subdaily_continues_through_dst_fall_back_with_absolute_spacing()
+  {
+    // 2026-10-25 Helsinki falls back; sub-daily intervals are exact durations per
+    // RFC 5545, so the 30-min grid must continue in absolute time through the transition.
+    var next = RecurrenceCalculator.NextOccurrenceOnOrAfter(
+      SubDailyStart, "FREQ=MINUTELY;INTERVAL=30", new DateTimeOffset(2026, 10, 25, 0, 45, 0, TimeSpan.Zero), "Europe/Helsinki");
+    Assert.Equal(new DateTimeOffset(2026, 10, 25, 1, 0, 0, TimeSpan.Zero), next);
+  }
+
+  [Fact]
+  public void Zoned_subdaily_next_after_grid_point_inside_fall_back_advances()
+  {
+    var next = RecurrenceCalculator.NextOccurrenceAfter(
+      SubDailyStart, "FREQ=MINUTELY;INTERVAL=30", new DateTimeOffset(2026, 10, 25, 0, 30, 0, TimeSpan.Zero), "Europe/Helsinki");
+    Assert.Equal(new DateTimeOffset(2026, 10, 25, 1, 0, 0, TimeSpan.Zero), next);
+  }
+
+  [Fact]
+  public void Zoned_subdaily_continues_through_spring_forward()
+  {
+    // 2026-03-29 Helsinki springs forward; absolute 30-min spacing is unaffected.
+    var start = new DateTimeOffset(2026, 1, 5, 6, 30, 0, TimeSpan.Zero);
+    var next = RecurrenceCalculator.NextOccurrenceOnOrAfter(
+      start, "FREQ=MINUTELY;INTERVAL=30", new DateTimeOffset(2026, 3, 29, 0, 45, 0, TimeSpan.Zero), "Europe/Helsinki");
+    Assert.Equal(new DateTimeOffset(2026, 3, 29, 1, 0, 0, TimeSpan.Zero), next);
+  }
+
+  [Fact]
+  public void Subdaily_count_bound_is_honored()
+  {
+    const string rule = "FREQ=MINUTELY;INTERVAL=30;COUNT=4"; // 06:30, 07:00, 07:30, 08:00
+
+    var first = RecurrenceCalculator.NextOccurrenceOnOrAfter(SubDailyStart, rule, SubDailyStart);
+    Assert.Equal(SubDailyStart, first);
+
+    var fourth = RecurrenceCalculator.NextOccurrenceAfter(
+      SubDailyStart, rule, new DateTimeOffset(2026, 7, 31, 7, 30, 0, TimeSpan.Zero));
+    Assert.Equal(new DateTimeOffset(2026, 7, 31, 8, 0, 0, TimeSpan.Zero), fourth);
+
+    var afterLast = RecurrenceCalculator.NextOccurrenceAfter(
+      SubDailyStart, rule, new DateTimeOffset(2026, 7, 31, 8, 0, 0, TimeSpan.Zero));
+    Assert.Null(afterLast);
+  }
+
+  [Fact]
+  public void Subdaily_until_bound_is_honored_inclusively()
+  {
+    const string rule = "FREQ=MINUTELY;INTERVAL=30;UNTIL=20260731T073000Z";
+
+    var atBoundary = RecurrenceCalculator.NextOccurrenceOnOrAfter(
+      SubDailyStart, rule, new DateTimeOffset(2026, 7, 31, 7, 30, 0, TimeSpan.Zero));
+    Assert.Equal(new DateTimeOffset(2026, 7, 31, 7, 30, 0, TimeSpan.Zero), atBoundary);
+
+    var pastBoundary = RecurrenceCalculator.NextOccurrenceAfter(
+      SubDailyStart, rule, new DateTimeOffset(2026, 7, 31, 7, 30, 0, TimeSpan.Zero));
+    Assert.Null(pastBoundary);
+  }
+
+  [Fact]
+  public void Subdaily_without_tz_lands_on_next_grid_point()
+  {
+    // Pre-change parity: pure-UTC sub-daily expansion already produced the 30-min grid.
+    var next = RecurrenceCalculator.NextOccurrenceOnOrAfter(
+      SubDailyStart, "FREQ=MINUTELY;INTERVAL=30", new DateTimeOffset(2026, 7, 31, 7, 10, 0, TimeSpan.Zero));
+    Assert.Equal(new DateTimeOffset(2026, 7, 31, 7, 30, 0, TimeSpan.Zero), next);
+  }
+
+  [Fact]
+  public void Zoned_hourly_interval_lands_on_grid()
+  {
+    var next = RecurrenceCalculator.NextOccurrenceOnOrAfter(
+      SubDailyStart, "FREQ=HOURLY;INTERVAL=6", new DateTimeOffset(2026, 7, 31, 10, 0, 0, TimeSpan.Zero), "Europe/Helsinki");
+    Assert.Equal(new DateTimeOffset(2026, 7, 31, 12, 30, 0, TimeSpan.Zero), next);
+  }
+
+  [Fact]
+  public void Zoned_secondly_interval_lands_on_grid()
+  {
+    var next = RecurrenceCalculator.NextOccurrenceOnOrAfter(
+      SubDailyStart, "FREQ=SECONDLY;INTERVAL=90", new DateTimeOffset(2026, 7, 31, 6, 31, 0, TimeSpan.Zero), "Europe/Helsinki");
+    Assert.Equal(new DateTimeOffset(2026, 7, 31, 6, 31, 30, TimeSpan.Zero), next);
+  }
+
+  [Fact]
+  public void Zoned_subdaily_with_by_part_is_refused_promptly()
+  {
+    // Ical.Net 5.2.3 cannot expand tz-anchored sub-daily BY-part rules across a DST
+    // fall-back (it loops or hangs internally), so the calculator refuses them outright.
+    var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+    var next = RecurrenceCalculator.NextOccurrenceOnOrAfter(
+      SubDailyStart, "FREQ=MINUTELY;INTERVAL=30;BYHOUR=9", SubDailyStart, "Europe/Helsinki");
+    stopwatch.Stop();
+
+    Assert.Null(next);
+    Assert.True(stopwatch.ElapsedMilliseconds < 5000, $"refusal took {stopwatch.ElapsedMilliseconds}ms — should be immediate");
+  }
+
+  [Fact]
+  public void Subdaily_with_by_part_in_non_dst_zone_is_still_evaluated()
+  {
+    // A zone without DST transitions (tz "UTC", fixed offsets) is provably safe for
+    // Ical.Net's zoned expansion — only DST-observing zones are refused.
+    var next = RecurrenceCalculator.NextOccurrenceOnOrAfter(
+      SubDailyStart, "FREQ=MINUTELY;INTERVAL=30;BYHOUR=9", SubDailyStart, "UTC");
+    Assert.Equal(new DateTimeOffset(2026, 7, 31, 9, 0, 0, TimeSpan.Zero), next);
+  }
+
+  [Theory]
+  [InlineData("FREQ=MINUTELY;INTERVAL=30;BYHOUR=9", "Europe/Helsinki", true)] // sub-daily + BY* + DST zone
+  [InlineData("FREQ=MINUTELY;INTERVAL=30;BYHOUR=9", "UTC", false)] // non-DST zone is safe
+  [InlineData("FREQ=MINUTELY;INTERVAL=30;BYHOUR=9", null, false)] // no tz -> pure UTC is safe
+  [InlineData("FREQ=MINUTELY;INTERVAL=30", "Europe/Helsinki", false)] // plain interval -> fast path
+  [InlineData("FREQ=DAILY;BYHOUR=9", "Europe/Helsinki", false)] // daily and coarser are fine
+  [InlineData("not an rrule", "Europe/Helsinki", false)] // malformed -> normal validation reports it
+  public void IsUnsupportedSubDaily_flags_only_zoned_dst_by_part_rules(string rrule, string? tz, bool expected)
+  {
+    Assert.Equal(expected, RecurrenceCalculator.IsUnsupportedSubDaily(rrule, tz));
+  }
+
+  [Fact]
+  public void Subdaily_with_by_part_without_tz_is_still_evaluated()
+  {
+    // No tz -> pure-UTC Ical.Net expansion is safe. MINUTELY;INTERVAL=60 from 06:30Z
+    // hits hh:30 each hour; BYHOUR=9 filters to 09:30Z.
+    var next = RecurrenceCalculator.NextOccurrenceOnOrAfter(
+      SubDailyStart, "FREQ=MINUTELY;INTERVAL=60;BYHOUR=9", new DateTimeOffset(2026, 7, 31, 7, 0, 0, TimeSpan.Zero));
+    Assert.Equal(new DateTimeOffset(2026, 7, 31, 9, 30, 0, TimeSpan.Zero), next);
+  }
 }

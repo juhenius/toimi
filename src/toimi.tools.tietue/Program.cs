@@ -66,12 +66,19 @@ builder.Services.AddScoped<toimi.tools.tietue.Handlers.INativeHandler, toimi.too
 
 builder.Services.AddSingleton(
   builder.Configuration.GetSection("Scripts").Get<toimi.tools.tietue.Scripts.ScriptOptions>() ?? new toimi.tools.tietue.Scripts.ScriptOptions());
-builder.Services.AddSingleton<toimi.tools.tietue.Scripts.ScriptEngine>();
-// Lazily resolve HandlerRegistry inside ScriptEffectApplier: ScriptHandler (an INativeHandler the
-// registry enumerates) depends on the applier, so a direct edge would be a construction cycle. The
-// Lazy factory defers resolution to first use, by which point the scoped applier is already cached.
-builder.Services.AddScoped(sp => new Lazy<toimi.tools.tietue.Handlers.HandlerRegistry>(
-  sp.GetRequiredService<toimi.tools.tietue.Handlers.HandlerRegistry>));
+builder.Services.AddSingleton(
+  builder.Configuration.GetSection("Suoritin").Get<toimi.tools.tietue.Scripts.SuoritinOptions>() ?? new toimi.tools.tietue.Scripts.SuoritinOptions());
+builder.Services.AddHttpClient(toimi.tools.tietue.Scripts.SuoritinClient.HttpClientName, (sp, client) =>
+{
+  client.BaseAddress = new Uri(sp.GetRequiredService<toimi.tools.tietue.Scripts.SuoritinOptions>().BaseUrl);
+  client.Timeout = TimeSpan.FromSeconds(sp.GetRequiredService<toimi.tools.tietue.Scripts.ScriptOptions>().TimeoutSeconds + 5);
+  // Suoritin output is untrusted; an oversize body surfaces as an HttpRequestException.
+  client.MaxResponseContentBufferSize = 1024 * 1024;
+});
+builder.Services.AddSingleton<toimi.tools.tietue.Scripts.ISuoritinClient, toimi.tools.tietue.Scripts.SuoritinClient>();
+builder.Services.AddSingleton<toimi.tools.tietue.Scripts.RunTokenStore>();
+builder.Services.AddSingleton<toimi.tools.tietue.Scripts.ILlmExtractor, toimi.tools.tietue.Scripts.LlmExtractor>();
+builder.Services.AddScoped<toimi.tools.tietue.Agents.IMcpInvoker, toimi.tools.tietue.Agents.McpInvoker>();
 builder.Services.AddScoped<toimi.tools.tietue.Scripts.ScriptEffectApplier>();
 builder.Services.AddScoped<toimi.tools.tietue.Handlers.INativeHandler, toimi.tools.tietue.Handlers.ScriptHandler>();
 
@@ -99,5 +106,6 @@ using (var scope = app.Services.CreateScope())
 app.MapToimiMcp();
 app.MapToimiReadiness<TietueDbContext>();
 toimi.tools.tietue.Admin.AdminEndpoints.MapAdminEndpoints(app);
+toimi.tools.tietue.Scripts.ExtractEndpoints.MapExtractEndpoints(app);
 
 app.Run();

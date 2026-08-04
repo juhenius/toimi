@@ -1,0 +1,12 @@
+{
+  "unstable": ["worker-options"],
+  "imports": {
+    "@std/assert": "jsr:@std/assert@1"
+  },
+  "tasks": {
+    "start": "deno run --allow-net --allow-read=. --deny-import main.ts",
+    "test": "deno test --allow-net --allow-read=. --deny-import"
+  },
+  "fmt": { "indentWidth": 2 },
+  "test": { "include": ["*_test.ts"] }
+}

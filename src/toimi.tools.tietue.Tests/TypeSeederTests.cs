@@ -33,7 +33,7 @@ public class TypeSeederTests
     await new TypeSeeder(repo).SeedAsync();
     await new TypeSeeder(repo).SeedAsync();
 
-    Assert.Equal(4, (await repo.ListAsync()).Count);
+    Assert.Equal(5, (await repo.ListAsync()).Count);
   }
 
   [Fact]
@@ -48,6 +48,25 @@ public class TypeSeederTests
     Assert.NotNull(reminder);
     Assert.Contains("notify", reminder.DefaultTriggers);
     Assert.Contains("dueAt", reminder.DefaultTriggers);
+  }
+
+  [Fact]
+  public async Task Seeds_job_type_with_unique_name_and_script_trigger()
+  {
+    using var db = TestDb.New();
+    var repo = new TypeRepository(db);
+
+    await new TypeSeeder(repo).SeedAsync();
+
+    var job = await repo.GetAsync("job");
+    Assert.NotNull(job);
+    Assert.Contains("UniqueName", job.Behaviors);
+    Assert.Contains("\"kind\":\"script\"", job.DefaultTriggers);
+    Assert.Contains("fromEntity", job.DefaultTriggers);
+    var schema = job.JsonSchema.RootElement.GetRawText();
+    Assert.Contains("startAt", schema);
+    Assert.Contains("allowedHosts", schema);
+    Assert.Contains("grants", schema);
   }
 
   [Fact]

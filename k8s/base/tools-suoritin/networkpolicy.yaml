@@ -1,0 +1,52 @@
+# Sandbox containment (spec §3): scripts may egress to DNS and the public
+# internet only — never to cluster services or the local network — with one
+# pinhole: the tietue extract() callback. Ingress is tietue-only. Enforced by
+# the CNI on k3s (kube-router); kind's default CNI does not enforce
+# NetworkPolicy, so dev relies on the Deno permission layer alone.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: toimi-tools-suoritin
+  namespace: apps
+spec:
+  podSelector:
+    matchLabels:
+      app: toimi-tools-suoritin
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: toimi-tools-tietue
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app: toimi-tools-tietue
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10

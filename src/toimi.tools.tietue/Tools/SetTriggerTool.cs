@@ -11,11 +11,11 @@ namespace toimi.tools.tietue.Tools;
 [McpServerToolType]
 public class SetTriggerTool(TriggerRepository repository, TietueDbContext db, HandlerRegistry handlers, Toimi.Core.Configuration.ToimiConfiguration config)
 {
-  [McpServerTool, Description("Schedule a trigger on an entity. 'schedule' is JSON: {\"at\":\"<iso utc>\"} for one-shot, or {\"start\":\"<iso utc>\",\"rrule\":\"FREQ=...\",\"tz\":\"Europe/Helsinki\"} for recurring (RFC 5545); recurring schedules without a tz default to the server's user timezone, pass \"tz\":\"UTC\" for fixed-UTC recurrence. 'handlerKind' is 'notify' or 'set-field'; 'handlerConfig' is its JSON config.")]
+  [McpServerTool, Description("Schedule a trigger on an entity. 'schedule' is JSON: {\"at\":\"<iso utc>\"} for one-shot, or {\"start\":\"<iso utc>\",\"rrule\":\"FREQ=...\",\"tz\":\"Europe/Helsinki\"} for recurring (RFC 5545); recurring schedules without a tz default to the server's user timezone, pass \"tz\":\"UTC\" for fixed-UTC recurrence. 'handlerKind' is one of: notify, set-field, delete, script, message; 'handlerConfig' is its JSON config.")]
   public async Task<string> SetTrigger(
       [Description("Entity id (GUID)")] string entityId,
       [Description("Schedule spec JSON")] string schedule,
-      [Description("Handler kind: notify | set-field")] string handlerKind,
+      [Description("Handler kind: one of: notify, set-field, delete, script, message")] string handlerKind,
       [Description("Handler config JSON (optional)")] string? handlerConfig = null)
   {
     if (!Guid.TryParse(entityId, out var id))
@@ -37,6 +37,12 @@ public class SetTriggerTool(TriggerRepository repository, TietueDbContext db, Ha
     // a bounded (COUNT/UNTIL) recurring rule can resolve differently once the default tz is
     // stamped on, so validating the raw schedule could let a dead trigger through.
     var stampedSchedule = Schedules.WithDefaultTimeZone(schedule, config.UserTimeZone);
+    if (Schedules.HasUnsupportedSubDailyRule(stampedSchedule))
+    {
+      return "Sub-daily rules (SECONDLY/MINUTELY/HOURLY) with BY-part filters are not supported in DST timezones; "
+        + "use plain INTERVAL form, or FREQ=DAILY with BYHOUR/BYMINUTE for wall-clock times, or pass tz:\"UTC\".";
+    }
+
     if (Schedules.InitialNextFireAt(stampedSchedule, DateTimeOffset.UtcNow) is null)
     {
       return "Schedule does not resolve to a future fire time. Check the 'at'/'start'+'rrule' fields.";

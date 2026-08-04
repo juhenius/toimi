@@ -35,6 +35,22 @@ public class SchedulesTests
   }
 
   [Fact]
+  public void Zoned_subdaily_recurring_initial_returns_on_grid_now()
+  {
+    // Regression: real user job {start 06:30Z, MINUTELY;INTERVAL=30, Europe/Helsinki}
+    // OOMed InitialNextFireAt (Ical.Net 5.2.3 DST fall-back loop + OrderBy buffering).
+    // 2026-08-02T12:00:00Z is on the 30-min grid, so the inclusive search returns it.
+    var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+    var next = Schedules.InitialNextFireAt(
+      /*lang=json,strict*/ """{"start":"2026-07-31T06:30:00Z","rrule":"FREQ=MINUTELY;INTERVAL=30","tz":"Europe/Helsinki"}""",
+      new DateTimeOffset(2026, 8, 2, 12, 0, 0, TimeSpan.Zero));
+    stopwatch.Stop();
+
+    Assert.Equal(new DateTimeOffset(2026, 8, 2, 12, 0, 0, TimeSpan.Zero), next);
+    Assert.True(stopwatch.ElapsedMilliseconds < 5000, $"took {stopwatch.ElapsedMilliseconds}ms — should be immediate");
+  }
+
+  [Fact]
   public void Malformed_schedule_yields_null()
   {
     Assert.Null(Schedules.InitialNextFireAt("{ not json", Now));
