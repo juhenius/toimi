@@ -21,8 +21,8 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.8.3" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.8.3" />
-    <PackageReference Include="ModelContextProtocol" Version="1.4.1" />
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.4.1" />
+    <PackageReference Include="ModelContextProtocol" Version="2.0.0" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.0.0" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
   </ItemGroup>
 

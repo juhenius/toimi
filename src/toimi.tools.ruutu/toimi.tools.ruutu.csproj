@@ -12,8 +12,8 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="ModelContextProtocol" Version="1.4.1" />
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.4.1" />
+    <PackageReference Include="ModelContextProtocol" Version="2.0.0" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.0.0" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <PackageReference Include="Scriban" Version="7.2.5" />
   </ItemGroup>
