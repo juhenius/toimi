@@ -181,11 +181,13 @@ tietue's `notify` handler.
   configured fields to a per-type Qdrant collection on save; `search` rolls up
   results by entity. One embedding pipeline for all semantically-indexed types.
 - **Triggers + scheduler** — `TriggerWorker` (1-min loop) → `SchedulerTick`
-  scans due triggers (`Enabled && NextFireAt <= now`), dispatches the handler,
-  records an `EntityEvent`, and recomputes `NextFireAt` (RFC 5545 via `Ical.Net`)
-  or disables one-shots. Firing is idempotent (unique `(entity,occurrence,kind)`);
-  a `complete` event suppresses an occurrence; a throwing handler is isolated
-  (recorded as `error`, trigger still advances).
+  scans due triggers (`Enabled && NextFireAt <= now`), runs each occurrence via
+  `OccurrenceRunner` (claim → dispatch → capped error capture → finalize; the
+  same module backs `run_trigger`), and recomputes `NextFireAt` (RFC 5545 via
+  `Ical.Net`) or disables one-shots. Firing is idempotent (unique
+  `(entity,occurrence,kind)`); a `complete` event suppresses an occurrence; a
+  throwing handler is isolated (recorded as `error`, trigger still advances);
+  manual `run_trigger` claims serialize against ticks on the advisory tick lock.
 - **Handler cost ladder** — deterministic native (`notify`/`set-field`) →
   sandboxed `script` (whose `llm` grant adds `extract()`, one structured LLM
   completion — the rung below an agent) → `message` (full agent run). The

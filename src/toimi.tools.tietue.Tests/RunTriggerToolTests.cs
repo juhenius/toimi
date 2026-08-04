@@ -21,9 +21,13 @@ public class RunTriggerToolTests
     var trigger = await triggers.CreateAsync(e.Id, /*lang=json,strict*/ """{"at":"2030-01-01T00:00:00Z"}""", "notify",
       /*lang=json,strict*/ """{"messageTemplate":"ping"}""", DateTimeOffset.UtcNow);
     var notifier = new FakeNotifier();
-    var registry = new HandlerRegistry([new NotifyHandler(notifier)]);
-    var tool = new RunTriggerTool(db, registry, new EntityEventStore(db));
+    var tool = new RunTriggerTool(db, Runner(db, new NotifyHandler(notifier)));
     return (e, trigger, tool, notifier);
+  }
+
+  private static OccurrenceRunner Runner(Data.TietueDbContext db, params INativeHandler[] handlers)
+  {
+    return new OccurrenceRunner(db, new HandlerRegistry(handlers), new EntityEventStore(db), claimLockRetryDelay: TimeSpan.Zero);
   }
 
   [Fact]
@@ -88,21 +92,113 @@ public class RunTriggerToolTests
     var (e, _, _, _) = await SetupAsync(db);
     var triggers = new TriggerRepository(db, TestConfig.Default);
     var bad = await triggers.CreateAsync(e.Id, /*lang=json,strict*/ """{"at":"2030-01-01T00:00:00Z"}""", "script", null, DateTimeOffset.UtcNow);
-    var registry = new HandlerRegistry([new ThrowingHandler()]);
-    var tool = new RunTriggerTool(db, registry, new EntityEventStore(db));
+    var tool = new RunTriggerTool(db, Runner(db, new ThrowingHandler("kaboom")));
 
     var result = await tool.RunTrigger(bad.Id.ToString());
 
     Assert.Contains("error", result);
   }
 
-  private sealed class ThrowingHandler : INativeHandler
+  [Fact]
+  public async Task Handler_error_text_is_capped_in_the_response_and_the_event()
+  {
+    using var db = TestDb.New();
+    var (e, _, _, _) = await SetupAsync(db);
+    var triggers = new TriggerRepository(db, TestConfig.Default);
+    var bad = await triggers.CreateAsync(e.Id, /*lang=json,strict*/ """{"at":"2030-01-01T00:00:00Z"}""", "script", null, DateTimeOffset.UtcNow);
+    var tool = new RunTriggerTool(db, Runner(db, new ThrowingHandler(new string('y', 20_000))));
+
+    var result = await tool.RunTrigger(bad.Id.ToString());
+
+    Assert.True(result.Length < 3000, $"response was {result.Length} chars; expected the error to be capped");
+    Assert.Contains("[truncated]", result);
+    var evt = Assert.Single(db.EntityEvents.Where(ev => ev.EntityId == e.Id));
+    Assert.Equal("error", evt.Status);
+    Assert.True(evt.Result!.Length < 2000, $"event result was {evt.Result.Length} chars; expected the error to be capped");
+  }
+
+  [Fact]
+  public async Task Unknown_handler_kind_records_an_error_event_and_reports_it()
+  {
+    using var db = TestDb.New();
+    var (e, trigger, _, _) = await SetupAsync(db);
+    var tool = new RunTriggerTool(db, Runner(db));
+
+    var result = await tool.RunTrigger(trigger.Id.ToString());
+
+    Assert.Contains("No handler registered", result);
+    var evt = Assert.Single(db.EntityEvents.Where(ev => ev.EntityId == e.Id));
+    Assert.Equal("error", evt.Status);
+  }
+
+  [Fact]
+  public async Task Denied_tick_lock_returns_busy_json_without_running_the_handler()
+  {
+    using var db = TestDb.New();
+    var (e, trigger, _, notifier) = await SetupAsync(db);
+    var tickLock = new CountingDeniedLock();
+    var tool = new RunTriggerTool(db, Runner(db, new NotifyHandler(notifier)), tickLock);
+
+    var result = await tool.RunTrigger(trigger.Id.ToString());
+
+    Assert.Contains("busy", result);
+    Assert.Equal(3, tickLock.Attempts);
+    Assert.Empty(notifier.Sent);
+    Assert.DoesNotContain(db.EntityEvents, ev => ev.EntityId == e.Id);
+  }
+
+  [Fact]
+  public async Task Injected_tick_lock_is_acquired_for_the_claim()
+  {
+    using var db = TestDb.New();
+    var (_, trigger, _, notifier) = await SetupAsync(db);
+    var tickLock = new CountingGrantedLock();
+    var tool = new RunTriggerTool(db, Runner(db, new NotifyHandler(notifier)), tickLock);
+
+    var result = await tool.RunTrigger(trigger.Id.ToString());
+
+    Assert.Equal(1, tickLock.Acquires);
+    Assert.Single(notifier.Sent);
+    Assert.Contains("\"status\"", result);
+  }
+
+  private sealed class ThrowingHandler(string message) : INativeHandler
   {
     public string Kind => "script";
 
     public Task<HandlerResult> HandleAsync(HandlerContext ctx, CancellationToken ct = default)
     {
-      throw new InvalidOperationException("kaboom");
+      throw new InvalidOperationException(message);
+    }
+  }
+
+  private sealed class CountingDeniedLock : ITickLock
+  {
+    public int Attempts { get; private set; }
+
+    public Task<IAsyncDisposable?> TryAcquireAsync(CancellationToken ct)
+    {
+      Attempts++;
+      return Task.FromResult<IAsyncDisposable?>(null);
+    }
+  }
+
+  private sealed class CountingGrantedLock : ITickLock
+  {
+    public int Acquires { get; private set; }
+
+    public Task<IAsyncDisposable?> TryAcquireAsync(CancellationToken ct)
+    {
+      Acquires++;
+      return Task.FromResult<IAsyncDisposable?>(new NoopLease());
+    }
+
+    private sealed class NoopLease : IAsyncDisposable
+    {
+      public ValueTask DisposeAsync()
+      {
+        return ValueTask.CompletedTask;
+      }
     }
   }
 }

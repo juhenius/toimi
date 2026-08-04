@@ -83,9 +83,11 @@ public class EntityEventStore(TietueDbContext db)
     }
 
     // Abandoned claim (crashed instance): take it over and refresh the window.
-    // Plain read-modify-write: safe only because ticks are serialized by the Postgres
-    // advisory tick lock (+ Recreate deploys). The claim table alone is NOT race-proof
-    // for stale take-overs — do not remove the tick lock believing it is.
+    // Plain read-modify-write: safe only because every claimant serializes on the
+    // Postgres advisory tick lock — SchedulerTick holds it for the whole tick and
+    // run_trigger's OccurrenceRunner acquires it around this claim (+ Recreate
+    // deploys). The claim table alone is NOT race-proof for stale take-overs — do
+    // not remove the tick lock believing it is.
     existing.CreatedAt = now;
     await db.SaveChangesAsync(ct);
     return ClaimResult.Claimed;

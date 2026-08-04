@@ -48,7 +48,7 @@ public class JobEndToEndTests
     var handler = new ScriptHandler(
       suoritin, new ScriptEffectApplier(entities, new FakeMcpInvoker()), new RunTokenStore(),
       new ScriptOptions(), new SuoritinOptions());
-    var tool = new RunTriggerTool(db, new HandlerRegistry([handler]), new EntityEventStore(db));
+    var tool = new RunTriggerTool(db, new OccurrenceRunner(db, new HandlerRegistry([handler]), new EntityEventStore(db)));
 
     var result = await tool.RunTrigger(trigger.Id.ToString());
 

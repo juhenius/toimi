@@ -23,7 +23,7 @@ public class ClaimThenRunTests
     var repo = new EntityRepository(db, new SchemaValidator());
     var notifier = new FakeNotifier();
     var registry = new HandlerRegistry([new NotifyHandler(notifier)]);
-    var tick = new SchedulerTick(db, registry, new EntityEventStore(db));
+    var tick = new SchedulerTick(db, new OccurrenceRunner(db, registry, new EntityEventStore(db)));
     var e = await repo.CreateAsync("reminder", JsonNode.Parse("""{"title":"Call"}"""), []);
     await new TriggerRepository(db, TestConfig.Default).CreateAsync(
       e.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "notify",

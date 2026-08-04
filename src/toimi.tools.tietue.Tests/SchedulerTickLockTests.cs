@@ -48,7 +48,7 @@ public class SchedulerTickLockTests
     var repo = new EntityRepository(db, new SchemaValidator());
     var notifier = new FakeNotifier();
     var registry = new HandlerRegistry([new NotifyHandler(notifier)]);
-    var tick = new SchedulerTick(db, registry, new EntityEventStore(db), tickLock: new DeniedTickLock());
+    var tick = new SchedulerTick(db, new OccurrenceRunner(db, registry, new EntityEventStore(db)), tickLock: new DeniedTickLock());
 
     var e = await repo.CreateAsync("reminder", JsonNode.Parse("""{"title":"Call"}"""), []);
     await new TriggerRepository(db, TestConfig.Default).CreateAsync(
@@ -72,7 +72,7 @@ public class SchedulerTickLockTests
     var notifier = new FakeNotifier();
     var registry = new HandlerRegistry([new NotifyHandler(notifier)]);
     var lease = new RecordingLease();
-    var tick = new SchedulerTick(db, registry, new EntityEventStore(db), tickLock: new GrantedTickLock(lease));
+    var tick = new SchedulerTick(db, new OccurrenceRunner(db, registry, new EntityEventStore(db)), tickLock: new GrantedTickLock(lease));
 
     await tick.RunDueAsync(DateTimeOffset.UtcNow, default);
 
@@ -86,7 +86,7 @@ public class SchedulerTickLockTests
     var notifier = new FakeNotifier();
     var registry = new HandlerRegistry([new NotifyHandler(notifier)]);
     var lease = new RecordingLease();
-    var tick = new SchedulerTick(db, registry, new EntityEventStore(db), tickLock: new GrantedTickLock(lease));
+    var tick = new SchedulerTick(db, new OccurrenceRunner(db, registry, new EntityEventStore(db)), tickLock: new GrantedTickLock(lease));
 
     db.Dispose(); // Poison the context so the due-trigger query throws.
 

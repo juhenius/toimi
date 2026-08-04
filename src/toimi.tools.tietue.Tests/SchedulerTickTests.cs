@@ -21,7 +21,7 @@ public class SchedulerTickTests
     var repo = new EntityRepository(db, new SchemaValidator());
     var notifier = new FakeNotifier();
     var registry = new HandlerRegistry([new NotifyHandler(notifier)]);
-    var tick = new SchedulerTick(db, registry, new EntityEventStore(db));
+    var tick = new SchedulerTick(db, new OccurrenceRunner(db, registry, new EntityEventStore(db)));
     return (db, notifier, tick, repo);
   }
 
@@ -93,7 +93,7 @@ public class SchedulerTickTests
     var repo = new EntityRepository(db, new SchemaValidator());
     var e = await repo.CreateAsync("reminder", JsonNode.Parse("""{"title":"x"}"""), []);
     var registry = new HandlerRegistry([new ThrowingHandler()]);
-    var tick = new SchedulerTick(db, registry, new EntityEventStore(db));
+    var tick = new SchedulerTick(db, new OccurrenceRunner(db, registry, new EntityEventStore(db)));
     await new TriggerRepository(db, TestConfig.Default).CreateAsync(e.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "boom", null,
       new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
 
@@ -120,7 +120,7 @@ public class SchedulerTickTests
     await new TriggerRepository(db, TestConfig.Default).CreateAsync(e.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "notify", handlerConfig,
       new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
     var registry = new HandlerRegistry([]);
-    var tick = new SchedulerTick(db, registry, new EntityEventStore(db));
+    var tick = new SchedulerTick(db, new OccurrenceRunner(db, registry, new EntityEventStore(db)));
 
     await tick.RunDueAsync(new DateTimeOffset(2026, 6, 1, 9, 1, 0, TimeSpan.Zero), default);
 
@@ -153,7 +153,7 @@ public class SchedulerTickTests
     var repo = new EntityRepository(db, new SchemaValidator());
     var e = await repo.CreateAsync("reminder", JsonNode.Parse("""{"title":"x"}"""), []);
     var registry = new HandlerRegistry([new ExplodingHandler(new string('y', 20_000))]);
-    var tick = new SchedulerTick(db, registry, new EntityEventStore(db));
+    var tick = new SchedulerTick(db, new OccurrenceRunner(db, registry, new EntityEventStore(db)));
     await new TriggerRepository(db, TestConfig.Default).CreateAsync(e.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "notify", null,
       new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
 
@@ -179,7 +179,7 @@ public class SchedulerTickTests
     await triggers.CreateAsync(entity.Id, $$"""{"at":"{{occurrence:O}}"}""", "delete", null, DateTimeOffset.UtcNow.AddMinutes(-2));
 
     var registry = new HandlerRegistry([new DeleteHandler(repo)]);
-    var tick = new SchedulerTick(db, registry, new EntityEventStore(db));
+    var tick = new SchedulerTick(db, new OccurrenceRunner(db, registry, new EntityEventStore(db)));
 
     await tick.RunDueAsync(DateTimeOffset.UtcNow, CancellationToken.None);
 
