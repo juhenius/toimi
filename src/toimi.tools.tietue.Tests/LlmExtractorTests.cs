@@ -87,9 +87,9 @@ public class LlmExtractorTests
 
   private sealed class FakeProvider(IChatClient client) : ILlmClientProvider
   {
-    public (IChatClient Client, ToolCallNotifier Notifier) Create()
+    public LlmSession Create()
     {
-      return (client, new ToolCallNotifier(client));
+      return new LlmSession(client, new ToolCallNotifier(client));
     }
   }
 

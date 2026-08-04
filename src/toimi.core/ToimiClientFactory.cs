@@ -5,7 +5,7 @@ namespace Toimi.Core;
 
 public static class ToimiClientFactory
 {
-  public static AIChatOptions CreateRequestOptions(IList<AITool> tools)
+  public static AIChatOptions CreateRequestOptions(IReadOnlyList<AITool> tools)
   {
     return new AIChatOptions
     {

@@ -45,7 +45,7 @@ public class McpToolAggregator(ILogger? logger = null) : IAsyncDisposable
     }
   }
 
-  public IList<AITool> GetAllTools()
+  public IReadOnlyList<AITool> GetAllTools()
   {
     return _wrappedTools;
   }

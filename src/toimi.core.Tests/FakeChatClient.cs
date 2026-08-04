@@ -10,6 +10,7 @@ public sealed class FakeChatClient : IChatClient
   public ChatMessage? NextResponseMessage { get; set; }
   public List<ChatResponseUpdate> StreamUpdates { get; set; } = [];
   public bool Throw { get; set; }
+  public int? ThrowAfterStreamUpdates { get; set; }
 
   public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
   {
@@ -22,9 +23,15 @@ public sealed class FakeChatClient : IChatClient
   public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
   {
     Requests.Add([.. messages]);
+    var emitted = 0;
     foreach (var update in StreamUpdates)
     {
       yield return update;
+      emitted++;
+      if (ThrowAfterStreamUpdates is { } n && emitted >= n)
+      {
+        throw new InvalidOperationException("simulated stream failure");
+      }
     }
 
     await Task.CompletedTask;

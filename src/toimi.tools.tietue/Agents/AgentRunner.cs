@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Toimi.Core;
 using Toimi.Core.Configuration;
@@ -18,36 +17,13 @@ public class AgentRunner(ToimiConfiguration config, ILlmClientProvider llmProvid
 
     try
     {
-      await using var aggregator = new McpToolAggregator(logger);
-      await aggregator.ConnectAllAsync(config.McpServers, token);
-      var tools = aggregator.GetAllTools();
+      // Per-run session with an agent-internal ContextBudget, so long runs get
+      // real-usage-anchored compaction instead of blind chars/4 estimation.
+      await using var agent = await ToimiAgent.StartAsync(config, llmProvider, logger: logger, ct: token);
+      agent.AppendMessage(ChatRole.System, BuildEntityContext(entity));
 
-      var skillSummary = await aggregator.CallToolAsync("list_skills", ct: token);
-      var typeCatalog = await aggregator.CallToolAsync("list_types", ct: token);
-
-      var (client, notifier) = llmProvider.Create();
-      var options = ToimiClientFactory.CreateRequestOptions(tools);
-      var messages = ToimiClientFactory.CreateInitialMessages(skillSummary, typeCatalog);
-
-      messages.Add(new(ChatRole.System, BuildEntityContext(entity)));
-      messages.Add(new(ChatRole.User, prompt));
-
-      ToimiClientFactory.RefreshDynamicContext(messages);
-      await ContextManager.CompactIfNeeded(messages, client, budget: null, maxTokens: config.MaxContextTokens, ct: token);
-
-      var response = await client.GetResponseAsync(messages, options, token);
-      var responseText = response.Text ?? "";
-      var promptTokens = (int?)response.Usage?.InputTokenCount;
-      var completionTokens = (int?)response.Usage?.OutputTokenCount;
-
-      var toolCalls = new List<object>();
-      while (notifier.TryDequeueEvent(out var evt))
-      {
-        toolCalls.Add(evt!);
-      }
-
-      var toolCallsJson = toolCalls.Count > 0 ? JsonSerializer.Serialize(toolCalls) : null;
-      return new AgentRunResult(true, responseText, toolCallsJson, null, promptTokens, completionTokens);
+      var turn = await agent.RunTurnAsync(prompt, token);
+      return new AgentRunResult(true, turn.ResponseText, turn.ToolCallsJson, null, turn.PromptTokens, turn.CompletionTokens);
     }
     catch (OperationCanceledException) when (!ct.IsCancellationRequested)
     {

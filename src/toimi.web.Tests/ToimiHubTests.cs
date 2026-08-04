@@ -84,10 +84,10 @@ public class ToimiHubTests
   {
     public StreamingFakeChatClient ChatClient { get; } = new();
 
-    public (IChatClient Client, ToolCallNotifier Notifier) Create()
+    public LlmSession Create()
     {
       var notifier = new ToolCallNotifier(ChatClient);
-      return (notifier, notifier);
+      return new LlmSession(notifier, notifier);
     }
   }
 

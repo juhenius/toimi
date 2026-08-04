@@ -13,7 +13,7 @@ namespace Toimi.Core.Llm;
 /// </summary>
 public sealed class OpenAiLlmClientProvider(ToimiConfiguration config) : ILlmClientProvider
 {
-  public (IChatClient Client, ToolCallNotifier Notifier) Create()
+  public LlmSession Create()
   {
     var options = new OpenAIClientOptions
     {
@@ -29,6 +29,6 @@ public sealed class OpenAiLlmClientProvider(ToimiConfiguration config) : ILlmCli
         .UseFunctionInvocation()
         .Build();
 
-    return (client, notifier);
+    return new LlmSession(client, notifier);
   }
 }

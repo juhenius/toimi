@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text;
 using System.Text.Json;
 using Toimi.Core;
 using Toimi.Core.Configuration;
@@ -21,15 +20,7 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
   {
     try
     {
-      var aggregator = new McpToolAggregator(logger);
-      await aggregator.ConnectAllAsync(_config.McpServers);
-
-      var tools = aggregator.GetAllTools();
-      var skillSummary = await aggregator.CallToolAsync("list_skills");
-      var typeCatalog = await aggregator.CallToolAsync("list_types");
-      var (toimiClient, notifier) = _llmProvider.Create();
-      var toimiOptions = ToimiClientFactory.CreateRequestOptions(tools);
-      var messages = ToimiClientFactory.CreateInitialMessages(skillSummary, typeCatalog);
+      var agent = await ToimiAgent.StartAsync(_config, _llmProvider, logger: logger, ct: Context.ConnectionAborted);
 
       // Check for conversationId query parameter
       var conversationIdParam = Context.GetHttpContext()?.Request.Query["conversationId"].ToString();
@@ -48,11 +39,10 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
         {
           conversationId = conversation.Id;
 
-          // Replay stored messages into the ChatMessage list
+          // Replay stored messages into the agent's transcript
           foreach (var msg in conversation.Messages)
           {
-            var role = msg.Role == "user" ? ChatRole.User : ChatRole.Assistant;
-            messages.Add(new(role, msg.Content));
+            agent.AppendMessage(msg.Role == "user" ? ChatRole.User : ChatRole.Assistant, msg.Content);
           }
 
           // Send ConversationLoaded with messages
@@ -66,10 +56,9 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
       // No-param connect is lazy too: no send, no row. The client's fresh view
       // (empty messages, no id) already reflects this state.
 
-      Sessions[Context.ConnectionId] = new ToimiSession(
-        aggregator, toimiClient, notifier, toimiOptions, messages, skillSummary, typeCatalog, conversationId);
+      Sessions[Context.ConnectionId] = new ToimiSession(agent, conversationId);
 
-      await Clients.Caller.SendAsync("Connected", tools.Count);
+      await Clients.Caller.SendAsync("Connected", agent.ToolCount);
     }
     catch (Exception ex)
     {
@@ -85,7 +74,7 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
   {
     if (Sessions.TryRemove(Context.ConnectionId, out var session))
     {
-      await session.Aggregator.DisposeAsync();
+      await session.Agent.DisposeAsync();
     }
 
     await base.OnDisconnectedAsync(exception);
@@ -99,14 +88,10 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
       return;
     }
 
-    // Captured BEFORE compaction can rewrite session.Messages: a compaction that
-    // leaves exactly one ChatRole.User message in the retained window must not be
-    // mistaken for the conversation's true first message. The row is created exactly
-    // once, on the true first message, so ConversationId being null here IS "this is
-    // the first message" — durable state, not the in-memory window shape.
+    // The row is created exactly once, on the true first message, so ConversationId
+    // being null here IS "this is the first message" — durable state, not the
+    // in-memory window shape (compaction can never fake this).
     var isFirstMessage = session.ConversationId is null;
-
-    session.Messages.Add(new(ChatRole.User, message));
 
     try
     {
@@ -120,88 +105,59 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
         await Clients.Caller.SendAsync("ConversationCreated", created.Id);
       }
 
-      // Save user message to DB
+      // Save user message to DB BEFORE handing it to the agent: on failure the
+      // message exists nowhere (no rollback needed), and on success SendAsync's
+      // contract keeps it in the transcript even if the turn later fails.
       await _repository.AddMessageAsync(session.ConversationId.Value, "user", message);
     }
     catch (Exception ex)
     {
-      // The user message never reached the DB; drop it from in-memory context too so
-      // session and DB stay in step, and surface a client-visible Error instead of
-      // letting SignalR fault the invocation with a generic HubException.
-      session.Messages.RemoveAt(session.Messages.Count - 1);
       await Clients.Caller.SendAsync("Error", $"Failed to save your message: {ex.Message}");
       return;
     }
 
-    // Update current time
-    ToimiClientFactory.RefreshDynamicContext(session.Messages);
-
-    var assistantAppended = false;
-    var assistantPersisted = false;
     try
     {
-      // Compact context if needed. Inside the try so a summarization failure degrades
-      // gracefully (CompactIfNeeded returns false) or is caught here rather than killing
-      // the turn with the user message already persisted.
-      await ContextManager.CompactIfNeeded(session.Messages, session.ChatClient, session.Budget, _config.MaxContextTokens, Context.ConnectionAborted);
-
-      var fullResponse = new StringBuilder();
-      var toolCallEvents = new List<object>();
-      UsageDetails? usage = null;
-
-      await foreach (var update in session.ChatClient.GetStreamingResponseAsync(
-          session.Messages, session.ChatOptions, Context.ConnectionAborted))
+      TurnCompleted? completed = null;
+      await foreach (var update in session.Agent.SendAsync(message, Context.ConnectionAborted))
       {
-        // Drain tool call events from the notifier
-        await DrainToolEvents(session.Notifier, toolCallEvents);
-
-        foreach (var content in update.Contents)
+        switch (update)
         {
-          if (content is TextContent textContent)
-          {
-            fullResponse.Append(textContent.Text);
-            await Clients.Caller.SendAsync("ReceiveToken", textContent.Text);
-          }
-
-          if (content is UsageContent usageContent)
-          {
-            usage = usageContent.Details;
-          }
+          case TokenUpdate token:
+            await Clients.Caller.SendAsync("ReceiveToken", token.Text);
+            break;
+          case ToolCallUpdate call:
+            await Clients.Caller.SendAsync("ToolCallStart", call.CallId, call.Name, call.Arguments);
+            break;
+          case ToolResultUpdate result:
+            await Clients.Caller.SendAsync("ToolCallEnd", result.CallId, result.Result, result.DurationMs);
+            break;
+          case TurnCompleted done:
+            completed = done;
+            break;
+          default:
+            break;
         }
       }
 
-      // Drain any remaining events after streaming completes
-      await DrainToolEvents(session.Notifier, toolCallEvents);
+      // SendAsync either throws or terminates with TurnCompleted.
+      var turn = completed!;
 
-      var responseText = fullResponse.ToString();
-
-      // Anchor the budget to the real prompt-token count of the messages AS SENT.
-      // The assistant response (appended below) then counts into the chars-delta,
-      // keeping the estimate conservative rather than undercounting by one response.
-      if (usage?.InputTokenCount is not null)
+      try
       {
-        session.Budget.RecordUsage((int)usage.InputTokenCount.Value, session.Messages);
+        await _repository.AddMessageAsync(session.ConversationId.Value, "assistant", turn.ResponseText, turn.ToolCallsJson,
+          promptTokens: turn.PromptTokens,
+          completionTokens: turn.CompletionTokens,
+          totalTokens: turn.TotalTokens);
       }
-
-      session.Messages.Add(new(ChatRole.Assistant, responseText));
-      assistantAppended = true;
-
-      // Serialize tool calls JSON
-      var toolCallsJson = toolCallEvents.Count > 0
-        ? JsonSerializer.Serialize(toolCallEvents)
-        : null;
-
-      // Prefer real usage from the final streaming update; fall back to a rough estimate.
-      var promptTokens = (int?)usage?.InputTokenCount ?? (ContextBudget.TotalChars(session.Messages) / 4);
-      var completionTokens = (int?)usage?.OutputTokenCount ?? (responseText.Length / 4);
-      var totalTokens = (int?)usage?.TotalTokenCount ?? (promptTokens + completionTokens);
-
-      // Save assistant message to DB
-      await _repository.AddMessageAsync(session.ConversationId.Value, "assistant", responseText, toolCallsJson,
-        promptTokens: promptTokens,
-        completionTokens: completionTokens,
-        totalTokens: totalTokens);
-      assistantPersisted = true;
+      catch
+      {
+        // The assistant message is in the agent's transcript but failed to persist:
+        // strip it so in-memory context and DB stay in step. A failure AFTER this
+        // persist (e.g. auto-title below) must NOT discard — the DB has the row.
+        session.Agent.DiscardLastAssistantMessage();
+        throw;
+      }
 
       // Auto-title: set title on first exchange
       if (isFirstMessage)
@@ -210,19 +166,10 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
         await _repository.UpdateTitleAsync(session.ConversationId.Value, title);
       }
 
-      await Clients.Caller.SendAsync("MessageComplete", responseText);
+      await Clients.Caller.SendAsync("MessageComplete", turn.ResponseText);
     }
     catch (Exception ex)
     {
-      // Only remove the assistant message if it was appended but NOT yet persisted.
-      // A blind RemoveAt would strip the already-persisted user message (early throw),
-      // and removing an assistant message the DB already has (throw after persist, e.g.
-      // auto-title) would diverge in-memory context from the DB.
-      if (assistantAppended && !assistantPersisted)
-      {
-        session.Messages.RemoveAt(session.Messages.Count - 1);
-      }
-
       await Clients.Caller.SendAsync("Error", ex.Message);
     }
   }
@@ -248,41 +195,15 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
       return;
     }
 
-    var messages = ToimiClientFactory.CreateInitialMessages(session.SkillSummary, session.TypeCatalog);
-
-    // Start a fresh, lazy conversation: clear in-memory state but write no DB row.
-    // The row is created on the first message (ConversationCreated then tells the
-    // client its id), so an abandoned "New" never leaves an orphan row.
-    Sessions[Context.ConnectionId] = session with
-    {
-      Messages = messages,
-      ConversationId = null,
-      Budget = new(),
-    };
+    // Start a fresh, lazy conversation: reset the agent's transcript and budget but
+    // write no DB row. The row is created on the first message (ConversationCreated
+    // then tells the client its id), so an abandoned "New" never leaves an orphan row.
+    session.Agent.Reset();
+    Sessions[Context.ConnectionId] = session with { ConversationId = null };
 
     // Distinct "new/empty" signal (not a ConversationLoaded with a real id): the
     // client resets its view and forgets any current id until the first message.
     await Clients.Caller.SendAsync("ConversationReset");
-  }
-
-  private async Task DrainToolEvents(ToolCallNotifier notifier, List<object>? toolCallEvents = null)
-  {
-    while (notifier.TryDequeueEvent(out var evt))
-    {
-      switch (evt)
-      {
-        case ToolCallEvent tc:
-          toolCallEvents?.Add(new { type = "call", tc.CallId, tc.Name, tc.Arguments });
-          await Clients.Caller.SendAsync("ToolCallStart", tc.CallId, tc.Name, tc.Arguments);
-          break;
-        case ToolResultEvent tr:
-          toolCallEvents?.Add(new { type = "result", tr.CallId, tr.Result, tr.DurationMs });
-          await Clients.Caller.SendAsync("ToolCallEnd", tr.CallId, tr.Result, tr.DurationMs);
-          break;
-        default:
-          break;
-      }
-    }
   }
 
   private static string SerializeConversationMessages(ICollection<ConversationMessage> messages)
@@ -295,16 +216,5 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
     }));
   }
 
-  private sealed record ToimiSession(
-    McpToolAggregator Aggregator,
-    IChatClient ChatClient,
-    ToolCallNotifier Notifier,
-    ChatOptions ChatOptions,
-    List<ChatMessage> Messages,
-    string? SkillSummary,
-    string? TypeCatalog,
-    Guid? ConversationId)
-  {
-    public ContextBudget Budget { get; init; } = new();
-  }
+  private sealed record ToimiSession(ToimiAgent Agent, Guid? ConversationId);
 }

@@ -130,10 +130,13 @@ Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers),
   project that depends on `toimi.core`, NOT a `toimi.web` extension.
 
 **toimi.core — Shared cross-cutting AI behavior (library).**
-- Owns: LLM client factory (with `ToolCallNotifier`), MCP tool
-  aggregation (`McpToolAggregator`), conversation persistence
-  (`ToimiDbContext`), context-window management (`ContextManager`),
-  system-prompt assembly + catalog injection (`ToimiClientFactory`).
+- Owns: the conversation-turn engine (`ToimiAgent`: MCP bootstrap, streaming
+  turn, tool-event capture, budget anchoring + compaction, the unified
+  tool-call wire JSON via `ToolEventJson`), LLM client factory (with
+  `ToolCallNotifier`), MCP tool aggregation (`McpToolAggregator`),
+  conversation persistence (`ToimiDbContext`), context-window management
+  (`ContextManager`), system-prompt assembly + catalog injection
+  (`ToimiClientFactory`).
 - Extend when: adding cross-cutting behavior used by multiple agent hosts
   (`toimi.web` and tietue's agent runner) — e.g. a new system-prompt
   enrichment step or a different summarization strategy.
@@ -207,8 +210,10 @@ tietue's `notify` handler.
   scripts `extract(prompt, text, schema)`, a run-token-gated callback to
   tietue for one structured LLM completion. Global `Scripts:Enabled` kill
   switch in tietue.
-- **Thin web transport** — all AI logic lives in `toimi.core`; `toimi.web` is
-  transport only so future transports (CLI, Telegram) inherit the same
+- **Thin web transport** — the whole conversation turn lives in `toimi.core`'s
+  `ToimiAgent` (hosts iterate its `TurnUpdate` stream and persist what
+  `TurnCompleted` reports); `ToimiHub` and tietue's `AgentRunner` are thin
+  adapters over it, so future transports (CLI, Telegram) inherit the same
   experience.
 - **Conversation persistence** — messages save to PostgreSQL via
   `ToimiDbContext` in core; per-message estimated token usage is tracked for
