@@ -28,22 +28,22 @@ public class ExpiryReconciler(TietueDbContext db, TriggerRepository triggers)
     var at = ExpiryAt(entity.Data, cfg.Field);
     if (at is null)
     {
-      return;
+      return; // field absent OR not a parseable date — a garbage date must not arm a dead trigger
     }
 
-    var schedule = new JsonObject { ["at"] = at }.ToJsonString();
     var kind = cfg.Prompt is null ? "delete" : "message";
     var config = cfg.Prompt is null ? null : MessageConfig(entity.Type, cfg.Field, cfg.Prompt);
 
-    await triggers.CreateAsync(entity.Id, schedule, kind, config, now, SourceTag, ct);
+    await triggers.CreateAsync(entity.Id, Schedule.OneShotAt(at.Value), kind, config, now, SourceTag, ct);
   }
 
-  private static string? ExpiryAt(JsonDocument data, string field)
+  private static DateTimeOffset? ExpiryAt(JsonDocument data, string field)
   {
     return data.RootElement.TryGetProperty(field, out var v)
       && v.ValueKind == JsonValueKind.String
-      && !string.IsNullOrWhiteSpace(v.GetString())
-        ? v.GetString()
+      && DateTimeOffset.TryParse(v.GetString(), System.Globalization.CultureInfo.InvariantCulture,
+        System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out var at)
+        ? at
         : null;
   }
 

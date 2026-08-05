@@ -44,4 +44,34 @@ public class NotifyHandlerTests
 
     Assert.Equal("Standup", notifier.Sent.Single().Message);
   }
+
+  [Theory]
+  [InlineData(null)]
+  [InlineData(/*lang=json,strict*/ """{"tags":"bell"}""")]
+  [InlineData(/*lang=json,strict*/ """{"titleTemplate":""}""")]
+  [InlineData("not json")]
+  [InlineData("[]")]
+  public void ValidateConfig_rejects_configs_that_send_empty_notifications(string? config)
+  {
+    var result = new NotifyHandler(new FakeNotifier()).ValidateConfig(config);
+    Assert.False(result.IsValid);
+  }
+
+  [Fact]
+  public void ValidateConfig_rejects_non_string_tags()
+  {
+    // HandleAsync's Str() silently drops non-strings — a tags array is a swallowed typo.
+    var result = new NotifyHandler(new FakeNotifier()).ValidateConfig(/*lang=json,strict*/ """{"titleTemplate":"{title}","tags":["bell"]}""");
+    Assert.False(result.IsValid);
+    Assert.Contains("tags", result.Errors[0]);
+  }
+
+  [Theory]
+  [InlineData(/*lang=json,strict*/ """{"titleTemplate":"{title}"}""")]
+  [InlineData(/*lang=json,strict*/ """{"messageTemplate":"{description}"}""")]
+  [InlineData(/*lang=json,strict*/ """{"titleTemplate":"{title}","messageTemplate":"{description}","priority":"high","tags":"bell"}""")]
+  public void ValidateConfig_accepts_configs_with_a_template(string config)
+  {
+    Assert.True(new NotifyHandler(new FakeNotifier()).ValidateConfig(config).IsValid);
+  }
 }

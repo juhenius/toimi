@@ -5,11 +5,12 @@ using ModelContextProtocol.Server;
 using toimi.tools.tietue.Data;
 using toimi.tools.tietue.Handlers;
 using toimi.tools.tietue.Scheduling;
+using toimi.tools.tietue.Validation;
 
 namespace toimi.tools.tietue.Tools;
 
 [McpServerToolType]
-public class SetTriggerTool(TriggerRepository repository, TietueDbContext db, HandlerRegistry handlers, Toimi.Core.Configuration.ToimiConfiguration config)
+public class SetTriggerTool(TriggerRepository repository, TietueDbContext db, HandlerRegistry handlers)
 {
   [McpServerTool, Description("Schedule a trigger on an entity. 'schedule' is JSON: {\"at\":\"<iso utc>\"} for one-shot, or {\"start\":\"<iso utc>\",\"rrule\":\"FREQ=...\",\"tz\":\"Europe/Helsinki\"} for recurring (RFC 5545); recurring schedules without a tz default to the server's user timezone, pass \"tz\":\"UTC\" for fixed-UTC recurrence. 'handlerKind' is one of: notify, set-field, delete, script, message; 'handlerConfig' is its JSON config.")]
   public async Task<string> SetTrigger(
@@ -28,27 +29,27 @@ public class SetTriggerTool(TriggerRepository repository, TietueDbContext db, Ha
       return $"No entity found with id {id}.";
     }
 
-    if (handlers.Resolve(handlerKind) is null)
+    if (handlers.Resolve(handlerKind) is not { } handler)
     {
       return $"Unknown handlerKind '{handlerKind}'. Valid kinds: {string.Join(", ", handlers.Kinds)}.";
     }
 
-    // Validate the tz-stamped schedule, matching what CreateAsync will actually persist —
-    // a bounded (COUNT/UNTIL) recurring rule can resolve differently once the default tz is
-    // stamped on, so validating the raw schedule could let a dead trigger through.
-    var stampedSchedule = Schedules.WithDefaultTimeZone(schedule, config.UserTimeZone);
-    if (Schedules.HasUnsupportedSubDailyRule(stampedSchedule))
+    var configCheck = handler.ValidateConfig(handlerConfig);
+    if (!configCheck.IsValid)
     {
-      return "Sub-daily rules (SECONDLY/MINUTELY/HOURLY) with BY-part filters are not supported in DST timezones; "
-        + "use plain INTERVAL form, or FREQ=DAILY with BYHOUR/BYMINUTE for wall-clock times, or pass tz:\"UTC\".";
+      return string.Join("; ", configCheck.Errors);
     }
 
-    if (Schedules.InitialNextFireAt(stampedSchedule, DateTimeOffset.UtcNow) is null)
+    try
     {
-      return "Schedule does not resolve to a future fire time. Check the 'at'/'start'+'rrule' fields.";
+      // Stamping + schedule validation live in the repository — the single choke point
+      // every trigger-writing path goes through.
+      var t = await repository.CreateAsync(id, schedule, handlerKind, handlerConfig, DateTimeOffset.UtcNow);
+      return JsonSerializer.Serialize(new { id = t.Id.ToString(), nextFireAt = t.NextFireAt?.ToString("o") });
     }
-
-    var t = await repository.CreateAsync(id, schedule, handlerKind, handlerConfig, DateTimeOffset.UtcNow);
-    return JsonSerializer.Serialize(new { id = t.Id.ToString(), nextFireAt = t.NextFireAt?.ToString("o") });
+    catch (TietueValidationException ex)
+    {
+      return string.Join("; ", ex.Errors);
+    }
   }
 }

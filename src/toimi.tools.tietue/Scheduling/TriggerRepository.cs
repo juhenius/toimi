@@ -1,27 +1,33 @@
 using Microsoft.EntityFrameworkCore;
 using toimi.tools.tietue.Data;
+using toimi.tools.tietue.Validation;
 
 namespace toimi.tools.tietue.Scheduling;
 
 public class TriggerRepository(TietueDbContext db, Toimi.Core.Configuration.ToimiConfiguration config)
 {
-  public async Task<Trigger> CreateAsync(Guid entityId, string scheduleJson, string handlerKind, string? handlerConfig, DateTimeOffset now, string? source = null, CancellationToken ct = default)
-  {
-    // Stamp the user's default tz onto recurring schedules that omit one, at creation time, so the
-    // persisted schedule is self-describing and its wall-clock survives DST forever.
-    scheduleJson = Schedules.WithDefaultTimeZone(scheduleJson, config.UserTimeZone);
+  internal const string InvalidScheduleJsonError =
+    "Invalid schedule JSON. Expected {\"at\":\"<iso utc>\"} for one-shot or {\"start\":\"<iso utc>\",\"rrule\":\"FREQ=...\"} for recurring.";
+  internal const string NeverFiresError =
+    "Schedule does not resolve to a future fire time. Check the 'at'/'start'+'rrule' fields.";
 
-    var nextFireAt = Schedules.InitialNextFireAt(scheduleJson, now);
+  public Task<Trigger> CreateAsync(Guid entityId, string scheduleJson, string handlerKind, string? handlerConfig, DateTimeOffset now, string? source = null, CancellationToken ct = default)
+  {
+    return CreateAsync(entityId, ParseOrThrow(scheduleJson), handlerKind, handlerConfig, now, source, ct);
+  }
+
+  public async Task<Trigger> CreateAsync(Guid entityId, Schedule schedule, string handlerKind, string? handlerConfig, DateTimeOffset now, string? source = null, CancellationToken ct = default)
+  {
+    var (stamped, nextFireAt) = ResolveOrThrow(schedule, now);
     var trigger = new Trigger
     {
       Id = Guid.NewGuid(),
       EntityId = entityId,
-      Schedule = scheduleJson,
+      Schedule = stamped.ToJson(),
       HandlerKind = handlerKind,
       HandlerConfig = handlerConfig,
       Source = source,
-      // A trigger that can never fire must not sit enabled and invisible to the scheduler.
-      Enabled = nextFireAt is not null,
+      Enabled = true,
       NextFireAt = nextFireAt,
       CreatedAt = now,
       UpdatedAt = now,
@@ -49,13 +55,13 @@ public class TriggerRepository(TietueDbContext db, Toimi.Core.Configuration.Toim
       return null;
     }
 
+    // Validate and resolve BEFORE mutating the tracked row: a validation throw must not leave
+    // half-applied changes for a later SaveChangesAsync in the same scope to sweep up.
     if (scheduleJson is not null)
     {
-      // Same stamping as CreateAsync: recurring schedules that omit a tz get the user's default,
-      // so an update can't silently reintroduce DST drift.
-      scheduleJson = Schedules.WithDefaultTimeZone(scheduleJson, config.UserTimeZone);
-      trigger.Schedule = scheduleJson;
-      trigger.NextFireAt = Schedules.InitialNextFireAt(scheduleJson, now);
+      var (stamped, nextFireAt) = ResolveOrThrow(ParseOrThrow(scheduleJson), now);
+      trigger.Schedule = stamped.ToJson();
+      trigger.NextFireAt = nextFireAt;
     }
 
     if (handlerConfig is not null)
@@ -71,12 +77,12 @@ public class TriggerRepository(TietueDbContext db, Toimi.Core.Configuration.Toim
     // Re-enabling an exhausted trigger must not produce Enabled=true with a null
     // NextFireAt — such a trigger is invisible to the scheduler's due query forever.
     // Recompute from the schedule; a one-shot 'at' in the past resolves to a non-null
-    // but already-elapsed instant (InitialNextFireAt does not compare 'at' to 'now'),
+    // but already-elapsed instant (NextOnOrAfter does not compare 'at' to 'now'),
     // so also require the recomputed fire time to still be in the future before
     // allowing the re-enable; otherwise refuse it and leave NextFireAt null.
     if (trigger.Enabled && trigger.NextFireAt is null)
     {
-      var recomputed = Schedules.InitialNextFireAt(trigger.Schedule, now);
+      var recomputed = Schedule.Parse(trigger.Schedule)?.NextOnOrAfter(now);
       trigger.NextFireAt = recomputed is not null && recomputed > now ? recomputed : null;
       trigger.Enabled = trigger.NextFireAt is not null;
     }
@@ -97,5 +103,27 @@ public class TriggerRepository(TietueDbContext db, Toimi.Core.Configuration.Toim
     db.Triggers.Remove(trigger);
     await db.SaveChangesAsync(ct);
     return true;
+  }
+
+  private static Schedule ParseOrThrow(string scheduleJson)
+  {
+    return Schedule.Parse(scheduleJson) ?? throw new TietueValidationException([InvalidScheduleJsonError]);
+  }
+
+  // Stamp the user's default tz (so the persisted schedule is self-describing and its
+  // wall-clock survives DST) → validate → resolve the first fire. Throwing — not silently
+  // disabling — is the contract: every persisted trigger is born enabled with a real
+  // NextFireAt. "Invalid" (grammar/rrule/sub-daily) and "exhausted" (valid but no future
+  // occurrence) get distinct messages.
+  private (Schedule Schedule, DateTimeOffset NextFireAt) ResolveOrThrow(Schedule schedule, DateTimeOffset now)
+  {
+    var stamped = schedule.WithDefaultTz(config.UserTimeZone);
+    if (!stamped.TryValidate(out var error))
+    {
+      throw new TietueValidationException([error!]);
+    }
+
+    var nextFireAt = stamped.NextOnOrAfter(now) ?? throw new TietueValidationException([NeverFiresError]);
+    return (stamped, nextFireAt);
   }
 }

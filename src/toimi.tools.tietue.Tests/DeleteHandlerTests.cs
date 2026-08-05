@@ -11,6 +11,11 @@ public class DeleteHandlerTests
 {
   private const string Schema = /*lang=json,strict*/ """{"type":"object","properties":{"name":{"type":"string"}}}""";
 
+  private static DeleteHandler Handler()
+  {
+    return new DeleteHandler(new EntityRepository(TestDb.New(), new SchemaValidator()));
+  }
+
   [Fact]
   public async Task Deletes_the_entity()
   {
@@ -39,5 +44,15 @@ public class DeleteHandlerTests
     var result = await handler.HandleAsync(new HandlerContext(e, null, DateTimeOffset.UtcNow));
 
     Assert.Equal("skipped", result.Status);
+  }
+
+  [Theory]
+  [InlineData(null)]
+  [InlineData("anything, even garbage")]
+  public void ValidateConfig_accepts_anything_config_is_never_read(string? config)
+  {
+    // Cast to the interface: ValidateConfig here is the DIM default (DeleteHandler
+    // never overrides it), which is only reachable through INativeHandler.
+    Assert.True(((INativeHandler)Handler()).ValidateConfig(config).IsValid);
   }
 }

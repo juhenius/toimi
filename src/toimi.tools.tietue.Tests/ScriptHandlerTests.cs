@@ -13,6 +13,14 @@ public class ScriptHandlerTests
   private const string Schema = /*lang=json,strict*/
     """{"type":"object","properties":{"status":{"type":"string"},"name":{"type":"string"},"code":{"type":"string"},"allowedHosts":{"type":"array"},"grants":{"type":"array"},"enabled":{"type":"boolean"}}}""";
 
+  private static ScriptHandler Handler()
+  {
+    var entities = new EntityRepository(TestDb.New(), new SchemaValidator());
+    return new ScriptHandler(
+      new FakeSuoritinClient(), new ScriptEffectApplier(entities, new FakeMcpInvoker()), new RunTokenStore(),
+      new ScriptOptions(), new SuoritinOptions());
+  }
+
   private static async Task<(Data.Entity e, FakeSuoritinClient suoritin, FakeMcpInvoker mcp, RunTokenStore tokens, ScriptHandler handler)> SetupAsync(
     Data.TietueDbContext db, string entityJson = /*lang=json,strict*/ """{"name":"Jari","status":"open"}""", bool enabled = true, int timeoutSeconds = 20)
   {
@@ -279,5 +287,34 @@ public class ScriptHandlerTests
 
     await Assert.ThrowsAnyAsync<OperationCanceledException>(
       () => handler.HandleAsync(new HandlerContext(e, /*lang=json,strict*/ """{"source":"x"}""", DateTimeOffset.UtcNow), cts.Token));
+  }
+
+  [Theory]
+  [InlineData(null)]
+  [InlineData("{}")]
+  [InlineData(/*lang=json,strict*/ """{"fromEntity":false}""")]
+  [InlineData(/*lang=json,strict*/ """{"source":""}""")]
+  public void ValidateConfig_rejects_configs_with_nothing_to_execute(string? config)
+  {
+    Assert.False(Handler().ValidateConfig(config).IsValid);
+  }
+
+  [Fact]
+  public void ValidateConfig_rejects_non_array_hosts_and_capabilities()
+  {
+    // StrArray silently coerces wrong shapes to [] — a string-valued allowedHosts becomes
+    // a script with no egress.
+    var result = Handler().ValidateConfig(/*lang=json,strict*/ """{"source":"export default () => ({})","allowedHosts":"api.example.com","capabilities":[1]}""");
+    Assert.False(result.IsValid);
+    Assert.Equal(2, result.Errors.Count);
+  }
+
+  [Theory]
+  [InlineData(/*lang=json,strict*/ """{"fromEntity":true}""")]
+  [InlineData(/*lang=json,strict*/ """{"source":"export default () => ({})"}""")]
+  [InlineData(/*lang=json,strict*/ """{"source":"export default () => ({})","allowedHosts":["api.example.com"],"capabilities":["setField"]}""")]
+  public void ValidateConfig_accepts_runnable_configs(string config)
+  {
+    Assert.True(Handler().ValidateConfig(config).IsValid);
   }
 }

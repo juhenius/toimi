@@ -30,9 +30,10 @@ public class ActivateTool(EntityRepository entities, IAgentRunner runner, Entity
         return "Invalid 'when'. Use ISO 8601 (e.g. 2026-07-01T09:00:00Z).";
       }
 
-      var schedule = new JsonObject { ["at"] = at.ToString("o") }.ToJsonString();
       var config = new JsonObject { ["promptTemplate"] = message }.ToJsonString();
-      var t = await triggers.CreateAsync(id, schedule, "message", config, DateTimeOffset.UtcNow);
+      // OneShotAt is valid by construction and a one-shot always resolves (a past 'at' is
+      // immediately due), so CreateAsync cannot throw here.
+      var t = await triggers.CreateAsync(id, Schedule.OneShotAt(at), "message", config, DateTimeOffset.UtcNow);
       return JsonSerializer.Serialize(new { scheduled = true, triggerId = t.Id.ToString(), at = at.ToString("o") });
     }
 

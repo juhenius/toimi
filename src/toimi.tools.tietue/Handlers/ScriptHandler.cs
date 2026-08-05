@@ -1,5 +1,6 @@
 using System.Text.Json;
 using toimi.tools.tietue.Scripts;
+using toimi.tools.tietue.Validation;
 
 namespace toimi.tools.tietue.Handlers;
 
@@ -164,5 +165,38 @@ public class ScriptHandler(
     return e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Array
       ? [.. v.EnumerateArray().Where(i => i.ValueKind == JsonValueKind.String).Select(i => i.GetString()!)]
       : [];
+  }
+
+  public ValidationResult ValidateConfig(string? configJson)
+  {
+    const string Requirement = "script config requires 'source' as a non-empty string, or 'fromEntity': true to run the job entity's own code.";
+    using var cfg = ConfigValidation.RequireObject(configJson, Requirement, out var failure);
+    if (cfg is null)
+    {
+      return failure!;
+    }
+
+    var root = cfg.RootElement;
+    if (root.TryGetProperty("fromEntity", out var fe) && fe.ValueKind == JsonValueKind.True)
+    {
+      return ValidationResult.Valid(); // the job entity is authoritative; inline fields are ignored
+    }
+
+    var errors = new List<string>();
+    if (string.IsNullOrWhiteSpace(Str(root, "source")))
+    {
+      errors.Add(Requirement);
+    }
+
+    foreach (var name in (string[])["allowedHosts", "capabilities"])
+    {
+      if (root.TryGetProperty(name, out var v)
+        && (v.ValueKind != JsonValueKind.Array || v.EnumerateArray().Any(i => i.ValueKind != JsonValueKind.String)))
+      {
+        errors.Add($"script config '{name}' must be an array of strings.");
+      }
+    }
+
+    return errors.Count == 0 ? ValidationResult.Valid() : ValidationResult.Invalid(errors);
   }
 }

@@ -63,4 +63,30 @@ public class TriggerProvisionerTests
 
     Assert.Empty(await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(e.Id));
   }
+
+  [Fact]
+  public async Task Garbage_due_date_provisions_no_trigger()
+  {
+    using var db = TestDb.New();
+    var provisioner = new TriggerProvisioner(new TriggerRepository(db, TestConfig.Default));
+    var e = Reminder(/*lang=json,strict*/ """{"title":"x","dueAt":"whenever"}""");
+
+    await provisioner.ProvisionAsync(e, DefaultTriggers, DateTimeOffset.UtcNow);
+
+    Assert.Empty(await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(e.Id));
+  }
+
+  [Fact]
+  public async Task Exhausted_recurrence_from_entity_data_is_skipped_not_thrown()
+  {
+    using var db = TestDb.New();
+    var provisioner = new TriggerProvisioner(new TriggerRepository(db, TestConfig.Default));
+    var e = Reminder(/*lang=json,strict*/ """{"title":"Old","dueAt":"2020-01-01T09:00:00Z","rrule":"FREQ=DAILY;COUNT=1"}""");
+
+    // The provision (running inside entity create in prod) must swallow the repository's
+    // rejection: the entity survives, the dead template is skipped.
+    await provisioner.ProvisionAsync(e, DefaultTriggers, new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+
+    Assert.Empty(await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(e.Id));
+  }
 }

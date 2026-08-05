@@ -82,4 +82,28 @@ public class TypeSeederTests
     Assert.Contains("message", schedule.DefaultTriggers);
     Assert.Contains("prompt", schedule.DefaultTriggers);
   }
+
+  [Fact]
+  public async Task Seeded_types_pass_full_default_trigger_validation()
+  {
+    using var db = TestDb.New();
+    var entities = new Entities.EntityRepository(db, new Validation.SchemaValidator());
+    var registry = new Handlers.HandlerRegistry(
+    [
+      new Handlers.NotifyHandler(new FakeNotifier()),
+      new Handlers.MessageHandler(new FakeAgentRunner()),
+      new Handlers.SetFieldHandler(entities),
+      new Handlers.DeleteHandler(entities),
+      new Handlers.ScriptHandler(new FakeSuoritinClient(),
+        new Scripts.ScriptEffectApplier(entities, new FakeMcpInvoker()),
+        new Scripts.RunTokenStore(), new Scripts.ScriptOptions(), new Scripts.SuoritinOptions()),
+    ]);
+    var repo = new TypeRepository(db, registry);
+
+    // Must not throw: reminder's notify, schedule's message, and job's fromEntity script
+    // configs are the reference examples of valid DefaultTriggers.
+    await new TypeSeeder(repo).SeedAsync();
+
+    Assert.Equal(5, (await repo.ListAsync()).Count);
+  }
 }

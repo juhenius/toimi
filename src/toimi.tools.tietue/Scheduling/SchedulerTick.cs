@@ -50,7 +50,7 @@ public class SchedulerTick(TietueDbContext db, OccurrenceRunner runner, ILogger<
       }
 
       trigger.LastFiredAt = occurrence;
-      trigger.NextFireAt = Schedules.NextAfter(trigger.Schedule, occurrence);
+      trigger.NextFireAt = Schedule.Parse(trigger.Schedule)?.NextAfter(occurrence);
       trigger.Enabled = trigger.NextFireAt is not null;
       trigger.UpdatedAt = now;
       await db.SaveChangesAsync(ct);

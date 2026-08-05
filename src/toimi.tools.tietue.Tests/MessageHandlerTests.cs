@@ -57,4 +57,23 @@ public class MessageHandlerTests
     Assert.Equal("error", result.Status);
     Assert.Contains("boom", result.Result);
   }
+
+  [Theory]
+  [InlineData(null)]
+  [InlineData("{}")]
+  [InlineData(/*lang=json,strict*/ """{"promptTemplate":""}""")]
+  [InlineData(/*lang=json,strict*/ """{"promptTempalte":"typo'd key"}""")]
+  public void ValidateConfig_rejects_configs_that_run_an_empty_prompt(string? config)
+  {
+    var result = new MessageHandler(new FakeAgentRunner()).ValidateConfig(config);
+    Assert.False(result.IsValid);
+    Assert.Contains("promptTemplate", result.Errors[0]);
+  }
+
+  [Fact]
+  public void ValidateConfig_accepts_a_prompt_template()
+  {
+    Assert.True(new MessageHandler(new FakeAgentRunner())
+      .ValidateConfig(/*lang=json,strict*/ """{"promptTemplate":"{prompt}"}""").IsValid);
+  }
 }

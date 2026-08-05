@@ -1,5 +1,6 @@
 using System.Text.Json;
 using toimi.tools.tietue.Notifications;
+using toimi.tools.tietue.Validation;
 
 namespace toimi.tools.tietue.Handlers;
 
@@ -34,5 +35,31 @@ public class NotifyHandler(INotifier notifier) : INativeHandler
   private static string? Str(JsonElement e, string name)
   {
     return e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+  }
+
+  public ValidationResult ValidateConfig(string? configJson)
+  {
+    const string Requirement = "notify config requires 'titleTemplate' and/or 'messageTemplate' as a non-empty string — without one, every fire sends an empty notification.";
+    using var cfg = ConfigValidation.RequireObject(configJson, Requirement, out var failure);
+    if (cfg is null)
+    {
+      return failure!;
+    }
+
+    var errors = new List<string>();
+    if (string.IsNullOrEmpty(Str(cfg.RootElement, "titleTemplate")) && string.IsNullOrEmpty(Str(cfg.RootElement, "messageTemplate")))
+    {
+      errors.Add(Requirement);
+    }
+
+    foreach (var name in (string[])["titleTemplate", "messageTemplate", "priority", "tags"])
+    {
+      if (cfg.RootElement.TryGetProperty(name, out var v) && v.ValueKind != JsonValueKind.String)
+      {
+        errors.Add($"notify config '{name}' must be a string.");
+      }
+    }
+
+    return errors.Count == 0 ? ValidationResult.Valid() : ValidationResult.Invalid(errors);
   }
 }

@@ -32,7 +32,7 @@ public class SetTriggerToolTests
   {
     using var db = TestDb.New();
     var e = await SeedEntityAsync(db);
-    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers(), TestConfig.Default);
+    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers());
 
     var result = await tool.SetTrigger(e.Id.ToString(), /*lang=json,strict*/ """{"at":"2026-06-20T09:00:00Z"}""", "notify", /*lang=json,strict*/ """{"titleTemplate":"hi"}""");
 
@@ -45,7 +45,7 @@ public class SetTriggerToolTests
   public async Task Rejects_non_guid_entity_id()
   {
     using var db = TestDb.New();
-    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers(), TestConfig.Default);
+    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers());
 
     var result = await tool.SetTrigger("not-a-guid", /*lang=json,strict*/ """{"at":"2026-06-20T09:00:00Z"}""", "notify");
 
@@ -56,7 +56,7 @@ public class SetTriggerToolTests
   public async Task Rejects_unknown_entity()
   {
     using var db = TestDb.New();
-    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers(), TestConfig.Default);
+    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers());
 
     var result = await tool.SetTrigger(Guid.NewGuid().ToString(), /*lang=json,strict*/ """{"at":"2026-06-20T09:00:00Z"}""", "notify");
 
@@ -69,7 +69,7 @@ public class SetTriggerToolTests
   {
     using var db = TestDb.New();
     var e = await SeedEntityAsync(db);
-    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers(), TestConfig.Default);
+    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers());
 
     var result = await tool.SetTrigger(e.Id.ToString(), /*lang=json,strict*/ """{"at":"2026-06-20T09:00:00Z"}""", "messsage");
 
@@ -83,9 +83,9 @@ public class SetTriggerToolTests
   {
     using var db = TestDb.New();
     var e = await SeedEntityAsync(db);
-    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers(), TestConfig.Default);
+    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers());
 
-    var result = await tool.SetTrigger(e.Id.ToString(), /*lang=json,strict*/ """{"start":"2020-01-01T00:00:00Z","rrule":"FREQ=YEARLY;COUNT=1"}""", "notify");
+    var result = await tool.SetTrigger(e.Id.ToString(), /*lang=json,strict*/ """{"start":"2020-01-01T00:00:00Z","rrule":"FREQ=YEARLY;COUNT=1"}""", "notify", /*lang=json,strict*/ """{"titleTemplate":"hi"}""");
 
     Assert.Contains("does not resolve to a future fire time", result);
     Assert.Empty(await db.Triggers.ToListAsync());
@@ -99,9 +99,9 @@ public class SetTriggerToolTests
   {
     using var db = TestDb.New();
     var e = await SeedEntityAsync(db);
-    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers(), TestConfig.Default);
+    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers());
 
-    var result = await tool.SetTrigger(e.Id.ToString(), schedule, "notify");
+    var result = await tool.SetTrigger(e.Id.ToString(), schedule, "notify", /*lang=json,strict*/ """{"titleTemplate":"hi"}""");
 
     Assert.Contains("not supported in DST timezones", result);
     Assert.Contains("tz:\"UTC\"", result);
@@ -114,12 +114,13 @@ public class SetTriggerToolTests
     // The documented escape hatch: tz "UTC" has no DST transitions, so the rule is safe.
     using var db = TestDb.New();
     var e = await SeedEntityAsync(db);
-    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers(), TestConfig.Default);
+    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers());
 
     var result = await tool.SetTrigger(
       e.Id.ToString(),
       /*lang=json,strict*/ """{"start":"2026-01-01T00:00:00Z","rrule":"FREQ=MINUTELY;INTERVAL=30;BYHOUR=9","tz":"UTC"}""",
-      "notify");
+      "notify",
+      /*lang=json,strict*/ """{"titleTemplate":"hi"}""");
 
     using var doc = JsonDocument.Parse(result);
     Assert.True(doc.RootElement.TryGetProperty("id", out _));
@@ -127,15 +128,29 @@ public class SetTriggerToolTests
   }
 
   [Fact]
+  public async Task Rejects_config_the_handler_cannot_run()
+  {
+    using var db = TestDb.New();
+    var e = await SeedEntityAsync(db);
+    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers());
+
+    // notify with no template: would fire an empty notification forever.
+    var result = await tool.SetTrigger(e.Id.ToString(), /*lang=json,strict*/ """{"at":"2026-06-20T09:00:00Z"}""", "notify", /*lang=json,strict*/ """{"tags":"bell"}""");
+
+    Assert.Contains("titleTemplate", result);
+    Assert.Empty(await db.Triggers.ToListAsync());
+  }
+
+  [Fact]
   public async Task Rejects_malformed_schedule()
   {
     using var db = TestDb.New();
     var e = await SeedEntityAsync(db);
-    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers(), TestConfig.Default);
+    var tool = new SetTriggerTool(new TriggerRepository(db, TestConfig.Default), db, Handlers());
 
-    var result = await tool.SetTrigger(e.Id.ToString(), "not json", "notify");
+    var result = await tool.SetTrigger(e.Id.ToString(), "not json", "notify", /*lang=json,strict*/ """{"titleTemplate":"hi"}""");
 
-    Assert.Contains("does not resolve to a future fire time", result);
+    Assert.Contains("Invalid schedule JSON", result);
     Assert.Empty(await db.Triggers.ToListAsync());
   }
 }

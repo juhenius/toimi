@@ -41,7 +41,7 @@ public class JobEndToEndTests
     var trigger = Assert.Single(await triggers.ListByEntityAsync(e.Id));
     Assert.Equal("script", trigger.HandlerKind);
     Assert.Contains("\"fromEntity\":true", trigger.HandlerConfig);
-    Assert.Contains("2030-01-01T06:00:00Z", trigger.Schedule);
+    Assert.Contains("2030-01-01T06:00:00", trigger.Schedule);
     Assert.Contains("FREQ=DAILY", trigger.Schedule);
     Assert.Equal(new DateTimeOffset(2030, 1, 1, 6, 0, 0, TimeSpan.Zero), trigger.NextFireAt);
 

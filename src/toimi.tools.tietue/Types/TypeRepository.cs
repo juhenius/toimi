@@ -1,11 +1,13 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using toimi.tools.tietue.Data;
+using toimi.tools.tietue.Handlers;
+using toimi.tools.tietue.Provisioning;
 using toimi.tools.tietue.Validation;
 
 namespace toimi.tools.tietue.Types;
 
-public class TypeRepository(TietueDbContext db)
+public class TypeRepository(TietueDbContext db, HandlerRegistry? handlers = null)
 {
   public async Task<TypeDefinition> DefineAsync(string name, string schemaJson, string? behaviorsJson = null, string? defaultTriggersJson = null, CancellationToken ct = default)
   {
@@ -33,13 +35,10 @@ public class TypeRepository(TietueDbContext db)
 
     if (defaultTriggersJson is not null)
     {
-      try
+      var errors = TriggerTemplates.Validate(defaultTriggersJson, handlers);
+      if (errors.Count > 0)
       {
-        using var _ = JsonDocument.Parse(defaultTriggersJson);
-      }
-      catch (JsonException ex)
-      {
-        throw new TietueValidationException([$"Invalid default triggers JSON: {ex.Message}"]);
+        throw new TietueValidationException(errors);
       }
     }
 

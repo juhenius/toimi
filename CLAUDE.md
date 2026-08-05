@@ -41,7 +41,7 @@ Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers),
 - **Model:** `Entity { Id, Type, Data (jsonb, validated against the type's
   JSON Schema), Tags }`; `TypeDefinition { Name, JsonSchema, Behaviors,
   DefaultTriggers }`; `Trigger { EntityId, Schedule (one-shot `{at}` or
-  recurring `{start,rrule,tz}`), HandlerKind+Config, NextFireAt }`;
+  recurring `{start,rrule,tz}` — grammar owned by the `Schedule` value type; writes validate and reject invalid/exhausted schedules), HandlerKind+Config, NextFireAt }`;
   `EntityEvent` (unified occurrence/run/observation log, unique on
   `(entity, occurrence, kind)`).
 - **Declarative behaviors** (passive, per-type): `SemanticIndex` (embed
@@ -196,6 +196,7 @@ tietue's `notify` handler.
   `(entity,occurrence,kind)`); a `complete` event suppresses an occurrence; a
   throwing handler is isolated (recorded as `error`, trigger still advances);
   manual `run_trigger` claims serialize against ticks on the advisory tick lock.
+  Trigger-writing paths validate at write time: TriggerRepository throws on invalid/exhausted schedules, handlers vet their configs via ValidateConfig (set_trigger/update_trigger/define_type); the scheduler and run_trigger fire whatever exists.
 - **Handler cost ladder** — deterministic native (`notify`/`set-field`) →
   sandboxed `script` (whose `llm` grant adds `extract()`, one structured LLM
   completion — the rung below an agent) → `message` (full agent run). The

@@ -1,4 +1,5 @@
 using toimi.tools.tietue.Scheduling;
+using toimi.tools.tietue.Validation;
 using Xunit;
 
 namespace toimi.tools.tietue.Tests;
@@ -95,15 +96,41 @@ public class TriggerRepositoryTests
   }
 
   [Fact]
-  public async Task Create_with_unresolvable_schedule_yields_a_disabled_trigger()
+  public async Task Create_with_unparseable_schedule_throws()
   {
     using var db = TestDb.New();
     var repo = new TriggerRepository(db, TestConfig.Default);
 
-    var t = await repo.CreateAsync(Guid.NewGuid(), /*lang=json,strict*/ """{"at":"soon"}""", "notify", null, Now);
+    var ex = await Assert.ThrowsAsync<TietueValidationException>(
+      () => repo.CreateAsync(Guid.NewGuid(), /*lang=json,strict*/ """{"at":"soon"}""", "notify", null, Now));
 
-    // A trigger that can never fire must not sit enabled and invisible to the scheduler.
-    Assert.False(t.Enabled && t.NextFireAt is null);
-    Assert.False(t.Enabled);
+    Assert.Contains("Invalid schedule JSON", ex.Message);
+    Assert.Empty(db.Triggers);
+  }
+
+  [Fact]
+  public async Task Create_with_exhausted_recurrence_throws_never_fires()
+  {
+    using var db = TestDb.New();
+    var repo = new TriggerRepository(db, TestConfig.Default);
+
+    var ex = await Assert.ThrowsAsync<TietueValidationException>(
+      () => repo.CreateAsync(Guid.NewGuid(), /*lang=json,strict*/ """{"start":"2020-01-01T00:00:00Z","rrule":"FREQ=YEARLY;COUNT=1"}""", "notify", null, Now));
+
+    Assert.Contains("does not resolve to a future fire time", ex.Message);
+  }
+
+  [Fact]
+  public async Task Create_with_garbage_rrule_throws_instead_of_crashing()
+  {
+    // Regression: garbage rrule used to escape as an unhandled Ical.Net exception from
+    // InitialNextFireAt. Whether TryValidate's RecurrencePattern parse or the never-fires
+    // check catches it, the write must fail with a TietueValidationException.
+    using var db = TestDb.New();
+    var repo = new TriggerRepository(db, TestConfig.Default);
+
+    await Assert.ThrowsAsync<TietueValidationException>(
+      () => repo.CreateAsync(Guid.NewGuid(), /*lang=json,strict*/ """{"start":"2026-06-01T09:00:00Z","rrule":"NOT-AN-RRULE"}""", "notify", null, Now));
+    Assert.Empty(db.Triggers);
   }
 }

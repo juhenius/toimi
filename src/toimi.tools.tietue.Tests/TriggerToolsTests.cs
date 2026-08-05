@@ -22,7 +22,7 @@ public class TriggerToolsTests
     var entity = await new EntityRepository(db, new SchemaValidator()).CreateAsync("task", JsonNode.Parse("""{"name":"x"}"""), []);
     var entityId = entity.Id;
 
-    var set = await new SetTriggerTool(repo, db, new HandlerRegistry([new NotifyHandler(new FakeNotifier())]), TestConfig.Default).SetTrigger(entityId.ToString(), /*lang=json,strict*/ """{"at":"2026-06-20T09:00:00Z"}""", "notify", /*lang=json,strict*/ """{"titleTemplate":"hi"}""");
+    var set = await new SetTriggerTool(repo, db, new HandlerRegistry([new NotifyHandler(new FakeNotifier())])).SetTrigger(entityId.ToString(), /*lang=json,strict*/ """{"at":"2026-06-20T09:00:00Z"}""", "notify", /*lang=json,strict*/ """{"titleTemplate":"hi"}""");
     Assert.Contains("\"id\"", set);
 
     var list = await new ListTriggersTool(repo).ListTriggers(entityId.ToString());

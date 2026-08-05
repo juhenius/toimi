@@ -104,7 +104,7 @@ public class ExpiryReconcilerTests
     var e = await repo.CreateAsync("temp", JsonNode.Parse("""{"name":"x","expiresAt":"soon"}"""), []);
 
     var t = await db.Triggers.SingleOrDefaultAsync(x => x.EntityId == e.Id && x.Source == "expiry");
-    Assert.False(t is not null && t.Enabled && t.NextFireAt is null);
+    Assert.Null(t);
   }
 
   [Fact]

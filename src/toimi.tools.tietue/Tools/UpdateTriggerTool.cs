@@ -1,12 +1,14 @@
 using System.ComponentModel;
 using System.Text.Json;
 using ModelContextProtocol.Server;
+using toimi.tools.tietue.Handlers;
 using toimi.tools.tietue.Scheduling;
+using toimi.tools.tietue.Validation;
 
 namespace toimi.tools.tietue.Tools;
 
 [McpServerToolType]
-public class UpdateTriggerTool(TriggerRepository repository)
+public class UpdateTriggerTool(TriggerRepository repository, HandlerRegistry handlers)
 {
   [McpServerTool, Description("Update a trigger's schedule, handler config, and/or enabled flag; recurring schedules without a tz default to the server's user timezone, pass \"tz\":\"UTC\" for fixed-UTC recurrence.")]
   public async Task<string> UpdateTrigger(
@@ -20,9 +22,36 @@ public class UpdateTriggerTool(TriggerRepository repository)
       return "Invalid id. Expected a GUID.";
     }
 
-    var t = await repository.UpdateAsync(triggerId, schedule, handlerConfig, enabled, DateTimeOffset.UtcNow);
-    return t is null
-      ? $"Trigger '{id}' not found."
-      : JsonSerializer.Serialize(new { id = t.Id.ToString(), enabled = t.Enabled, nextFireAt = t.NextFireAt?.ToString("o") });
+    if (handlerConfig is not null)
+    {
+      var existing = await repository.GetAsync(triggerId);
+      if (existing is null)
+      {
+        return $"Trigger '{id}' not found.";
+      }
+
+      // A legacy trigger whose kind no longer resolves can't be config-validated; leave it
+      // to run_trigger's unknown-kind error path rather than blocking edits.
+      if (handlers.Resolve(existing.HandlerKind) is { } handler)
+      {
+        var configCheck = handler.ValidateConfig(handlerConfig);
+        if (!configCheck.IsValid)
+        {
+          return string.Join("; ", configCheck.Errors);
+        }
+      }
+    }
+
+    try
+    {
+      var t = await repository.UpdateAsync(triggerId, schedule, handlerConfig, enabled, DateTimeOffset.UtcNow);
+      return t is null
+        ? $"Trigger '{id}' not found."
+        : JsonSerializer.Serialize(new { id = t.Id.ToString(), enabled = t.Enabled, nextFireAt = t.NextFireAt?.ToString("o") });
+    }
+    catch (TietueValidationException ex)
+    {
+      return string.Join("; ", ex.Errors);
+    }
   }
 }

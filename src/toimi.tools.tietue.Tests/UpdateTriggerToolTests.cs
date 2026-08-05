@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using toimi.tools.tietue.Entities;
+using toimi.tools.tietue.Handlers;
 using toimi.tools.tietue.Scheduling;
 using toimi.tools.tietue.Tools;
 using toimi.tools.tietue.Types;
@@ -21,7 +22,7 @@ public class UpdateTriggerToolTests
     var repo = new EntityRepository(db, new SchemaValidator());
     var e = await repo.CreateAsync("reminder", JsonNode.Parse("""{"title":"Call"}"""), []);
     var triggers = new TriggerRepository(db, TestConfig.Default);
-    var tool = new UpdateTriggerTool(triggers);
+    var tool = new UpdateTriggerTool(triggers, new HandlerRegistry([new NotifyHandler(new FakeNotifier())]));
     return (db, triggers, tool, e.Id);
   }
 
@@ -114,5 +115,68 @@ public class UpdateTriggerToolTests
     var updated = (await triggers.ListByEntityAsync(entityId))[0];
     Assert.True(updated.Enabled);
     Assert.Equal(scheduled, updated.NextFireAt);
+  }
+
+  [Fact]
+  public async Task Subdaily_dst_schedule_is_rejected_not_silently_disabled()
+  {
+    var (db, triggers, tool, entityId) = await SetupAsync();
+    using var _1 = db;
+    var t = await triggers.CreateAsync(entityId, /*lang=json,strict*/ """{"at":"2027-01-01T09:00:00Z"}""", "notify", null, Past);
+    var scheduledFire = t.NextFireAt;
+
+    // set_trigger has always rejected this schedule; update_trigger used to stamp it,
+    // get NextFireAt=null, and persist Enabled=false behind a success-shaped response.
+    var response = await tool.UpdateTrigger(t.Id.ToString(),
+      schedule: /*lang=json,strict*/ """{"start":"2026-01-01T00:00:00Z","rrule":"FREQ=MINUTELY;INTERVAL=30;BYHOUR=9","tz":"Europe/Helsinki"}""");
+
+    Assert.Contains("not supported in DST timezones", response);
+    var updated = (await triggers.ListByEntityAsync(entityId))[0];
+    Assert.True(updated.Enabled);
+    Assert.Equal(scheduledFire, updated.NextFireAt);
+    Assert.Contains("2027-01-01", updated.Schedule);
+  }
+
+  [Fact]
+  public async Task Unparseable_schedule_is_rejected_with_message()
+  {
+    var (db, triggers, tool, entityId) = await SetupAsync();
+    using var _1 = db;
+    var t = await triggers.CreateAsync(entityId, /*lang=json,strict*/ """{"at":"2027-01-01T09:00:00Z"}""", "notify", null, Past);
+
+    var response = await tool.UpdateTrigger(t.Id.ToString(), schedule: "not json");
+
+    Assert.Contains("Invalid schedule JSON", response);
+    var updated = (await triggers.ListByEntityAsync(entityId))[0];
+    Assert.True(updated.Enabled);
+    Assert.Contains("2027-01-01", updated.Schedule);
+  }
+
+  [Fact]
+  public async Task Rejects_config_the_triggers_handler_cannot_run()
+  {
+    var (db, triggers, tool, entityId) = await SetupAsync();
+    using var _1 = db;
+    var t = await triggers.CreateAsync(entityId, /*lang=json,strict*/ """{"at":"2027-01-01T09:00:00Z"}""", "notify",
+      /*lang=json,strict*/ """{"titleTemplate":"keep"}""", Past);
+
+    var response = await tool.UpdateTrigger(t.Id.ToString(), handlerConfig: /*lang=json,strict*/ """{"priority":"high"}""");
+
+    Assert.Contains("titleTemplate", response);
+    Assert.Equal(/*lang=json,strict*/ """{"titleTemplate":"keep"}""", (await triggers.ListByEntityAsync(entityId))[0].HandlerConfig);
+  }
+
+  [Fact]
+  public async Task Exhausted_recurrence_is_rejected()
+  {
+    var (db, triggers, tool, entityId) = await SetupAsync();
+    using var _1 = db;
+    var t = await triggers.CreateAsync(entityId, /*lang=json,strict*/ """{"at":"2027-01-01T09:00:00Z"}""", "notify", null, Past);
+
+    var response = await tool.UpdateTrigger(t.Id.ToString(),
+      schedule: /*lang=json,strict*/ """{"start":"2020-01-01T00:00:00Z","rrule":"FREQ=YEARLY;COUNT=1"}""");
+
+    Assert.Contains("does not resolve to a future fire time", response);
+    Assert.True((await triggers.ListByEntityAsync(entityId))[0].Enabled);
   }
 }

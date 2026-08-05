@@ -1,12 +1,17 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging.Abstractions;
 using toimi.tools.tietue.Data;
 using toimi.tools.tietue.Scheduling;
+using toimi.tools.tietue.Validation;
 
 namespace toimi.tools.tietue.Provisioning;
 
-public class TriggerProvisioner(TriggerRepository triggers)
+public class TriggerProvisioner(TriggerRepository triggers, ILogger<TriggerProvisioner>? logger = null)
 {
+  private readonly ILogger<TriggerProvisioner> _logger = logger ?? NullLogger<TriggerProvisioner>.Instance;
+
   public async Task ProvisionAsync(Entity entity, string? defaultTriggersJson, DateTimeOffset now, CancellationToken ct = default)
   {
     if (string.IsNullOrWhiteSpace(defaultTriggersJson))
@@ -34,7 +39,7 @@ public class TriggerProvisioner(TriggerRepository triggers)
       var schedule = BuildSchedule(template["when"]?.AsObject(), entity.Data);
       if (schedule is null)
       {
-        continue;
+        continue; // no (parseable) atField value on this entity — by design, no trigger
       }
 
       var handler = template["handler"]?.AsObject();
@@ -45,11 +50,21 @@ public class TriggerProvisioner(TriggerRepository triggers)
       }
 
       var config = handler?["config"]?.ToJsonString();
-      await triggers.CreateAsync(entity.Id, schedule, kind, config, now, ct: ct);
+      try
+      {
+        await triggers.CreateAsync(entity.Id, schedule, kind, config, now, ct: ct);
+      }
+      catch (TietueValidationException ex)
+      {
+        // Entity data produced an invalid or already-exhausted schedule (e.g. a spent COUNT
+        // rrule). The entity create must survive; the skip is logged, not silent.
+        _logger.LogWarning("Skipped default '{Kind}' trigger for entity {EntityId} ({Type}): {Errors}",
+          kind, entity.Id, entity.Type, string.Join("; ", ex.Errors));
+      }
     }
   }
 
-  private static string? BuildSchedule(JsonObject? when, JsonDocument data)
+  private static Schedule? BuildSchedule(JsonObject? when, JsonDocument data)
   {
     if (when is null)
     {
@@ -62,27 +77,26 @@ public class TriggerProvisioner(TriggerRepository triggers)
       return null;
     }
 
-    var at = atVal.GetString();
-    var rruleField = when["rruleField"]?.GetValue<string>();
-    var tzField = when["tzField"]?.GetValue<string>();
-
-    var hasRrule = rruleField is not null && data.RootElement.TryGetProperty(rruleField, out var rr)
-      && rr.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(rr.GetString());
-
-    if (hasRrule)
+    if (!DateTimeOffset.TryParse(atVal.GetString(), CultureInfo.InvariantCulture,
+      DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var at))
     {
-      var rrule = data.RootElement.GetProperty(rruleField!).GetString();
-      var tz = tzField is not null && data.RootElement.TryGetProperty(tzField, out var tzv) && tzv.ValueKind == JsonValueKind.String
-        ? tzv.GetString() : null;
-      var obj = new JsonObject { ["start"] = at, ["rrule"] = rrule };
-      if (tz is not null)
-      {
-        obj["tz"] = tz;
-      }
-
-      return obj.ToJsonString();
+      return null; // garbage date in the entity's field — no trigger (was: a disabled zombie row)
     }
 
-    return new JsonObject { ["at"] = at }.ToJsonString();
+    var rruleField = when["rruleField"]?.GetValue<string>();
+    var rrule = rruleField is not null && data.RootElement.TryGetProperty(rruleField, out var rr)
+      && rr.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(rr.GetString())
+        ? rr.GetString()
+        : null;
+    if (rrule is null)
+    {
+      return Schedule.OneShotAt(at);
+    }
+
+    var tzField = when["tzField"]?.GetValue<string>();
+    var tz = tzField is not null && data.RootElement.TryGetProperty(tzField, out var tzv) && tzv.ValueKind == JsonValueKind.String
+      ? tzv.GetString()
+      : null;
+    return Schedule.Recurring(at, rrule, tz);
   }
 }
