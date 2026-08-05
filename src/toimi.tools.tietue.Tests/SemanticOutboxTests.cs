@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
+using toimi.tools.tietue.Behaviors;
 using toimi.tools.tietue.Entities;
 using toimi.tools.tietue.Semantic;
 using toimi.tools.tietue.Types;
@@ -63,7 +64,7 @@ public class SemanticOutboxTests
     await new TypeRepository(db).DefineAsync("memory", Schema, Behaviors);
     var index = new RecordingIndex();
     var outbox = new SemanticOutbox(db, index);
-    var repo = new EntityRepository(db, new SchemaValidator(), outbox);
+    var repo = new EntityRepository(db, new SchemaValidator(), [new SemanticIndexBehavior(outbox)]);
     return (db, index, repo);
   }
 
@@ -117,7 +118,7 @@ public class SemanticOutboxTests
     using var db = TestDb.New();
     await new TypeRepository(db).DefineAsync("plain", Schema); // no behaviors
     var index = new RecordingIndex();
-    var repo = new EntityRepository(db, new SchemaValidator(), new SemanticOutbox(db, index));
+    var repo = new EntityRepository(db, new SchemaValidator(), [new SemanticIndexBehavior(new SemanticOutbox(db, index))]);
 
     await repo.CreateAsync("plain", JsonNode.Parse("""{"name":"n1"}"""), []);
 

@@ -22,7 +22,7 @@ public class SearchToolTests
     await new TypeRepository(db).DefineAsync("note", Schema, Behaviors);
     var idx = new FakeSemanticIndex();
     var dispatcher = new BehaviorDispatcher(db, idx);
-    var repo = new EntityRepository(db, new SchemaValidator(), new SemanticOutbox(db, idx));
+    var repo = new EntityRepository(db, new SchemaValidator(), [new SemanticIndexBehavior(new SemanticOutbox(db, idx))]);
     await repo.CreateAsync("note", JsonNode.Parse("""{"content":"apple pie"}"""), []);
     await repo.CreateAsync("note", JsonNode.Parse("""{"content":"zebra"}"""), []);
 

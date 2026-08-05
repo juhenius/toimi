@@ -3,16 +3,16 @@ using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using toimi.tools.tietue.Behaviors;
 using toimi.tools.tietue.Data;
-using toimi.tools.tietue.Provisioning;
-using toimi.tools.tietue.Semantic;
 using toimi.tools.tietue.Validation;
 
 namespace toimi.tools.tietue.Entities;
 
 public record PagedEntities(IReadOnlyList<Entity> Items, int Page, int Size, int Total);
 
-public class EntityRepository(TietueDbContext db, SchemaValidator validator, SemanticOutbox? outbox = null, TriggerProvisioner? provisioner = null, ExpiryReconciler? expiry = null)
+public class EntityRepository(TietueDbContext db, SchemaValidator validator, IEnumerable<IEntityBehavior>? behaviors = null)
 {
+  private readonly IReadOnlyList<IEntityBehavior> pipeline = [.. behaviors ?? []];
+
   public async Task<Entity> CreateAsync(string type, JsonNode? data, string[] tags, CancellationToken ct = default)
   {
     var typeDef = await db.TypeDefinitions.FirstOrDefaultAsync(t => t.Name == type, ct)
@@ -29,30 +29,37 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Sem
       CreatedAt = now,
       UpdatedAt = now,
     };
-    // Entity, unique-key, default triggers, and expiry trigger must land together: a crash
-    // between the entity save and provisioning would otherwise leave a reminder with no
-    // trigger (never fires) or a half-created entity a retry duplicates. The provisioner's
-    // and reconciler's own SaveChanges enlist in this ambient transaction (they share this
-    // DbContext connection), so they commit or roll back with the entity. InMemory can't
-    // begin a transaction, so guard on the relational provider — the call sequence is identical.
+    var ctx = new BehaviorContext
+    {
+      Entity = entity,
+      Operation = EntityOperation.Create,
+      Behaviors = TypeBehaviors.Parse(typeDef.Behaviors),
+      DefaultTriggersJson = typeDef.DefaultTriggers,
+      Now = now,
+    };
+
+    // Entity, unique-key, and every OnSaving/OnSaved behavior effect (outbox row, default
+    // triggers, expiry trigger) must land together: a crash between the entity save and
+    // OnSaved would otherwise leave a reminder with no trigger (never fires) or a
+    // half-created entity a retry duplicates. Behaviors' own SaveChanges enlist in this
+    // ambient transaction (they share this DbContext connection), so they commit or roll
+    // back with the entity. InMemory can't begin a transaction, so guard on the relational
+    // provider — the call sequence is identical.
     var useTx = db.Database.IsRelational();
     var tx = useTx ? await db.Database.BeginTransactionAsync(ct) : null;
-    IndexOutbox? indexOp = null;
     try
     {
-      await EnforceUniqueOnCreateAsync(entity, typeDef.Behaviors, ct);
+      await EnforceUniqueOnCreateAsync(entity, ctx.Behaviors.UniqueName, ct);
       db.Entities.Add(entity);
-      indexOp = outbox?.Enqueue(entity, typeDef.Behaviors, "upsert");
-      await SaveGuardingUniqueAsync(entity.Type, ct);
-
-      if (provisioner is not null)
+      foreach (var behavior in pipeline)
       {
-        await provisioner.ProvisionAsync(entity, typeDef.DefaultTriggers, entity.CreatedAt, ct);
+        await behavior.OnSavingAsync(ctx, ct);
       }
 
-      if (expiry is not null)
+      await SaveGuardingUniqueAsync(entity.Type, ct);
+      foreach (var behavior in pipeline)
       {
-        await expiry.ReconcileAsync(entity, typeDef.Behaviors, entity.CreatedAt, ct);
+        await behavior.OnSavedAsync(ctx, ct);
       }
 
       if (tx is not null)
@@ -77,15 +84,10 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Sem
       }
     }
 
-    // Drain AFTER the transaction is committed and disposed: the outbox row is already
-    // durable, a Qdrant hiccup must not roll back the entity, and keeping the drain
-    // outside the try means it can never trigger a rollback-after-commit even if
-    // DrainAsync's non-throwing contract ever changes.
-    if (outbox is not null)
-    {
-      await outbox.DrainAsync(indexOp, ct);
-    }
-
+    // OnCommitted runs AFTER the transaction is committed and disposed: the outbox row is
+    // already durable, and a post-commit hiccup (e.g. Qdrant) must not roll back the entity
+    // or trigger a rollback-after-commit.
+    await RunCommittedAsync(ctx, ct);
     return entity;
   }
 
@@ -102,21 +104,20 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Sem
       return null;
     }
 
-    string? behaviorsForExpiry = null;
-    IndexOutbox? indexOp = null;
+    TypeDefinition? typeDef = null;
+    var parsed = TypeBehaviors.None;
     if (data is not null)
     {
-      var typeDef = await GetTypeDefOrThrowAsync(entity.Type, ct);
+      typeDef = await GetTypeDefOrThrowAsync(entity.Type, ct);
+      parsed = TypeBehaviors.Parse(typeDef.Behaviors);
       Validate(typeDef.JsonSchema.RootElement.GetRawText(), data);
       var newData = JsonSerializer.SerializeToDocument(data);
-      await EnforceUniqueOnUpdateAsync(entity, newData, typeDef.Behaviors, ct);
+      await EnforceUniqueOnUpdateAsync(entity, newData, parsed.UniqueName, ct);
       // Mutate only after all pre-checks: a caught validation failure inside a scheduler
       // tick must not leave half-applied tracked state for the tick's later saves to flush.
       // The previous JsonDocument is intentionally NOT disposed — the change tracker's
       // original-values snapshot still references it (see ResetPendingChanges).
       entity.Data = newData;
-      behaviorsForExpiry = typeDef.Behaviors;
-      indexOp = outbox?.Enqueue(entity, typeDef.Behaviors, "upsert");
     }
 
     if (tags is not null)
@@ -125,17 +126,27 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Sem
     }
 
     entity.UpdatedAt = DateTimeOffset.UtcNow;
+    var ctx = new BehaviorContext
+    {
+      Entity = entity,
+      Operation = EntityOperation.Update,
+      Behaviors = parsed,
+      DefaultTriggersJson = typeDef?.DefaultTriggers,
+      Now = entity.UpdatedAt,
+      DataChanged = data is not null,
+    };
+    foreach (var behavior in pipeline)
+    {
+      await behavior.OnSavingAsync(ctx, ct);
+    }
+
     await SaveGuardingUniqueAsync(entity.Type, ct);
-    if (expiry is not null && data is not null)
+    foreach (var behavior in pipeline)
     {
-      await expiry.ReconcileAsync(entity, behaviorsForExpiry, entity.UpdatedAt, ct);
+      await behavior.OnSavedAsync(ctx, ct);
     }
 
-    if (outbox is not null)
-    {
-      await outbox.DrainAsync(indexOp, ct);
-    }
-
+    await RunCommittedAsync(ctx, ct);
     return entity;
   }
 
@@ -150,15 +161,36 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Sem
     var keys = await db.UniqueKeys.Where(k => k.EntityId == id).ToListAsync(ct);
     db.UniqueKeys.RemoveRange(keys);
     var typeDef = await db.TypeDefinitions.AsNoTracking().FirstOrDefaultAsync(t => t.Name == entity.Type, ct);
-    var indexOp = outbox?.Enqueue(entity, typeDef?.Behaviors, "delete");
-    db.Entities.Remove(entity);
-    await db.SaveChangesAsync(ct);
-    if (outbox is not null)
+    var ctx = new BehaviorContext
     {
-      await outbox.DrainAsync(indexOp, ct);
+      Entity = entity,
+      Operation = EntityOperation.Delete,
+      Behaviors = TypeBehaviors.Parse(typeDef?.Behaviors),
+      DefaultTriggersJson = typeDef?.DefaultTriggers,
+      Now = DateTimeOffset.UtcNow,
+    };
+    db.Entities.Remove(entity);
+    foreach (var behavior in pipeline)
+    {
+      await behavior.OnSavingAsync(ctx, ct);
     }
 
+    await db.SaveChangesAsync(ct);
+    foreach (var behavior in pipeline)
+    {
+      await behavior.OnSavedAsync(ctx, ct);
+    }
+
+    await RunCommittedAsync(ctx, ct);
     return true;
+  }
+
+  private async Task RunCommittedAsync(BehaviorContext ctx, CancellationToken ct)
+  {
+    foreach (var behavior in pipeline)
+    {
+      await behavior.OnCommittedAsync(ctx, ct);
+    }
   }
 
   public async Task<PagedEntities> ListAsync(string? type, string? tag, int page, int size, CancellationToken ct = default)
@@ -201,9 +233,8 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Sem
       : v.ValueKind == JsonValueKind.String ? v.GetString() : v.GetRawText();
   }
 
-  private async Task EnforceUniqueOnCreateAsync(Entity entity, string? behaviorsJson, CancellationToken ct)
+  private async Task EnforceUniqueOnCreateAsync(Entity entity, UniqueNameConfig? cfg, CancellationToken ct)
   {
-    var cfg = BehaviorSpec.UniqueNameOf(behaviorsJson);
     if (cfg is null)
     {
       return;
@@ -223,9 +254,8 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, Sem
     db.UniqueKeys.Add(new UniqueKey { Type = entity.Type, Field = cfg.Field, Value = value, EntityId = entity.Id });
   }
 
-  private async Task EnforceUniqueOnUpdateAsync(Entity entity, JsonDocument newData, string? behaviorsJson, CancellationToken ct)
+  private async Task EnforceUniqueOnUpdateAsync(Entity entity, JsonDocument newData, UniqueNameConfig? cfg, CancellationToken ct)
   {
-    var cfg = BehaviorSpec.UniqueNameOf(behaviorsJson);
     if (cfg is null)
     {
       return;

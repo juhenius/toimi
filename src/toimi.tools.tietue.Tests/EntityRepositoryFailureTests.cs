@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
+using toimi.tools.tietue.Behaviors;
 using toimi.tools.tietue.Data;
 using toimi.tools.tietue.Entities;
 using toimi.tools.tietue.Provisioning;
@@ -81,7 +82,7 @@ public class EntityRepositoryFailureTests
     using var __ = throwDb;
     throwDb.ThrowNext = true;
     var provisioner = new TriggerProvisioner(new TriggerRepository(throwDb, TestConfig.Default));
-    var repo = new EntityRepository(db, new SchemaValidator(), provisioner: provisioner);
+    var repo = new EntityRepository(db, new SchemaValidator(), [new TriggerProvisioningBehavior(provisioner)]);
 
     await Assert.ThrowsAnyAsync<Exception>(() =>
       repo.CreateAsync("reminder", JsonNode.Parse("""{"dueAt":"2026-06-01T09:00:00Z"}"""), []));

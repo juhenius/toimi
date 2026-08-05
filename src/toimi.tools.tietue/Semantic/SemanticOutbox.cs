@@ -14,13 +14,8 @@ public class SemanticOutbox(TietueDbContext db, ISemanticIndex index, ILogger<Se
   public const int MaxAttempts = 8;
 
   /// <summary>Adds an outbox row to the current change set. Caller's SaveChanges commits it with the entity.</summary>
-  public IndexOutbox? Enqueue(Entity entity, string? behaviorsJson, string op)
+  public IndexOutbox Enqueue(Entity entity, string op)
   {
-    if (BehaviorSpec.SemanticIndexOf(behaviorsJson) is null)
-    {
-      return null;
-    }
-
     var row = new IndexOutbox
     {
       Id = Guid.NewGuid(),
@@ -97,7 +92,7 @@ public class SemanticOutbox(TietueDbContext db, ISemanticIndex index, ILogger<Se
     }
 
     var typeDef = await db.TypeDefinitions.AsNoTracking().FirstOrDefaultAsync(t => t.Name == row.Type, ct);
-    var cfg = BehaviorSpec.SemanticIndexOf(typeDef?.Behaviors);
+    var cfg = TypeBehaviors.Parse(typeDef?.Behaviors).SemanticIndex;
     if (cfg is null)
     {
       return; // behavior removed since enqueue

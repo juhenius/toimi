@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using toimi.tools.tietue.Behaviors;
 using toimi.tools.tietue.Entities;
 using toimi.tools.tietue.Events;
 using toimi.tools.tietue.Handlers;
@@ -32,7 +33,7 @@ public class JobEndToEndTests
     using var db = TestDb.New();
     await new TypeSeeder(new TypeRepository(db)).SeedAsync();
     var triggers = new TriggerRepository(db, TestConfig.Default);
-    var entities = new EntityRepository(db, new SchemaValidator(), provisioner: new TriggerProvisioner(triggers));
+    var entities = new EntityRepository(db, new SchemaValidator(), [new TriggerProvisioningBehavior(new TriggerProvisioner(triggers))]);
 
     var e = await entities.CreateAsync(ScriptHandler.JobTypeName, JsonNode.Parse(JobJson), []);
 

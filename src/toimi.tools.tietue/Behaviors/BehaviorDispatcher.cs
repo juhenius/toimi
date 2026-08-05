@@ -32,6 +32,6 @@ public class BehaviorDispatcher(TietueDbContext db, ISemanticIndex index)
   private async Task<SemanticIndexConfig?> SemanticConfigAsync(string type, CancellationToken ct)
   {
     var typeDef = await db.TypeDefinitions.FirstOrDefaultAsync(t => t.Name == type, ct);
-    return typeDef is null ? null : BehaviorSpec.SemanticIndexOf(typeDef.Behaviors);
+    return typeDef is null ? null : TypeBehaviors.Parse(typeDef.Behaviors).SemanticIndex;
   }
 }

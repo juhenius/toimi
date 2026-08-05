@@ -11,7 +11,7 @@ public class ExpiryReconciler(TietueDbContext db, TriggerRepository triggers)
 {
   public const string SourceTag = "expiry";
 
-  public async Task ReconcileAsync(Entity entity, string? behaviorsJson, DateTimeOffset now, CancellationToken ct = default)
+  public async Task ReconcileAsync(Entity entity, ExpiryConfig? cfg, DateTimeOffset now, CancellationToken ct = default)
   {
     var existing = await db.Triggers.Where(t => t.EntityId == entity.Id && t.Source == SourceTag).ToListAsync(ct);
     if (existing.Count > 0)
@@ -20,7 +20,6 @@ public class ExpiryReconciler(TietueDbContext db, TriggerRepository triggers)
       await db.SaveChangesAsync(ct);
     }
 
-    var cfg = BehaviorSpec.ExpiryOf(behaviorsJson);
     if (cfg is null)
     {
       return;

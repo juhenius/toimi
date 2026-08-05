@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
+using toimi.tools.tietue.Behaviors;
 using toimi.tools.tietue.Entities;
 using toimi.tools.tietue.Provisioning;
 using toimi.tools.tietue.Scheduling;
@@ -18,7 +19,7 @@ public class ExpiryReconcilerTests
     await new TypeRepository(db).DefineAsync("temp", Schema, behaviors);
     var triggers = new TriggerRepository(db, TestConfig.Default);
     var reconciler = new ExpiryReconciler(db, triggers);
-    return new EntityRepository(db, new SchemaValidator(), expiry: reconciler);
+    return new EntityRepository(db, new SchemaValidator(), [new ExpiryBehavior(reconciler)]);
   }
 
   private const string DeleteExpiry = /*lang=json,strict*/ """[{"behavior":"Expiry","config":{"field":"expiresAt"}}]""";

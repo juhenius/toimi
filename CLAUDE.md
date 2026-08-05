@@ -68,9 +68,11 @@ Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers),
   `set_trigger`/`update_trigger`/`delete_trigger`/`list_triggers`;
   `complete_occurrence`; `activate`; `run_trigger` (fire now, synchronous
   result — for testing jobs/scripts right after authoring them).
-- Extend when: adding a native handler, a declarative behavior, a seeded
-  type, or an MCP verb over entities/triggers. A new *capability* the agent
-  needs is usually a new type + handler/behavior here, NOT a new pod.
+- Extend when: adding a native handler, a declarative behavior (one
+  `IEntityBehavior` class + one DI line in Program.cs — parsing lives in
+  `TypeBehaviors.Parse`), a seeded type, or an MCP verb over
+  entities/triggers. A new *capability* the agent needs is usually a new
+  type + handler/behavior here, NOT a new pod.
 - New tool server only for a genuinely external integration (see koti/verkko).
 - Storage: `tietue` PostgreSQL DB (jsonb) + one Qdrant collection per
   semantically-indexed type. Hosts the `TriggerWorker` scheduler loop and
@@ -180,7 +182,9 @@ tietue's `notify` handler.
 - **Generic entity engine** — instead of one server per data kind, tietue
   stores typed entities (jsonb `Data` + per-type JSON Schema). New kinds of
   data are *types* (a schema + behaviors + default triggers), definable at
-  runtime via `define_type` — no new pod/deploy.
+  runtime via `define_type` — no new pod/deploy. Per-type behaviors run as an
+  `IEntityBehavior` pipeline inside `EntityRepository` (hooks:
+  OnSaving/OnSaved/OnCommitted around the save; create is transactional on Postgres).
 - **Declarative semantic index** — a type's `SemanticIndex` behavior embeds
   configured fields to a per-type Qdrant collection on save; `search` rolls up
   results by entity. One embedding pipeline for all semantically-indexed types.

@@ -16,7 +16,7 @@ public static class SemanticReconciler
   public static async Task<ReconcileResult> ReconcileAsync(TietueDbContext db, ISemanticIndex index, string type, CancellationToken ct)
   {
     var typeDef = await db.TypeDefinitions.AsNoTracking().FirstOrDefaultAsync(t => t.Name == type, ct);
-    if (BehaviorSpec.SemanticIndexOf(typeDef?.Behaviors) is null)
+    if (TypeBehaviors.Parse(typeDef?.Behaviors).SemanticIndex is null)
     {
       throw new InvalidOperationException($"Type '{type}' is not semantically indexed.");
     }

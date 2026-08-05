@@ -40,6 +40,9 @@ builder.Services.AddSingleton<EmbeddingService>();
 builder.Services.AddSingleton<ISemanticIndex, QdrantSemanticIndex>();
 builder.Services.AddScoped<toimi.tools.tietue.Behaviors.BehaviorDispatcher>();
 builder.Services.AddScoped<SemanticOutbox>();
+builder.Services.AddScoped<toimi.tools.tietue.Behaviors.IEntityBehavior, toimi.tools.tietue.Behaviors.SemanticIndexBehavior>();
+builder.Services.AddScoped<toimi.tools.tietue.Behaviors.IEntityBehavior, toimi.tools.tietue.Behaviors.TriggerProvisioningBehavior>();
+builder.Services.AddScoped<toimi.tools.tietue.Behaviors.IEntityBehavior, toimi.tools.tietue.Behaviors.ExpiryBehavior>();
 builder.Services.AddScoped<toimi.tools.tietue.Seed.TypeSeeder>();
 builder.Services.AddScoped<toimi.tools.tietue.Seed.SkillSeeder>();
 
