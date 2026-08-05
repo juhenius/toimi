@@ -18,9 +18,11 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
 
   public override async Task OnConnectedAsync()
   {
+    ToimiAgent? agent = null;
+    var registered = false;
     try
     {
-      var agent = await ToimiAgent.StartAsync(_config, _llmProvider, logger: logger, ct: Context.ConnectionAborted);
+      agent = await ToimiAgent.StartAsync(_config, _llmProvider, logger: logger, ct: Context.ConnectionAborted);
 
       // Check for conversationId query parameter
       var conversationIdParam = Context.GetHttpContext()?.Request.Query["conversationId"].ToString();
@@ -57,11 +59,27 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
       // (empty messages, no id) already reflects this state.
 
       Sessions[Context.ConnectionId] = new ToimiSession(agent, conversationId);
+      registered = true;
 
       await Clients.Caller.SendAsync("Connected", agent.ToolCount);
     }
     catch (Exception ex)
     {
+      // A started-but-unregistered agent would leak its MCP connections: without a
+      // Sessions entry, OnDisconnectedAsync will never dispose it. Best-effort
+      // dispose here; once registered, disconnect owns disposal.
+      if (agent is not null && !registered)
+      {
+        try
+        {
+          await agent.DisposeAsync();
+        }
+        catch
+        {
+          // Disposal is best-effort on the failure path.
+        }
+      }
+
       await Clients.Caller.SendAsync("Error", $"Failed to initialize: {ex.Message}");
       Context.Abort();
       return;
@@ -140,8 +158,8 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
         }
       }
 
-      // SendAsync either throws or terminates with TurnCompleted.
-      var turn = completed!;
+      // SendAsync's contract: it either throws or terminates with TurnCompleted.
+      var turn = completed ?? throw new InvalidOperationException("turn ended without completing");
 
       try
       {

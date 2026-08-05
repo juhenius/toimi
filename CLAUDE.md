@@ -134,9 +134,10 @@ Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers),
   turn, tool-event capture, budget anchoring + compaction, the unified
   tool-call wire JSON via `ToolEventJson`), LLM client factory (with
   `ToolCallNotifier`), MCP tool aggregation (`McpToolAggregator`),
-  conversation persistence (`ToimiDbContext`), context-window management
-  (`ContextManager`), system-prompt assembly + catalog injection
-  (`ToimiClientFactory`).
+  conversation persistence (`ToimiDbContext`), the transcript + context-window
+  management (`ConversationContext`: owns the system-prompt/dynamic-context/
+  summary slots, catalog injection, compaction, and `ContextBudget` anchoring),
+  request-option assembly (`ToimiClientFactory`).
 - Extend when: adding cross-cutting behavior used by multiple agent hosts
   (`toimi.web` and tietue's agent runner) — e.g. a new system-prompt
   enrichment step or a different summarization strategy.
@@ -218,10 +219,12 @@ tietue's `notify` handler.
 - **Conversation persistence** — messages save to PostgreSQL via
   `ToimiDbContext` in core; per-message estimated token usage is tracked for
   context-window decisions.
-- **Context window management** — `ContextManager` in core estimates token
-  count before each LLM call. Near the ~100k limit it summarizes older
-  messages via the LLM and replaces them with a compact summary, preserving
-  system messages and the 10 most recent exchanges.
+- **Context window management** — `ConversationContext` in core owns the
+  transcript as slots (system prompt, refreshable dynamic context, optional
+  compaction summary, exchange window) and estimates token count before each
+  LLM call. Near the ~100k limit it summarizes older messages via the LLM
+  into the summary slot, preserving system messages and the 10 most recent
+  exchanges.
 - **Tool call visualization** — `ToolCallNotifier` (a `DelegatingChatClient`
   in core) captures function-call/result events into a queue; `ToimiHub`
   drains the queue during streaming and sends SignalR events; the React UI

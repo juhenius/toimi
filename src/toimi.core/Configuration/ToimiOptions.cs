@@ -20,7 +20,7 @@ public class ToimiConfiguration
   /// <summary>Hard wall-clock cap for a headless agent run (MCP connect + LLM turns).</summary>
   public int AgentRunTimeoutSeconds { get; set; } = 300;
 
-  /// <summary>Context-window budget used by ContextManager before summarizing older messages.</summary>
+  /// <summary>Context-window budget used by ConversationContext compaction before summarizing older messages.</summary>
   public int MaxContextTokens { get; set; } = 100_000;
 
   /// <summary>IANA tz stamped onto recurring triggers that omit their own tz, so wall-clock rules survive DST.</summary>

@@ -13,13 +13,13 @@ public class ContextBudget
   private int? _anchorPromptTokens;
   private int _charsAtAnchor;
 
-  public void RecordUsage(int promptTokens, List<ChatMessage> messages)
+  public void RecordUsage(int promptTokens, IReadOnlyList<ChatMessage> messages)
   {
     _anchorPromptTokens = promptTokens;
     _charsAtAnchor = TotalChars(messages);
   }
 
-  public int Estimate(List<ChatMessage> messages)
+  public int Estimate(IReadOnlyList<ChatMessage> messages)
   {
     var chars = TotalChars(messages);
     if (_anchorPromptTokens is null)
@@ -38,7 +38,7 @@ public class ContextBudget
     _charsAtAnchor = 0;
   }
 
-  public static int TotalChars(List<ChatMessage> messages)
+  public static int TotalChars(IReadOnlyList<ChatMessage> messages)
   {
     return messages.Sum(MessageChars);
   }

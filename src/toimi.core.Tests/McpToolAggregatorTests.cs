@@ -8,7 +8,7 @@ public class McpToolAggregatorTests
   [Fact]
   public async Task CallToolAsync_returns_null_for_unknown_tool_instead_of_throwing()
   {
-    // ToimiHub/AgentRunner feed this straight into CreateInitialMessages: null
+    // ToimiHub/AgentRunner feed this straight into ConversationContext's ctor: null
     // must mean "degrade gracefully", never an exception that aborts the session.
     var aggregator = new McpToolAggregator();
 

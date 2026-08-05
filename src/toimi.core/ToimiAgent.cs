@@ -21,26 +21,24 @@ public sealed class ToimiAgent : IAsyncDisposable
   private readonly IChatClient _client;
   private readonly ToolCallNotifier _notifier;
   private readonly ChatOptions _options;
-  private readonly List<ChatMessage> _messages;
-  private readonly ContextBudget _budget;
-  private bool _turnInProgress;
+  private readonly ConversationContext _context;
+  private int _turnState; // 0 = idle, 1 = turn in progress (CAS-guarded)
 
   public int ToolCount { get; }
   public string? SkillSummary { get; }
   public string? TypeCatalog { get; }
-  public IReadOnlyList<ChatMessage> Messages => _messages;
+  public IReadOnlyList<ChatMessage> Messages => _context.ToChatMessages();
 
   private ToimiAgent(
     ToimiConfiguration config, McpToolAggregator aggregator, LlmSession llm, ChatOptions options,
-    List<ChatMessage> messages, string? skillSummary, string? typeCatalog, ContextBudget budget, int toolCount)
+    ConversationContext context, string? skillSummary, string? typeCatalog, int toolCount)
   {
     _config = config;
     _aggregator = aggregator;
     _client = llm.Client;
     _notifier = llm.Notifier;
     _options = options;
-    _messages = messages;
-    _budget = budget;
+    _context = context;
     SkillSummary = skillSummary;
     TypeCatalog = typeCatalog;
     ToolCount = toolCount;
@@ -65,8 +63,8 @@ public sealed class ToimiAgent : IAsyncDisposable
       var typeCatalog = await aggregator.CallToolAsync("list_types", ct: ct);
       var llm = llmProvider.Create();
       var options = ToimiClientFactory.CreateRequestOptions(tools);
-      var messages = ToimiClientFactory.CreateInitialMessages(skillSummary, typeCatalog);
-      return new ToimiAgent(config, aggregator, llm, options, messages, skillSummary, typeCatalog, budget ?? new ContextBudget(), tools.Count);
+      var context = new ConversationContext(skillSummary, typeCatalog, budget ?? new ContextBudget());
+      return new ToimiAgent(config, aggregator, llm, options, context, skillSummary, typeCatalog, tools.Count);
     }
     catch
     {
@@ -81,7 +79,7 @@ public sealed class ToimiAgent : IAsyncDisposable
   /// </summary>
   public void AppendMessage(ChatRole role, string text)
   {
-    _messages.Add(new(role, text));
+    _context.Append(role, text);
   }
 
   /// <summary>
@@ -125,30 +123,29 @@ public sealed class ToimiAgent : IAsyncDisposable
   private async IAsyncEnumerable<TurnUpdate> SendAsyncCore(string userText, [EnumeratorCancellation] CancellationToken ct = default)
   {
     // Belt-and-braces against two DIFFERENT SendAsync calls being enumerated
-    // concurrently on the same agent — SingleUseTurn only guards re-enumeration of
-    // one call's own sequence.
-    if (_turnInProgress)
+    // concurrently on the same agent — SingleUseTurn only guards re-enumeration
+    // of one call's own sequence. CAS instead of a plain bool so two racing
+    // enumerations cannot both slip past the check.
+    if (Interlocked.CompareExchange(ref _turnState, 1, 0) != 0)
     {
       throw new InvalidOperationException("A turn is already in progress; SendAsync must be enumerated exactly once.");
     }
 
-    _turnInProgress = true;
     try
     {
-      _messages.Add(new(ChatRole.User, userText));
+      _context.AppendUser(userText);
+      _context.RefreshDynamicContext();
 
-      ToimiClientFactory.RefreshDynamicContext(_messages);
-
-      // A summarization failure degrades gracefully inside CompactIfNeeded; anything
-      // it does throw propagates to the host with the transcript unchanged past the
-      // user message.
-      await ContextManager.CompactIfNeeded(_messages, _client, _budget, _config.MaxContextTokens, ct);
+      // A summarization failure degrades gracefully inside CompactIfNeededAsync;
+      // anything it does throw propagates to the host with the transcript
+      // unchanged past the user message.
+      await _context.CompactIfNeededAsync(_client, _config.MaxContextTokens, ct);
 
       var fullResponse = new StringBuilder();
       var toolEvents = new List<object>();
       UsageDetails? usage = null;
 
-      await foreach (var update in _client.GetStreamingResponseAsync(_messages, _options, ct))
+      await foreach (var update in _client.GetStreamingResponseAsync(_context.ToChatMessages(), _options, ct))
       {
         foreach (var toolUpdate in DrainToolEvents(toolEvents))
         {
@@ -178,19 +175,14 @@ public sealed class ToimiAgent : IAsyncDisposable
 
       var responseText = fullResponse.ToString();
 
-      // Anchor the budget to the real prompt-token count of the messages AS SENT.
-      // The assistant response (appended below) then counts into the chars-delta,
-      // keeping the estimate conservative rather than undercounting by one response.
-      if (usage?.InputTokenCount is not null)
-      {
-        _budget.RecordUsage((int)usage.InputTokenCount.Value, _messages);
-      }
-
-      _messages.Add(new(ChatRole.Assistant, responseText));
+      // AppendAssistant anchors the budget to the prompt tokens of the transcript
+      // AS SENT before appending the response — the ordering the old code
+      // enforced by comment now lives inside ConversationContext.
+      _context.AppendAssistant(responseText, (int?)usage?.InputTokenCount);
 
       // Prefer real usage from the final streaming update; fall back to the same
       // rough estimates the web host has always persisted.
-      var promptTokens = (int?)usage?.InputTokenCount ?? (ContextBudget.TotalChars(_messages) / 4);
+      var promptTokens = (int?)usage?.InputTokenCount ?? (ContextBudget.TotalChars(_context.ToChatMessages()) / 4);
       var completionTokens = (int?)usage?.OutputTokenCount ?? (responseText.Length / 4);
       var totalTokens = (int?)usage?.TotalTokenCount ?? (promptTokens + completionTokens);
 
@@ -198,7 +190,7 @@ public sealed class ToimiAgent : IAsyncDisposable
     }
     finally
     {
-      _turnInProgress = false;
+      Volatile.Write(ref _turnState, 0);
     }
   }
 
@@ -214,8 +206,8 @@ public sealed class ToimiAgent : IAsyncDisposable
       }
     }
 
-    // SendAsync either throws or terminates with TurnCompleted.
-    return completed!;
+    // SendAsync's contract: it either throws or terminates with TurnCompleted.
+    return completed ?? throw new InvalidOperationException("turn ended without completing");
   }
 
   /// <summary>
@@ -225,18 +217,13 @@ public sealed class ToimiAgent : IAsyncDisposable
   /// </summary>
   public void DiscardLastAssistantMessage()
   {
-    if (_messages.Count > 0 && _messages[^1].Role == ChatRole.Assistant)
-    {
-      _messages.RemoveAt(_messages.Count - 1);
-    }
+    _context.DiscardLastAssistantMessage();
   }
 
   /// <summary>Starts a fresh conversation: rebuilds the initial messages from the cached catalogs and clears the budget anchor.</summary>
   public void Reset()
   {
-    _messages.Clear();
-    _messages.AddRange(ToimiClientFactory.CreateInitialMessages(SkillSummary, TypeCatalog));
-    _budget.Reset();
+    _context.Reset();
   }
 
   public ValueTask DisposeAsync()
