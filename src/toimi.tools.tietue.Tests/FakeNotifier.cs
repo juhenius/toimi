@@ -1,4 +1,4 @@
-using toimi.tools.tietue.Notifications;
+using Toimi.Notifications;
 
 namespace toimi.tools.tietue.Tests;
 

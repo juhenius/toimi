@@ -2,13 +2,13 @@ using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ModelContextProtocol.Server;
-using toimi.tools.tietue.Behaviors;
+using toimi.tools.tietue.Semantic;
 using toimi.tools.tietue.Validation;
 
 namespace toimi.tools.tietue.Tools;
 
 [McpServerToolType]
-public class SearchEntitiesTool(BehaviorDispatcher dispatcher)
+public class SearchEntitiesTool(SemanticSearch search)
 {
   [McpServerTool, Description("Semantic search over entities of a type that has a SemanticIndex behavior. Returns the best-matching entities ranked by similarity. The type must be semantically indexed.")]
   public async Task<string> Search(
@@ -19,7 +19,7 @@ public class SearchEntitiesTool(BehaviorDispatcher dispatcher)
     limit = Math.Clamp(limit, 1, 100);
     try
     {
-      var results = await dispatcher.SearchAsync(type, query, limit);
+      var results = await search.SearchAsync(type, query, limit);
       var items = results.Select(r => new JsonObject
       {
         ["id"] = r.Entity.Id.ToString(),

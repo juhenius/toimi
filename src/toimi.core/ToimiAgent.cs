@@ -62,7 +62,7 @@ public sealed class ToimiAgent : IAsyncDisposable
       var skillSummary = await aggregator.CallToolAsync("list_skills", ct: ct);
       var typeCatalog = await aggregator.CallToolAsync("list_types", ct: ct);
       var llm = llmProvider.Create();
-      var options = ToimiClientFactory.CreateRequestOptions(tools);
+      var options = new ChatOptions { Tools = [.. tools] };
       var context = new ConversationContext(skillSummary, typeCatalog, budget ?? new ContextBudget());
       return new ToimiAgent(config, aggregator, llm, options, context, skillSummary, typeCatalog, tools.Count);
     }

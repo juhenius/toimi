@@ -20,6 +20,9 @@ public class HostingBootstrapTests
   private static WebApplicationBuilder Builder(params (string Key, string Value)[] settings)
   {
     var builder = WebApplication.CreateBuilder();
+    // Hermetic: drop the default sources (env vars, appsettings) so a developer's
+    // real environment can neither satisfy nor break the missing-config assertions.
+    builder.Configuration.Sources.Clear();
     builder.Configuration.AddInMemoryCollection(settings.ToDictionary(s => s.Key, s => (string?)s.Value));
     return builder;
   }

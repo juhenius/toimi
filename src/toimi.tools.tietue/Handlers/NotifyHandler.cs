@@ -1,5 +1,5 @@
 using System.Text.Json;
-using toimi.tools.tietue.Notifications;
+using Toimi.Notifications;
 using toimi.tools.tietue.Validation;
 
 namespace toimi.tools.tietue.Handlers;

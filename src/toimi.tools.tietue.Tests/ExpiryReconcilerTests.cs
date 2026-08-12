@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using toimi.tools.tietue.Behaviors;
 using toimi.tools.tietue.Entities;
 using toimi.tools.tietue.Provisioning;
@@ -117,5 +118,57 @@ public class ExpiryReconcilerTests
     var t = await db.Triggers.SingleAsync(x => x.EntityId == e.Id && x.Source == "expiry");
     Assert.True(t.Enabled);
     Assert.Equal(new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero), t.NextFireAt);
+  }
+
+  private sealed class CapturingLogger : ILogger<ExpiryReconciler>
+  {
+    public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull
+    {
+      return null;
+    }
+
+    public bool IsEnabled(LogLevel logLevel)
+    {
+      return true;
+    }
+
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+    {
+      Entries.Add((logLevel, formatter(state, exception)));
+    }
+  }
+
+  private static async Task<(EntityRepository repo, CapturingLogger log)> LoggedSetupAsync(Data.TietueDbContext db)
+  {
+    await new TypeRepository(db).DefineAsync("temp", Schema, DeleteExpiry);
+    var log = new CapturingLogger();
+    var reconciler = new ExpiryReconciler(db, new TriggerRepository(db, TestConfig.Default), log);
+    return (new EntityRepository(db, new SchemaValidator(), [new ExpiryBehavior(reconciler)]), log);
+  }
+
+  [Fact]
+  public async Task Garbage_expiry_date_logs_a_warning()
+  {
+    using var db = TestDb.New();
+    var (repo, log) = await LoggedSetupAsync(db);
+
+    await repo.CreateAsync("temp", JsonNode.Parse("""{"name":"x","expiresAt":"soon"}"""), []);
+
+    var (Level, Message) = Assert.Single(log.Entries);
+    Assert.Equal(LogLevel.Warning, Level);
+    Assert.Contains("expiresAt", Message);
+  }
+
+  [Fact]
+  public async Task Absent_expiry_field_stays_silent()
+  {
+    using var db = TestDb.New();
+    var (repo, log) = await LoggedSetupAsync(db);
+
+    await repo.CreateAsync("temp", JsonNode.Parse("""{"name":"x"}"""), []);
+
+    Assert.Empty(log.Entries);
   }
 }

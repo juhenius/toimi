@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
@@ -39,14 +40,14 @@ public class RunTriggerTool(TietueDbContext db, OccurrenceRunner runner, ITickLo
     var occurrence = DateTimeOffset.UtcNow;
     var outcome = await runner.RunAsync(trigger, entity, occurrence, occurrence, claimLock: tickLock);
 
-#pragma warning disable IDE0072
     return outcome.State switch
     {
       OccurrenceState.Busy => /*lang=json,strict*/ """{"status":"busy","error":"a scheduler tick holds the run lock; try again shortly"}""",
       OccurrenceState.InProgress or OccurrenceState.AlreadyHandled => "Could not claim a run for this occurrence; try again.",
       OccurrenceState.UnknownKind => $"No handler registered for kind '{trigger.HandlerKind}'. Recorded an error event for this occurrence.",
-      _ => JsonSerializer.Serialize(new { status = outcome.Status, result = outcome.ResultJson }),
+      OccurrenceState.Ran or OccurrenceState.Errored or OccurrenceState.EntityDeleted =>
+        JsonSerializer.Serialize(new { status = outcome.Status, result = outcome.ResultJson }),
+      _ => throw new UnreachableException($"unhandled OccurrenceState {outcome.State}"),
     };
-#pragma warning restore IDE0072
   }
 }

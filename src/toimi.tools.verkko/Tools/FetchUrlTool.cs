@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using toimi.tools.verkko.Fetcher;
+using Toimi.Core.Net;
 using Toimi.Core.Tools;
 
 namespace toimi.tools.verkko.Tools;
@@ -19,7 +20,7 @@ public class FetchUrlTool(WebFetcher fetcher, FetchCache cache)
       return "Invalid URL. Must be an absolute URL starting with http:// or https://";
     }
 
-    if (UrlGuard.IsBlockedHost(uri.DnsSafeHost))
+    if (PrivateAddress.IsBlockedHost(uri.DnsSafeHost))
     {
       return $"Blocked URL: '{uri.DnsSafeHost}' is a private or internal host.";
     }

@@ -1,9 +1,10 @@
+using Microsoft.Extensions.AI;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
 
 namespace toimi.tools.tietue.Semantic;
 
-public class QdrantSemanticIndex(QdrantClient qdrant, EmbeddingService embeddings) : ISemanticIndex
+public class QdrantSemanticIndex(QdrantClient qdrant, IEmbeddingGenerator<string, Embedding<float>> embeddings) : ISemanticIndex
 {
   private const uint VectorSize = 1536;
 
@@ -22,7 +23,7 @@ public class QdrantSemanticIndex(QdrantClient qdrant, EmbeddingService embedding
 
   public async Task IndexAsync(string collection, Guid entityId, string text, CancellationToken ct = default)
   {
-    var embedding = await embeddings.GenerateEmbeddingAsync(text);
+    var embedding = (await embeddings.GenerateVectorAsync(text, cancellationToken: ct)).ToArray();
     var point = new PointStruct { Id = entityId, Vectors = embedding };
     point.Payload["entity_id"] = entityId.ToString();
     await qdrant.UpsertAsync(collection, [point], cancellationToken: ct);
@@ -40,7 +41,7 @@ public class QdrantSemanticIndex(QdrantClient qdrant, EmbeddingService embedding
       return [];
     }
 
-    var embedding = await embeddings.GenerateEmbeddingAsync(query);
+    var embedding = (await embeddings.GenerateVectorAsync(query, cancellationToken: ct)).ToArray();
     var results = await qdrant.SearchAsync(collection, embedding, limit: (ulong)limit, cancellationToken: ct);
 
     // Roll up by entity id (best score wins) — one point per entity today, but keeps the contract stable for future chunking.

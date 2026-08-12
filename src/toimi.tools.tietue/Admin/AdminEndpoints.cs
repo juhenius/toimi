@@ -26,7 +26,7 @@ public static class AdminEndpoints
 
   public static void MapAdminEndpoints(this IEndpointRouteBuilder app)
   {
-    var admin = app.MapAdmin();
+    var admin = app.MapGroup("/admin");
 
     admin.MapGet("/summary", async (TietueDbContext db, string? q, int limit = 0) =>
     {

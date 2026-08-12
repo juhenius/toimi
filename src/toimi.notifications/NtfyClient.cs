@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace Toimi.Notifications;
 
-public class NtfyClient(NtfyOptions options, HttpClient? httpClient = null)
+public class NtfyClient(NtfyOptions options, HttpClient? httpClient = null) : INotifier
 {
   private static readonly HttpClient DefaultHttp = new() { Timeout = TimeSpan.FromSeconds(10) };
   private readonly HttpClient _http = httpClient ?? DefaultHttp;

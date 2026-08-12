@@ -1,13 +1,18 @@
 using Microsoft.EntityFrameworkCore;
+using toimi.tools.tietue.Behaviors;
 using toimi.tools.tietue.Data;
-using toimi.tools.tietue.Semantic;
 using toimi.tools.tietue.Validation;
 
-namespace toimi.tools.tietue.Behaviors;
+namespace toimi.tools.tietue.Semantic;
 
 public record ScoredEntity(Entity Entity, float Score);
 
-public class BehaviorDispatcher(TietueDbContext db, ISemanticIndex index)
+/// <summary>
+/// Semantic entity search: verifies the type carries a SemanticIndex behavior,
+/// queries the vector index, joins the scored ids back to their entities, and
+/// returns them ranked by score.
+/// </summary>
+public class SemanticSearch(TietueDbContext db, ISemanticIndex index)
 {
   public async Task<IReadOnlyList<ScoredEntity>> SearchAsync(string type, string query, int limit, CancellationToken ct = default)
   {

@@ -28,11 +28,12 @@ var embeddingModel = builder.Configuration["OpenAI:EmbeddingModel"] ?? "text-emb
 var openAiClient = new OpenAIClient(openAiApiKey);
 var embeddingClient = openAiClient.GetEmbeddingClient(embeddingModel);
 builder.Services.AddSingleton(embeddingClient.AsIEmbeddingGenerator());
-builder.Services.AddSingleton<EmbeddingService>();
 
 builder.Services.AddSingleton<ISemanticIndex, QdrantSemanticIndex>();
-builder.Services.AddScoped<toimi.tools.tietue.Behaviors.BehaviorDispatcher>();
+builder.Services.AddScoped<SemanticSearch>();
 builder.Services.AddScoped<SemanticOutbox>();
+
+// Registration order = pipeline order: EntityRepository runs these IEntityBehaviors in the order registered.
 builder.Services.AddScoped<toimi.tools.tietue.Behaviors.IEntityBehavior, toimi.tools.tietue.Behaviors.SemanticIndexBehavior>();
 builder.Services.AddScoped<toimi.tools.tietue.Behaviors.IEntityBehavior, toimi.tools.tietue.Behaviors.TriggerProvisioningBehavior>();
 builder.Services.AddScoped<toimi.tools.tietue.Behaviors.IEntityBehavior, toimi.tools.tietue.Behaviors.ExpiryBehavior>();
@@ -40,8 +41,7 @@ builder.Services.AddScoped<toimi.tools.tietue.Seed.TypeSeeder>();
 builder.Services.AddScoped<toimi.tools.tietue.Seed.SkillSeeder>();
 
 var ntfyOptions = builder.Configuration.GetSection("Ntfy").Get<Toimi.Notifications.NtfyOptions>() ?? new Toimi.Notifications.NtfyOptions();
-builder.Services.AddSingleton(new Toimi.Notifications.NtfyClient(ntfyOptions));
-builder.Services.AddSingleton<toimi.tools.tietue.Notifications.INotifier, toimi.tools.tietue.Notifications.NtfyNotifier>();
+builder.Services.AddSingleton<Toimi.Notifications.INotifier>(new Toimi.Notifications.NtfyClient(ntfyOptions));
 
 builder.Services.AddScoped<toimi.tools.tietue.Handlers.INativeHandler, toimi.tools.tietue.Handlers.NotifyHandler>();
 builder.Services.AddScoped<toimi.tools.tietue.Handlers.INativeHandler, toimi.tools.tietue.Handlers.SetFieldHandler>();

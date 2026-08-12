@@ -1,26 +1,16 @@
 using System.Net;
 using System.Net.Sockets;
+using Toimi.Core.Net;
 
 namespace toimi.tools.verkko.Fetcher;
 
 /// <summary>
-/// SSRF guard for outbound fetches: rejects hosts that are loopback, private,
-/// link-local, CGNAT, or otherwise not externally routable. The IP-range logic
-/// mirrors ruutu's ScribanRenderer.SafeUrl checks, adapted for the fetcher
-/// (http is allowed here; scheme policy lives in FetchUrlTool).
+/// SSRF guard for outbound fetches. The private/non-routable address policy is
+/// the shared Toimi.Core.Net.PrivateAddress; this class applies it at connect
+/// time. Scheme policy lives in FetchUrlTool (http is allowed here).
 /// </summary>
 public static class UrlGuard
 {
-  public static bool IsBlockedHost(string host)
-  {
-    return Toimi.Core.Net.PrivateAddress.IsBlockedHost(host);
-  }
-
-  public static bool IsPrivate(IPAddress ip)
-  {
-    return Toimi.Core.Net.PrivateAddress.IsPrivate(ip);
-  }
-
   /// <summary>
   /// SocketsHttpHandler.ConnectCallback that resolves the target host and refuses
   /// to connect to private/internal addresses. Runs for every connection the
@@ -34,7 +24,7 @@ public static class UrlGuard
       ? [literal]
       : await Dns.GetHostAddressesAsync(host, ct);
 
-    var routable = addresses.Where(ip => !IsPrivate(ip)).ToArray();
+    var routable = addresses.Where(ip => !PrivateAddress.IsPrivate(ip)).ToArray();
     if (routable.Length == 0)
     {
       throw new HttpRequestException($"Blocked: '{host}' resolves to a private or internal address.");

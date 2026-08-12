@@ -21,12 +21,12 @@ public class SearchToolTests
     using var db = TestDb.New();
     await new TypeRepository(db).DefineAsync("note", Schema, Behaviors);
     var idx = new FakeSemanticIndex();
-    var dispatcher = new BehaviorDispatcher(db, idx);
+    var search = new SemanticSearch(db, idx);
     var repo = new EntityRepository(db, new SchemaValidator(), [new SemanticIndexBehavior(new SemanticOutbox(db, idx))]);
     await repo.CreateAsync("note", JsonNode.Parse("""{"content":"apple pie"}"""), []);
     await repo.CreateAsync("note", JsonNode.Parse("""{"content":"zebra"}"""), []);
 
-    var json = await new SearchEntitiesTool(dispatcher).Search("note", "apple", 10);
+    var json = await new SearchEntitiesTool(search).Search("note", "apple", 10);
 
     using var doc = JsonDocument.Parse(json);
     var items = doc.RootElement.GetProperty("results");
@@ -39,9 +39,9 @@ public class SearchToolTests
   {
     using var db = TestDb.New();
     await new TypeRepository(db).DefineAsync("plain", Schema);
-    var dispatcher = new BehaviorDispatcher(db, new FakeSemanticIndex());
+    var search = new SemanticSearch(db, new FakeSemanticIndex());
 
-    var result = await new SearchEntitiesTool(dispatcher).Search("plain", "x", 10);
+    var result = await new SearchEntitiesTool(search).Search("plain", "x", 10);
 
     Assert.Contains("not semantically indexed", result);
   }

@@ -141,7 +141,7 @@ Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers),
   conversation persistence (`ToimiDbContext`), the transcript + context-window
   management (`ConversationContext`: owns the system-prompt/dynamic-context/
   summary slots, catalog injection, compaction, and `ContextBudget` anchoring),
-  request-option assembly (`ToimiClientFactory`), shared tool-server bootstrap
+  shared tool-server bootstrap
   (`Hosting/`: `AddToimiToolServer`, `RequireConfig`/`RequireConnectionString`/
   `RequireValue`, `AddToimiDatabase` + `MigrateAndSeedAsync` with the
   `IsRelational` boot guard), and the never-throw MCP tool guard
@@ -151,8 +151,8 @@ Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers),
   enrichment step or a different summarization strategy.
 - NEVER tool-specific code — tool logic belongs in a `toimi.tools.<x>` project.
 
-`toimi.notifications` — `ntfy` client library, used by `verkko` and by
-tietue's `notify` handler.
+`toimi.notifications` — `ntfy` client library (`NtfyClient` + the `INotifier`
+seam it implements), used by `verkko` and by tietue's `notify` handler.
 
 ## Configuration model
 

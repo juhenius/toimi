@@ -116,4 +116,19 @@ public class ToolGuardTests
 
     Assert.Equal("Error: nope", result);
   }
+
+  [Fact]
+  public async Task A_throwing_translate_delegate_still_logs_the_original_exception()
+  {
+    var logger = new CapturingLogger();
+
+    _ = await ToolGuard.RunAsync(
+      () => throw new InvalidOperationException("nope"),
+      translate: _ => throw new NotSupportedException("translate blew up"),
+      logger: logger);
+
+    Assert.Equal(2, logger.Entries.Count);
+    Assert.IsType<InvalidOperationException>(logger.Entries[0].Exception);
+    Assert.IsType<NotSupportedException>(logger.Entries[1].Exception);
+  }
 }

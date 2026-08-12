@@ -11,38 +11,44 @@ namespace toimi.tools.ruutu.Tools;
 public class TemplateTools(TemplateRepository templates, DbTemplateSource source)
 {
   [McpServerTool, Description("List all available templates with their schemas. Read this at session start to know what shapes you can push to a display without writing HTML.")]
-  public async Task<string> DisplayListTemplates(CancellationToken ct = default)
+  public Task<string> DisplayListTemplates(CancellationToken ct = default)
   {
-    var list = await templates.ListAsync(ct);
-    var view = list.Select(t => new
+    return ToolGuard.RunAsync(async () =>
     {
-      t.Name,
-      t.Description,
-      schema = JsonDocument.Parse(t.SchemaJson).RootElement,
-      has_modern = !string.IsNullOrEmpty(t.ModernHtml),
-      has_legacy = !string.IsNullOrEmpty(t.LegacyHtml),
-      t.IsSeeded
-    });
-    return JsonSerializer.Serialize(view);
-  }
-
-  [McpServerTool, Description("Fetch the full definition of a single template including both modern_html and legacy_html variants. Useful when modifying an existing template.")]
-  public async Task<string> DisplayGetTemplate(
-    [Description("Template name.")] string name,
-    CancellationToken ct = default)
-  {
-    var t = await templates.GetAsync(name, ct);
-    return t is null
-      ? $"Template '{name}' not found."
-      : JsonSerializer.Serialize(new
+      var list = await templates.ListAsync(ct);
+      var view = list.Select(t => new
       {
         t.Name,
         t.Description,
         schema = JsonDocument.Parse(t.SchemaJson).RootElement,
-        modern_html = t.ModernHtml,
-        legacy_html = t.LegacyHtml,
+        has_modern = !string.IsNullOrEmpty(t.ModernHtml),
+        has_legacy = !string.IsNullOrEmpty(t.LegacyHtml),
         t.IsSeeded
       });
+      return JsonSerializer.Serialize(view);
+    });
+  }
+
+  [McpServerTool, Description("Fetch the full definition of a single template including both modern_html and legacy_html variants. Useful when modifying an existing template.")]
+  public Task<string> DisplayGetTemplate(
+    [Description("Template name.")] string name,
+    CancellationToken ct = default)
+  {
+    return ToolGuard.RunAsync(async () =>
+    {
+      var t = await templates.GetAsync(name, ct);
+      return t is null
+        ? $"Template '{name}' not found."
+        : JsonSerializer.Serialize(new
+        {
+          t.Name,
+          t.Description,
+          schema = JsonDocument.Parse(t.SchemaJson).RootElement,
+          modern_html = t.ModernHtml,
+          legacy_html = t.LegacyHtml,
+          t.IsSeeded
+        });
+    });
   }
 
   [McpServerTool, Description("Create a new template. Both modern_html and legacy_html variants are required and are LINTED before saving. Templates are declarative HTML — no <script> tags. Use data-tap/data-target/data-value attributes for interactivity. Variables come from the data object via Scriban syntax: {{ name }}, {{ for x in items }}…{{ end }}. For composite layouts: any data field shaped {template, data} is auto-rendered and the result is exposed as {fieldname}_html variable to the parent template. MODERN tier: Safari 14+/Chrome 90+ (≈2020+). Flexbox, grid, gap, vw/vh/rem/clamp/min/max, CSS variables, modern color syntax, WebP images, transitions, transforms allowed. LEGACY tier: iOS Safari 9-12 (iPad 2/3/4/Air 1). NO flexbox/grid (use tables/floats). NO var(--*). NO WebP. NO @import/@font-face. NO clamp/min/max CSS functions. NO :has()/:is()/:where(). Use system font stack only. Tune layouts for ~1024×768 either orientation.")]

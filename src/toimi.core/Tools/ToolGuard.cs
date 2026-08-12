@@ -44,6 +44,9 @@ public static class ToolGuard
       }
       catch (Exception translateEx)
       {
+        // The original failure keeps its own stack — the translate crash must
+        // not swallow it. Same message as the backstop path below.
+        logger?.LogError(ex, "MCP tool call failed");
         logger?.LogError(translateEx, "translate delegate failed while handling {OriginalException}", ex.GetType().Name);
         return $"{errorPrefix}: {ex.Message}";
       }

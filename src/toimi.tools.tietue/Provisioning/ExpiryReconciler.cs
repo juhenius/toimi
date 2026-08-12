@@ -7,7 +7,7 @@ using toimi.tools.tietue.Scheduling;
 
 namespace toimi.tools.tietue.Provisioning;
 
-public class ExpiryReconciler(TietueDbContext db, TriggerRepository triggers)
+public class ExpiryReconciler(TietueDbContext db, TriggerRepository triggers, ILogger<ExpiryReconciler>? logger = null)
 {
   public const string SourceTag = "expiry";
 
@@ -25,10 +25,20 @@ public class ExpiryReconciler(TietueDbContext db, TriggerRepository triggers)
       return;
     }
 
-    var at = ExpiryAt(entity.Data, cfg.Field);
+    if (!entity.Data.RootElement.TryGetProperty(cfg.Field, out var raw))
+    {
+      return; // field absent — nothing to arm
+    }
+
+    var at = ParseExpiry(raw);
     if (at is null)
     {
-      return; // field absent OR not a parseable date — a garbage date must not arm a dead trigger
+      // A garbage date must not arm a dead trigger — but silently skipping made
+      // it look like expiry was never configured, so say why nothing armed.
+      logger?.LogWarning(
+        "Entity {EntityId} ({EntityType}): expiry field '{Field}' is not a parseable date; no expiry trigger armed.",
+        entity.Id, entity.Type, cfg.Field);
+      return;
     }
 
     var kind = cfg.Prompt is null ? "delete" : "message";
@@ -37,11 +47,10 @@ public class ExpiryReconciler(TietueDbContext db, TriggerRepository triggers)
     await triggers.CreateAsync(entity.Id, Schedule.OneShotAt(at.Value), kind, config, now, SourceTag, ct);
   }
 
-  private static DateTimeOffset? ExpiryAt(JsonDocument data, string field)
+  private static DateTimeOffset? ParseExpiry(JsonElement value)
   {
-    return data.RootElement.TryGetProperty(field, out var v)
-      && v.ValueKind == JsonValueKind.String
-      && DateTimeOffset.TryParse(v.GetString(), System.Globalization.CultureInfo.InvariantCulture,
+    return value.ValueKind == JsonValueKind.String
+      && DateTimeOffset.TryParse(value.GetString(), System.Globalization.CultureInfo.InvariantCulture,
         System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out var at)
         ? at
         : null;
