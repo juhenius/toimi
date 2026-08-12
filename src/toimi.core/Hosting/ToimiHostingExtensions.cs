@@ -27,6 +27,20 @@ public static class ToimiHostingExtensions
     return services;
   }
 
+  /// <summary>
+  /// Builder-level entry point for an MCP tool-server pod. Thin today — the
+  /// MCP registration is the only config-free bootstrap all five pods share —
+  /// but it is the single home future shared bootstrap goes, and the pod
+  /// Program.cs files read uniformly. The tool assembly MUST be passed
+  /// explicitly (typeof(Program).Assembly) — see <see cref="AddToimiMcpServer"/>
+  /// for the assembly-scan footgun.
+  /// </summary>
+  public static WebApplicationBuilder AddToimiToolServer(this WebApplicationBuilder builder, string serverName, Assembly toolsAssembly)
+  {
+    builder.Services.AddToimiMcpServer(serverName, toolsAssembly);
+    return builder;
+  }
+
   /// <summary>Maps the MCP endpoint plus a liveness /health (bare 200).</summary>
   public static void MapToimiMcp(this WebApplication app)
   {

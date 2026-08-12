@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using toimi.tools.koti.HomeAssistant;
+using Toimi.Core.Tools;
 
 namespace toimi.tools.koti.Tools;
 
@@ -12,12 +13,9 @@ public class GetHistoryTool(HomeAssistantClient ha)
     [Description("Entity ID (e.g. 'sensor.temperature')")] string entityId,
     [Description("Number of hours of history to retrieve (default 24, max 168)")] int hours = 24)
   {
-    if (hours is < 1 or > 168)
-    {
-      return "Hours must be between 1 and 168.";
-    }
-
-    try
+    return hours is < 1 or > 168
+      ? "Hours must be between 1 and 168."
+      : await ToolGuard.RunAsync(async () =>
     {
       var result = await ha.GetHistoryAsync(entityId, hours);
       var json = result.GetRawText();
@@ -25,14 +23,6 @@ public class GetHistoryTool(HomeAssistantClient ha)
       return json.Length <= maxChars
         ? json
         : json[..maxChars] + "\n[truncated — request fewer hours]";
-    }
-    catch (HttpRequestException ex)
-    {
-      return $"Home Assistant request failed: {ex.Message}";
-    }
-    catch (TaskCanceledException)
-    {
-      return "Home Assistant request timed out.";
-    }
+    }, translate: HomeAssistantErrors.Translate);
   }
 }

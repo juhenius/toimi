@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using toimi.tools.verkko.Fetcher;
+using Toimi.Core.Tools;
 
 namespace toimi.tools.verkko.Tools;
 
@@ -32,25 +33,24 @@ public class FetchUrlTool(WebFetcher fetcher, FetchCache cache)
       }
     }
 
-    FetchResult result;
-    try
+    return await ToolGuard.RunAsync(async () =>
     {
-      result = await fetcher.FetchAsync(url, CancellationToken.None);
-    }
-    catch (HttpRequestException ex)
+      var result = await fetcher.FetchAsync(url, CancellationToken.None);
+      cache.Set(url, result);
+      return FormatResult(result, fromCache: false);
+    }, translate: ex => ex switch
     {
-      var reason = ex.InnerException is { Message.Length: > 0 } inner && !ex.Message.Contains(inner.Message)
-        ? $"{ex.Message} ({inner.Message})"
-        : ex.Message;
-      return $"HTTP error fetching {url}: {reason}";
-    }
-    catch (TaskCanceledException)
-    {
-      return $"Request timed out fetching {url}";
-    }
+      HttpRequestException http => $"HTTP error fetching {url}: {Reason(http)}",
+      TaskCanceledException => $"Request timed out fetching {url}",
+      _ => null,
+    });
+  }
 
-    cache.Set(url, result);
-    return FormatResult(result, fromCache: false);
+  private static string Reason(HttpRequestException ex)
+  {
+    return ex.InnerException is { Message.Length: > 0 } inner && !ex.Message.Contains(inner.Message)
+      ? $"{ex.Message} ({inner.Message})"
+      : ex.Message;
   }
 
   private static string FormatResult(FetchResult result, bool fromCache)

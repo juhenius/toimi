@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using ModelContextProtocol.Server;
+using Toimi.Core.Tools;
 using toimi.tools.ruutu.Data.Repositories;
 using toimi.tools.ruutu.Rendering;
 
@@ -55,25 +56,24 @@ public class TemplateTools(TemplateRepository templates, DbTemplateSource source
   {
     var modernLint = TierLinter.Lint("modern", modernHtml);
     var legacyLint = TierLinter.Lint("legacy", legacyHtml);
-    if (!modernLint.Valid || !legacyLint.Valid)
-    {
-      return JsonSerializer.Serialize(new
+    return !modernLint.Valid || !legacyLint.Valid
+      ? JsonSerializer.Serialize(new
       {
         valid = false,
         modern_issues = modernLint.Issues,
         legacy_issues = legacyLint.Issues
-      });
-    }
-
-    try { JsonDocument.Parse(schemaJson); }
-    catch (JsonException ex) { return $"Error: schemaJson is not valid JSON: {ex.Message}"; }
-
-    try
+      })
+      : await ToolGuard.RunAsync(async () =>
     {
+      JsonDocument.Parse(schemaJson);
       await templates.UpsertAiAsync(name, description, schemaJson, modernHtml, legacyHtml, ct);
       return "ok";
-    }
-    catch (InvalidOperationException ex) { return $"Error: {ex.Message}"; }
+    }, translate: ex => ex switch
+    {
+      JsonException json => $"Error: schemaJson is not valid JSON: {json.Message}",
+      InvalidOperationException op => $"Error: {op.Message}",
+      _ => null,
+    });
   }
 
   [McpServerTool, Description("Update an existing template. Cannot modify seeded templates. modernHtml and legacyHtml are optional — pass null to keep current value. Linted before save.")]
@@ -94,18 +94,15 @@ public class TemplateTools(TemplateRepository templates, DbTemplateSource source
     var modernLint = modernHtml is null ? null : TierLinter.Lint("modern", modernHtml);
     var legacyLint = legacyHtml is null ? null : TierLinter.Lint("legacy", legacyHtml);
 
-    if ((modernLint is not null && !modernLint.Valid) ||
-        (legacyLint is not null && !legacyLint.Valid))
-    {
-      return JsonSerializer.Serialize(new
+    return (modernLint is not null && !modernLint.Valid) ||
+        (legacyLint is not null && !legacyLint.Valid)
+      ? JsonSerializer.Serialize(new
       {
         valid = false,
         modern_issues = modernLint?.Issues,
         legacy_issues = legacyLint?.Issues
-      });
-    }
-
-    try
+      })
+      : await ToolGuard.RunAsync(async () =>
     {
       await templates.UpsertAiAsync(
         name,
@@ -115,8 +112,7 @@ public class TemplateTools(TemplateRepository templates, DbTemplateSource source
         legacyHtml ?? existing.LegacyHtml,
         ct);
       return "ok";
-    }
-    catch (InvalidOperationException ex) { return $"Error: {ex.Message}"; }
+    }, translate: ex => ex is InvalidOperationException op ? $"Error: {op.Message}" : null);
   }
 
   [McpServerTool, Description("Delete a non-seeded template. Seeded templates cannot be deleted.")]
@@ -124,12 +120,11 @@ public class TemplateTools(TemplateRepository templates, DbTemplateSource source
     [Description("Template name.")] string name,
     CancellationToken ct = default)
   {
-    try
+    return await ToolGuard.RunAsync(async () =>
     {
       var ok = await templates.DeleteAsync(name, ct);
       return ok ? "ok" : $"Template '{name}' not found.";
-    }
-    catch (InvalidOperationException ex) { return $"Error: {ex.Message}"; }
+    }, translate: ex => ex is InvalidOperationException op ? $"Error: {op.Message}" : null);
   }
 
   [McpServerTool, Description("Render a template+data combination without pushing it to a display. Returns the HTML string. Use to sanity-check a new template's output before saving it.")]
@@ -139,18 +134,18 @@ public class TemplateTools(TemplateRepository templates, DbTemplateSource source
     [Description("Tier: 'modern' or 'legacy'.")] string tier,
     CancellationToken ct = default)
   {
-    if (tier is not "modern" and not "legacy")
-    {
-      return "Error: tier must be 'modern' or 'legacy'.";
-    }
-
-    try
+    return tier is not "modern" and not "legacy"
+      ? "Error: tier must be 'modern' or 'legacy'."
+      : await ToolGuard.RunAsync(async () =>
     {
       var data = JsonDocument.Parse(dataJson).RootElement;
       return await ScribanRenderer.RenderAsync(template, data, tier, source, ct);
-    }
-    catch (JsonException ex) { return $"Error: dataJson is not valid JSON: {ex.Message}"; }
-    catch (RenderException ex) { return $"Error: {ex.Message}"; }
+    }, translate: ex => ex switch
+    {
+      JsonException json => $"Error: dataJson is not valid JSON: {json.Message}",
+      RenderException render => $"Error: {render.Message}",
+      _ => null,
+    });
   }
 
   [McpServerTool, Description("Return the full author brief for a capability tier: the rules and constraints to follow when authoring templates for it. Use if you need a refresher beyond the inline create-template description.")]

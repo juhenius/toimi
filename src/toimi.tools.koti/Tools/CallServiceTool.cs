@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using ModelContextProtocol.Server;
 using toimi.tools.koti.HomeAssistant;
+using Toimi.Core.Tools;
 
 namespace toimi.tools.koti.Tools;
 
@@ -33,18 +34,10 @@ public class CallServiceTool(HomeAssistantClient ha)
       }
     }
 
-    try
+    return await ToolGuard.RunAsync(async () =>
     {
       _ = await ha.CallServiceAsync(domain, service, entityId, parsedData);
       return "Service called successfully.";
-    }
-    catch (HttpRequestException ex)
-    {
-      return $"Home Assistant request failed: {ex.Message}";
-    }
-    catch (TaskCanceledException)
-    {
-      return "Home Assistant request timed out.";
-    }
+    }, translate: HomeAssistantErrors.Translate);
   }
 }

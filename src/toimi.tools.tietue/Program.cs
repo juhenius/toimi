@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using Qdrant.Client;
@@ -11,12 +10,7 @@ using toimi.tools.tietue.Validation;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = builder.Configuration.GetConnectionString("Tietue")
-  ?? throw new InvalidOperationException("ConnectionStrings:Tietue is required");
-
-builder.Services.AddDbContext<TietueDbContext>(options =>
-  options.UseNpgsql(connectionString)
-    .UseSnakeCaseNamingConvention());
+builder.AddToimiDatabase<TietueDbContext>("Tietue");
 
 builder.Services.AddSingleton<SchemaValidator>();
 builder.Services.AddScoped<TypeRepository>();
@@ -29,8 +23,7 @@ var qdrantHost = builder.Configuration["Qdrant:Host"] ?? "localhost";
 var qdrantPort = int.Parse(builder.Configuration["Qdrant:Port"] ?? "6334", System.Globalization.CultureInfo.InvariantCulture);
 builder.Services.AddSingleton(new QdrantClient(qdrantHost, qdrantPort));
 
-var openAiApiKey = builder.Configuration["OpenAI:ApiKey"]
-  ?? throw new InvalidOperationException("OpenAI:ApiKey is required");
+var openAiApiKey = builder.RequireValue("OpenAI:ApiKey");
 var embeddingModel = builder.Configuration["OpenAI:EmbeddingModel"] ?? "text-embedding-3-small";
 var openAiClient = new OpenAIClient(openAiApiKey);
 var embeddingClient = openAiClient.GetEmbeddingClient(embeddingModel);
@@ -61,9 +54,7 @@ builder.Services.AddScoped<toimi.tools.tietue.Scheduling.SchedulerTick>();
 builder.Services.AddHostedService<toimi.tools.tietue.Scheduling.TriggerWorker>();
 builder.Services.AddHostedService<OutboxWorker>();
 
-builder.Services.AddSingleton(
-  builder.Configuration.GetSection("Toimi").Get<Toimi.Core.Configuration.ToimiConfiguration>()
-    ?? throw new InvalidOperationException("Toimi configuration is required"));
+builder.Services.AddSingleton(builder.RequireConfig<Toimi.Core.Configuration.ToimiConfiguration>("Toimi"));
 builder.Services.AddSingleton<Toimi.Core.Llm.ILlmClientProvider, Toimi.Core.Llm.OpenAiLlmClientProvider>();
 builder.Services.AddSingleton<toimi.tools.tietue.Agents.IAgentRunner, toimi.tools.tietue.Agents.AgentRunner>();
 builder.Services.AddScoped<toimi.tools.tietue.Handlers.INativeHandler, toimi.tools.tietue.Handlers.MessageHandler>();
@@ -88,26 +79,27 @@ builder.Services.AddScoped<toimi.tools.tietue.Agents.IMcpInvoker, toimi.tools.ti
 builder.Services.AddScoped<toimi.tools.tietue.Scripts.ScriptEffectApplier>();
 builder.Services.AddScoped<toimi.tools.tietue.Handlers.INativeHandler, toimi.tools.tietue.Handlers.ScriptHandler>();
 
-builder.Services.AddToimiMcpServer("tietue", typeof(Program).Assembly);
+builder.AddToimiToolServer("tietue", typeof(Program).Assembly);
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
-{
-  var dbContext = scope.ServiceProvider.GetRequiredService<TietueDbContext>();
-  if (dbContext.Database.IsRelational())
-  {
-    await dbContext.Database.MigrateAsync();
-    await scope.ServiceProvider.GetRequiredService<toimi.tools.tietue.Seed.TypeSeeder>().SeedAsync();
-    await scope.ServiceProvider.GetRequiredService<toimi.tools.tietue.Seed.SkillSeeder>().SeedAsync();
+// A misconfigured Scripts:TimeoutSeconds must fail here at boot, not at the
+// first trigger fire: the singleton is a lazy factory, so resolve it once now
+// (ScriptBudgetTests documents the fail-fast contract).
+_ = app.Services.GetRequiredService<toimi.tools.tietue.Scripts.ScriptBudget>();
 
-    var index = scope.ServiceProvider.GetRequiredService<ISemanticIndex>();
-    foreach (var name in new[] { "memory", "skill" })
-    {
-      await index.EnsureCollectionAsync(name);
-    }
+var seededCollections = new[] { "memory", "skill" };
+await app.MigrateAndSeedAsync<TietueDbContext>(async sp =>
+{
+  await sp.GetRequiredService<toimi.tools.tietue.Seed.TypeSeeder>().SeedAsync();
+  await sp.GetRequiredService<toimi.tools.tietue.Seed.SkillSeeder>().SeedAsync();
+
+  var index = sp.GetRequiredService<ISemanticIndex>();
+  foreach (var name in seededCollections)
+  {
+    await index.EnsureCollectionAsync(name);
   }
-}
+});
 
 app.MapToimiMcp();
 app.MapToimiReadiness<TietueDbContext>();

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using Toimi.Core.Tools;
 using Toimi.Notifications;
 
 namespace toimi.tools.verkko.Tools;
@@ -16,19 +17,12 @@ public class SendNotificationTool(NtfyClient ntfy)
     [Description("Priority: 'min', 'low', 'default', 'high', 'urgent' (default 'default')")] string priority = "default",
     [Description("Optional comma-separated emoji tags (e.g. 'package,delivered' or 'warning')")] string? tags = null)
   {
-    if (!ValidPriorities.Contains(priority))
-    {
-      return $"Invalid priority. Use one of: {string.Join(", ", ValidPriorities)}";
-    }
-
-    try
+    return !ValidPriorities.Contains(priority)
+      ? $"Invalid priority. Use one of: {string.Join(", ", ValidPriorities)}"
+      : await ToolGuard.RunAsync(async () =>
     {
       await ntfy.SendAsync(message, title, priority, tags);
       return "Notification sent.";
-    }
-    catch (Exception ex)
-    {
-      return $"Failed to send notification: {ex.Message}";
-    }
+    }, errorPrefix: "Failed to send notification");
   }
 }

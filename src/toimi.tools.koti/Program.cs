@@ -3,8 +3,7 @@ using Toimi.Core.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var haOptions = builder.Configuration.GetSection("HomeAssistant").Get<HomeAssistantOptions>()
-  ?? throw new InvalidOperationException("HomeAssistant configuration is required");
+var haOptions = builder.RequireConfig<HomeAssistantOptions>("HomeAssistant");
 
 builder.Services.AddSingleton(haOptions);
 builder.Services.AddHttpClient<HomeAssistantClient>(client =>
@@ -18,7 +17,7 @@ builder.Services.AddSingleton(sp =>
   return new HomeAssistantClient(http, haOptions);
 });
 
-builder.Services.AddToimiMcpServer("koti", typeof(Program).Assembly);
+builder.AddToimiToolServer("koti", typeof(Program).Assembly);
 
 var app = builder.Build();
 

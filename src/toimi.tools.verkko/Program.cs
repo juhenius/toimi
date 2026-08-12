@@ -29,7 +29,7 @@ var ntfyOptions = builder.Configuration.GetSection("Ntfy").Get<NtfyOptions>() ??
 builder.Services.AddSingleton(ntfyOptions);
 builder.Services.AddSingleton(new NtfyClient(ntfyOptions));
 
-builder.Services.AddToimiMcpServer("verkko", typeof(Program).Assembly);
+builder.AddToimiToolServer("verkko", typeof(Program).Assembly);
 
 var app = builder.Build();
 

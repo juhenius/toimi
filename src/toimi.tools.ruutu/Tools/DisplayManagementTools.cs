@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using ModelContextProtocol.Server;
-using toimi.tools.ruutu.Data.Entities;
+using Toimi.Core.Tools;
 using toimi.tools.ruutu.Data.Repositories;
 
 namespace toimi.tools.ruutu.Tools;
@@ -15,22 +15,13 @@ public class DisplayManagementTools(DisplayRepository displays)
     [Description("Optional tier override: 'modern' or 'legacy'. Omit to auto-detect.")] string? capabilityTierOverride = null,
     CancellationToken ct = default)
   {
-    if (capabilityTierOverride is not null and not "modern" and not "legacy")
+    return capabilityTierOverride is not null and not "modern" and not "legacy"
+      ? "Error: capabilityTierOverride must be 'modern', 'legacy', or null."
+      : await ToolGuard.RunAsync(async () =>
     {
-      return "Error: capabilityTierOverride must be 'modern', 'legacy', or null.";
-    }
-
-    Display d;
-    try
-    {
-      d = await displays.RegisterAsync(identifier, capabilityTierOverride, ct);
-    }
-    catch (ArgumentException ex)
-    {
-      return $"Error: {ex.Message}";
-    }
-
-    return JsonSerializer.Serialize(new { d.Identifier, d.Tier, d.TierOverride, url = $"/ruutu/{d.Identifier}" });
+      var d = await displays.RegisterAsync(identifier, capabilityTierOverride, ct);
+      return JsonSerializer.Serialize(new { d.Identifier, d.Tier, d.TierOverride, url = $"/ruutu/{d.Identifier}" });
+    }, translate: ex => ex is ArgumentException arg ? $"Error: {arg.Message}" : null);
   }
 
   [McpServerTool, Description("Unregister a display. Removes the display record and any associated events. Pages opened on this display will fall back to a 'not configured' page.")]
@@ -83,15 +74,18 @@ public class DisplayManagementTools(DisplayRepository displays)
     [Description("Data matching the template's schema as a JSON object string. Defaults to '{}' if template is set but dataJson is omitted.")] string? dataJson = null,
     CancellationToken ct = default)
   {
-    string? storedData = null;
-    if (template is not null)
+    return await ToolGuard.RunAsync(async () =>
     {
-      var json = dataJson ?? "{}";
-      try { JsonDocument.Parse(json); }
-      catch (JsonException ex) { return $"Error: dataJson is not valid JSON: {ex.Message}"; }
-      storedData = json;
-    }
-    var ok = await displays.SetIdleAsync(identifier, template, storedData, ct);
-    return ok ? "ok" : $"Display '{identifier}' not found.";
+      string? storedData = null;
+      if (template is not null)
+      {
+        var json = dataJson ?? "{}";
+        JsonDocument.Parse(json);
+        storedData = json;
+      }
+
+      var ok = await displays.SetIdleAsync(identifier, template, storedData, ct);
+      return ok ? "ok" : $"Display '{identifier}' not found.";
+    }, translate: ex => ex is JsonException json ? $"Error: dataJson is not valid JSON: {json.Message}" : null);
   }
 }

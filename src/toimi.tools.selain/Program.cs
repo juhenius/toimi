@@ -19,7 +19,7 @@ builder.Services.AddSingleton<BrowserHost>();
 builder.Services.AddHostedService<IdleShutdownService>();
 builder.Services.AddSingleton<ScreencastService>();
 
-builder.Services.AddToimiMcpServer("selain", typeof(Program).Assembly);
+builder.AddToimiToolServer("selain", typeof(Program).Assembly);
 
 var app = builder.Build();
 

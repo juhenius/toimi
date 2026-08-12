@@ -1,6 +1,6 @@
-using Microsoft.EntityFrameworkCore;
 using Toimi.Core.Configuration;
 using Toimi.Core.Data;
+using Toimi.Core.Hosting;
 using Toimi.Web.Admin;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -37,12 +37,7 @@ foreach (var tool in adminToolsOptions.Tools)
   });
 }
 
-var toimiConnectionString = builder.Configuration.GetConnectionString("Toimi")
-  ?? throw new InvalidOperationException("ConnectionStrings:Toimi is required");
-
-builder.Services.AddDbContext<ToimiDbContext>(options =>
-  options.UseNpgsql(toimiConnectionString)
-    .UseSnakeCaseNamingConvention());
+builder.AddToimiDatabase<ToimiDbContext>("Toimi");
 
 builder.Services.AddScoped<ConversationRepository>();
 
@@ -62,11 +57,7 @@ if (builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
-{
-  var dbContext = scope.ServiceProvider.GetRequiredService<ToimiDbContext>();
-  await dbContext.Database.MigrateAsync();
-}
+await app.MigrateAndSeedAsync<ToimiDbContext>();
 
 if (app.Environment.IsDevelopment())
 {

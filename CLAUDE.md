@@ -141,7 +141,11 @@ Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers),
   conversation persistence (`ToimiDbContext`), the transcript + context-window
   management (`ConversationContext`: owns the system-prompt/dynamic-context/
   summary slots, catalog injection, compaction, and `ContextBudget` anchoring),
-  request-option assembly (`ToimiClientFactory`).
+  request-option assembly (`ToimiClientFactory`), shared tool-server bootstrap
+  (`Hosting/`: `AddToimiToolServer`, `RequireConfig`/`RequireConnectionString`/
+  `RequireValue`, `AddToimiDatabase` + `MigrateAndSeedAsync` with the
+  `IsRelational` boot guard), and the never-throw MCP tool guard
+  (`Toimi.Core.Tools.ToolGuard`).
 - Extend when: adding cross-cutting behavior used by multiple agent hosts
   (`toimi.web` and tietue's agent runner) — e.g. a new system-prompt
   enrichment step or a different summarization strategy.
@@ -224,6 +228,13 @@ tietue's `notify` handler.
   `TurnCompleted` reports); `ToimiHub` and tietue's `AgentRunner` are thin
   adapters over it, so future transports (CLI, Telegram) inherit the same
   experience.
+- **Never-throw MCP tools** — tool bodies run under
+  `Toimi.Core.Tools.ToolGuard.RunAsync`: expected failures map through a
+  per-server translator to pinned messages, everything else backstops to
+  `"Error: {message}"` — the LLM always gets readable text, never an MCP
+  protocol error. Pod bootstrap is likewise declarative:
+  `builder.AddToimiToolServer(...)` / `AddToimiDatabase<T>(...)` /
+  `RequireConfig<T>(...)`, then `app.MigrateAndSeedAsync<T>(...)`.
 - **Conversation persistence** — messages save to PostgreSQL via
   `ToimiDbContext` in core; per-message estimated token usage is tracked for
   context-window decisions.
