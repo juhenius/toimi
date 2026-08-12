@@ -43,12 +43,10 @@ export async function execute(req: ExecuteRequest): Promise<ExecuteResult> {
   const started = Date.now();
   const timeoutMs = clampTimeout(req.timeoutMs);
 
-  // Net permission = the script's declared hosts, plus the tietue callback
-  // host when the llm grant is held (extract() is a plain fetch from the worker).
-  const net = [...(req.allowedHosts ?? [])];
-  if ((req.grants ?? []).includes("llm") && req.callbackUrl) {
-    net.push(new URL(req.callbackUrl).host);
-  }
+  // Net permission = exactly the request's `net`: tietue composes it (script
+  // allowedHosts + the extract-callback host when llm is granted, see
+  // ScriptHandler.BuildNet) — this side never widens it.
+  const net = req.net ?? [];
 
   // Accepted residual risk: there is no per-worker V8 heap cap, so a script
   // can balloon memory until the pod limit; the k8s memory limit + restart is
@@ -94,9 +92,7 @@ export async function execute(req: ExecuteRequest): Promise<ExecuteResult> {
     worker.postMessage({
       code: req.code,
       input: req.input ?? {},
-      callbackUrl: req.callbackUrl,
-      runToken: req.runToken,
-      grants: req.grants ?? [],
+      extract: req.extract,
     });
   });
   worker.terminate(); // hard preemption — also the timeout path's actual stop
@@ -105,6 +101,7 @@ export async function execute(req: ExecuteRequest): Promise<ExecuteResult> {
     partial.ok &&
     new TextEncoder().encode(JSON.stringify(partial.effects)).length >
       MAX_EFFECTS_BYTES // byte-accurate: UTF-8 bytes, not UTF-16 code units
+    // counterpart: SuoritinClient.cs MaxEffectsBytes
   ) {
     return {
       ok: false,

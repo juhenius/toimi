@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
@@ -46,6 +48,15 @@ public class SuoritinIntegrationTests
     return new SuoritinClient(new FixedFactory(new Uri($"http://{container.Hostname}:{container.GetMappedPublicPort(8080)}")));
   }
 
+  private static HttpClient RawClientFor(IContainer container)
+  {
+    return new HttpClient
+    {
+      BaseAddress = new Uri($"http://{container.Hostname}:{container.GetMappedPublicPort(8080)}"),
+      Timeout = TimeSpan.FromSeconds(30),
+    };
+  }
+
   private sealed class FixedFactory(Uri baseAddress) : IHttpClientFactory
   {
     public HttpClient CreateClient(string name)
@@ -62,7 +73,7 @@ public class SuoritinIntegrationTests
 
     var result = await ClientFor(container).ExecuteAsync(new SuoritinRequest(
       "export default function run(input) { console.log('doubling'); return { setField: [{ path: 'n', value: input.data.n * 2 }] }; }",
-      input.RootElement.Clone(), 10000, [], ["setField"], null, null));
+      input.RootElement.Clone(), 10000, [], null));
 
     Assert.True(result.Ok, result.Error);
     var effects = ScriptEffects.Parse(result.EffectsJson!);
@@ -80,10 +91,67 @@ public class SuoritinIntegrationTests
     // must be denied by Deno itself, inside the container.
     var result = await ClientFor(container).ExecuteAsync(new SuoritinRequest(
       "export default async function run() { await fetch('http://example.com/'); return {}; }",
-      input.RootElement.Clone(), 10000, [], [], null, null));
+      input.RootElement.Clone(), 10000, [], null));
 
     Assert.False(result.Ok);
     Assert.NotNull(result.Error);
     Assert.Contains("net", result.Error, StringComparison.OrdinalIgnoreCase);
+  }
+
+  [DockerFact]
+  public async Task Log_entry_cap_agrees_across_the_seam()
+  {
+    await using var container = await StartContainerAsync();
+    using var http = RawClientFor(container);
+    var over = SuoritinClient.MaxLogEntries + 50;
+
+    using var response = await http.PostAsJsonAsync("/execute", new
+    {
+      code = $"export default function run() {{ for (let i = 0; i < {over}; i++) console.log('line', i); return {{}}; }}",
+      input = new { },
+    });
+    response.EnsureSuccessStatusCode();
+    using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+    // Raw count, before SuoritinClient's Take(): if limits.ts MAX_LOGS ever
+    // drifts from MaxLogEntries again, one side silently discards lines and
+    // this assert is the tripwire.
+    Assert.Equal(SuoritinClient.MaxLogEntries, doc.RootElement.GetProperty("logs").GetArrayLength());
+  }
+
+  [DockerFact]
+  public async Task Explicit_nulls_are_tolerated_but_a_malformed_extract_is_rejected()
+  {
+    await using var container = await StartContainerAsync();
+    using var http = RawClientFor(container);
+
+    // Null-as-absent backstop (SuoritinClient omits via WhenWritingNull; this
+    // guards against serializer drift ever sending nulls again).
+    using var nulls = await http.PostAsync("/execute", new StringContent(
+      /*lang=json,strict*/ """{"code":"export default () => ({})","input":{},"timeoutMs":null,"net":null,"extract":null}""",
+      System.Text.Encoding.UTF8, "application/json"));
+    Assert.Equal(HttpStatusCode.OK, nulls.StatusCode);
+
+    // A PRESENT extract must be complete — null members are rejected, not
+    // degraded to "no extract".
+    using var malformed = await http.PostAsync("/execute", new StringContent(
+      /*lang=json,strict*/ """{"code":"export default () => ({})","input":{},"extract":{"url":null,"token":null}}""",
+      System.Text.Encoding.UTF8, "application/json"));
+    Assert.Equal(HttpStatusCode.BadRequest, malformed.StatusCode);
+  }
+
+  [DockerFact]
+  public async Task Client_receives_exactly_the_canonical_log_cap()
+  {
+    await using var container = await StartContainerAsync();
+    using var input = JsonDocument.Parse(/*lang=json,strict*/ """{"data":{}}""");
+    var over = SuoritinClient.MaxLogEntries + 50;
+
+    var result = await ClientFor(container).ExecuteAsync(new SuoritinRequest(
+      $"export default function run() {{ for (let i = 0; i < {over}; i++) console.log('line', i); return {{}}; }}",
+      input.RootElement.Clone(), 10000, [], null));
+
+    Assert.True(result.Ok, result.Error);
+    Assert.Equal(SuoritinClient.MaxLogEntries, result.Logs.Length);
   }
 }

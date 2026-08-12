@@ -70,12 +70,14 @@ builder.Services.AddScoped<toimi.tools.tietue.Handlers.INativeHandler, toimi.too
 
 builder.Services.AddSingleton(
   builder.Configuration.GetSection("Scripts").Get<toimi.tools.tietue.Scripts.ScriptOptions>() ?? new toimi.tools.tietue.Scripts.ScriptOptions());
+builder.Services.AddSingleton(sp =>
+  toimi.tools.tietue.Scripts.ScriptBudget.From(sp.GetRequiredService<toimi.tools.tietue.Scripts.ScriptOptions>()));
 builder.Services.AddSingleton(
   builder.Configuration.GetSection("Suoritin").Get<toimi.tools.tietue.Scripts.SuoritinOptions>() ?? new toimi.tools.tietue.Scripts.SuoritinOptions());
 builder.Services.AddHttpClient(toimi.tools.tietue.Scripts.SuoritinClient.HttpClientName, (sp, client) =>
 {
   client.BaseAddress = new Uri(sp.GetRequiredService<toimi.tools.tietue.Scripts.SuoritinOptions>().BaseUrl);
-  client.Timeout = TimeSpan.FromSeconds(sp.GetRequiredService<toimi.tools.tietue.Scripts.ScriptOptions>().TimeoutSeconds + 5);
+  client.Timeout = sp.GetRequiredService<toimi.tools.tietue.Scripts.ScriptBudget>().HttpTimeout;
   // Suoritin output is untrusted; an oversize body surfaces as an HttpRequestException.
   client.MaxResponseContentBufferSize = 1024 * 1024;
 });

@@ -44,6 +44,13 @@ public class ExtractEndpointsTests
   }
 
   [Fact]
+  public async Task Missing_token_header_is_403()
+  {
+    var result = await ExtractEndpoints.HandleAsync(null, Request(), new RunTokenStore(), new FakeLlmExtractor(), default);
+    Assert.Equal(403, Assert.IsType<StatusCodeHttpResult>(result).StatusCode);
+  }
+
+  [Fact]
   public async Task Missing_prompt_or_text_is_400()
   {
     var tokens = new RunTokenStore();

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.AI;
 using Toimi.Core.Llm;
 
@@ -79,15 +80,34 @@ public static class ExtractEndpoints
   public const int MaxPromptChars = 2_000;
   public const int MaxSchemaChars = 10_000;
 
+  /// <summary>
+  /// The extract() callback contract, owned here alone: the worker receives a
+  /// fully composed <see cref="CallbackUrl"/> and POSTs to it with the run
+  /// token in <see cref="TokenHeader"/> — it never knows the route shape
+  /// (counterpart: suoritin worker.ts extract passthrough).
+  /// </summary>
+  public const string Route = "/internal/runs/extract";
+  public const string TokenHeader = "X-Run-Token";
+
+  public static string CallbackUrl(string callbackBaseUrl)
+  {
+    return new Uri(new Uri(callbackBaseUrl), Route).ToString();
+  }
+
   public static void MapExtractEndpoints(WebApplication app)
   {
-    app.MapPost("/internal/runs/{token}/extract", HandleAsync);
+    app.MapPost(Route, (
+      [FromHeader(Name = TokenHeader)] string? token,
+      ExtractRequest request,
+      RunTokenStore tokens,
+      ILlmExtractor extractor,
+      CancellationToken ct) => HandleAsync(token, request, tokens, extractor, ct));
   }
 
   public static async Task<IResult> HandleAsync(
-    string token, ExtractRequest request, RunTokenStore tokens, ILlmExtractor extractor, CancellationToken ct)
+    string? token, ExtractRequest request, RunTokenStore tokens, ILlmExtractor extractor, CancellationToken ct)
   {
-    if (!tokens.TryUseExtract(token))
+    if (string.IsNullOrEmpty(token) || !tokens.TryUseExtract(token))
     {
       return Results.StatusCode(StatusCodes.Status403Forbidden);
     }

@@ -22,7 +22,7 @@ public class ScriptHandlerTests
   }
 
   private static async Task<(Data.Entity e, FakeSuoritinClient suoritin, FakeMcpInvoker mcp, RunTokenStore tokens, ScriptHandler handler)> SetupAsync(
-    Data.TietueDbContext db, string entityJson = /*lang=json,strict*/ """{"name":"Jari","status":"open"}""", bool enabled = true, int timeoutSeconds = 20)
+    Data.TietueDbContext db, string entityJson = /*lang=json,strict*/ """{"name":"Jari","status":"open"}""", bool enabled = true, ScriptBudget? budget = null)
   {
     await new TypeRepository(db).DefineAsync("task", Schema);
     var entities = new EntityRepository(db, new SchemaValidator());
@@ -32,7 +32,7 @@ public class ScriptHandlerTests
     var tokens = new RunTokenStore();
     var handler = new ScriptHandler(
       suoritin, new ScriptEffectApplier(entities, mcp), tokens,
-      new ScriptOptions { Enabled = enabled, TimeoutSeconds = timeoutSeconds }, new SuoritinOptions());
+      new ScriptOptions { Enabled = enabled }, new SuoritinOptions(), budget);
     return (e, suoritin, mcp, tokens, handler);
   }
 
@@ -50,8 +50,8 @@ public class ScriptHandlerTests
     Assert.Equal("ran", result.Status);
     var request = Assert.Single(suoritin.Requests);
     Assert.Equal("export default () => ({})", request.Code);
-    Assert.Equal(["api.example.com"], request.AllowedHosts);
-    Assert.Equal(["mcp:send_notification"], request.Grants);
+    Assert.Equal(["api.example.com"], request.Net);
+    Assert.Null(request.Extract);
     Assert.Equal("send_notification", Assert.Single(mcp.Calls).Tool);
     Assert.Contains("[log] ran", result.Result);
   }
@@ -68,8 +68,7 @@ public class ScriptHandlerTests
     Assert.Equal("ran", result.Status);
     var request = Assert.Single(suoritin.Requests);
     Assert.Equal("export default () => ({})", request.Code);
-    Assert.Equal(["a.example"], request.AllowedHosts);
-    Assert.Equal(["setField"], request.Grants);
+    Assert.Equal(["a.example"], request.Net);
   }
 
   [Fact]
@@ -103,32 +102,37 @@ public class ScriptHandlerTests
   }
 
   [Fact]
-  public async Task Llm_grant_issues_token_and_callback_url()
+  public async Task Llm_grant_ships_extract_and_widens_net_to_the_callback_host()
   {
     using var db = TestDb.New();
     var (e, suoritin, _, tokens, handler) = await SetupAsync(db);
-    var config = /*lang=json,strict*/ """{"source":"export default () => ({})","capabilities":["llm"]}""";
+    var config = /*lang=json,strict*/ """{"source":"export default () => ({})","capabilities":["llm"],"allowedHosts":["api.example.com"]}""";
 
     await handler.HandleAsync(new HandlerContext(e, config, DateTimeOffset.UtcNow));
 
     var request = Assert.Single(suoritin.Requests);
-    Assert.NotNull(request.RunToken);
-    Assert.Equal(new SuoritinOptions().CallbackBaseUrl, request.CallbackUrl);
-    Assert.False(tokens.TryUseExtract(request.RunToken)); // revoked after the run
+    Assert.NotNull(request.Extract);
+    // Full URL composed here: the sandbox never learns the route shape.
+    Assert.Equal(
+      ExtractEndpoints.CallbackUrl(new SuoritinOptions().CallbackBaseUrl),
+      request.Extract.Url);
+    // net = allowedHosts + callback host, and nothing else.
+    Assert.Equal(["api.example.com", "toimi-tools-tietue.apps.svc.cluster.local"], request.Net);
+    Assert.False(tokens.TryUseExtract(request.Extract.Token)); // revoked after the run
   }
 
   [Fact]
-  public async Task No_llm_grant_means_no_token()
+  public async Task No_llm_grant_means_no_extract_and_no_net_widening()
   {
     using var db = TestDb.New();
     var (e, suoritin, _, _, handler) = await SetupAsync(db);
-    var config = /*lang=json,strict*/ """{"source":"export default () => ({})","capabilities":["setField"]}""";
+    var config = /*lang=json,strict*/ """{"source":"export default () => ({})","capabilities":["setField"],"allowedHosts":["api.example.com"]}""";
 
     await handler.HandleAsync(new HandlerContext(e, config, DateTimeOffset.UtcNow));
 
     var request = Assert.Single(suoritin.Requests);
-    Assert.Null(request.RunToken);
-    Assert.Null(request.CallbackUrl);
+    Assert.Null(request.Extract);
+    Assert.Equal(["api.example.com"], request.Net);
   }
 
   [Fact]
@@ -266,9 +270,10 @@ public class ScriptHandlerTests
   public async Task Watchdog_bounds_a_hung_suoritin_connection()
   {
     using var db = TestDb.New();
-    // timeoutSeconds -10 makes the watchdog budget (TimeoutSeconds + 10) zero, so the
-    // WaitAsync path fires immediately instead of stalling the test for 10+ seconds.
-    var (e, suoritin, _, _, handler) = await SetupAsync(db, timeoutSeconds: -10);
+    // A genuinely tiny but valid budget: the watchdog fires in ~40ms instead of
+    // stalling the test for the production 30s (was: a timeoutSeconds:-10 hack).
+    var tiny = new ScriptBudget(TimeSpan.FromMilliseconds(40), TimeSpan.Zero, TimeSpan.Zero, TimeSpan.FromSeconds(60));
+    var (e, suoritin, _, _, handler) = await SetupAsync(db, budget: tiny);
     suoritin.Hang = true;
 
     var result = await handler.HandleAsync(new HandlerContext(e, /*lang=json,strict*/ """{"source":"x"}""", DateTimeOffset.UtcNow));

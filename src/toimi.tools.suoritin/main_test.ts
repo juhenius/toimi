@@ -94,10 +94,8 @@ Deno.test("POST /execute accepts explicit nulls for optional fields", async () =
         code: "export default () => ({})",
         input: { data: {} },
         timeoutMs: null,
-        allowedHosts: null,
-        grants: null,
-        runToken: null,
-        callbackUrl: null,
+        net: null,
+        extract: null,
       }),
     }),
   );
@@ -137,4 +135,44 @@ Deno.test("more than 4 concurrent executions get 429", async () => {
   const statuses = responses.map((r) => r.status);
   assert(statuses.includes(429), `statuses: ${statuses}`);
   for (const r of responses) await r.body?.cancel();
+});
+
+Deno.test("POST /execute rejects a non-array net", async () => {
+  const res = await handler(
+    new Request("http://x/execute", {
+      method: "POST",
+      body: JSON.stringify({
+        code: "export default () => ({})",
+        input: {},
+        net: "api.example.com",
+      }),
+    }),
+  );
+  assertEquals(res.status, 400);
+  await res.body?.cancel();
+});
+
+Deno.test("POST /execute rejects a malformed extract", async () => {
+  for (
+    const extract of [
+      "yes",
+      { url: null, token: null },
+      { url: "http://x/e" },
+      { url: "not a url", token: "t" },
+      { url: "http://x/e", token: "" },
+    ]
+  ) {
+    const res = await handler(
+      new Request("http://x/execute", {
+        method: "POST",
+        body: JSON.stringify({
+          code: "export default () => ({})",
+          input: {},
+          extract,
+        }),
+      }),
+    );
+    assertEquals(res.status, 400, JSON.stringify(extract));
+    await res.body?.cancel();
+  }
 });

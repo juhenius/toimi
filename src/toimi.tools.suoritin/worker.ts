@@ -1,6 +1,6 @@
 /// <reference lib="deno.worker" />
 // Worker entry for one script execution. The host scopes this worker's Deno
-// permissions to the script's allowedHosts; everything else (fs, env, run,
+// permissions to the request's `net`; everything else (fs, env, run,
 // ffi) is denied at spawn. The script is imported as an ES module from a
 // data: URL and must default-export a function (input) => effects.
 
@@ -57,22 +57,36 @@ function post(
 }
 
 self.onmessage = async (e: MessageEvent) => {
-  const { code, input, callbackUrl, runToken, grants } = e.data;
+  const { code, input, extract } = e.data;
   try {
-    if ((grants ?? []).includes("llm") && callbackUrl && runToken) {
+    if (extract) {
+      const host = new URL(extract.url).host;
+      // Defense in depth: this worker's net permission already scopes every
+      // fetch, so an out-of-allowlist callback would be denied by Deno anyway —
+      // but refuse it explicitly so a mis-composed request (or a compromised
+      // caller) fails with a clear error instead of a permission trace.
+      if (
+        Deno.permissions.querySync({ name: "net", host }).state !== "granted"
+      ) {
+        throw new Error(
+          `extract callback host ${host} is not in the net allowlist`,
+        );
+      }
+      // The URL arrives fully composed; this sandbox knows no route shapes
+      // (counterpart: ExtractEndpoints.cs Route/TokenHeader/CallbackUrl).
       input.extract = async (
         prompt: string,
         text: string,
         schema?: unknown,
       ) => {
-        const res = await fetch(
-          `${callbackUrl}/internal/runs/${runToken}/extract`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ prompt, text, schema }),
+        const res = await fetch(extract.url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-run-token": extract.token,
           },
-        );
+          body: JSON.stringify({ prompt, text, schema }),
+        });
         if (!res.ok) {
           throw new Error(`extract failed: ${res.status} ${await res.text()}`);
         }

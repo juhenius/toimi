@@ -9,8 +9,11 @@ public class ScriptHandler(
   ScriptEffectApplier applier,
   RunTokenStore tokens,
   ScriptOptions options,
-  SuoritinOptions suoritinOptions) : INativeHandler
+  SuoritinOptions suoritinOptions,
+  ScriptBudget? budget = null) : INativeHandler
 {
+  private readonly ScriptBudget _budget = budget ?? ScriptBudget.From(options);
+
   public string Kind => "script";
 
   /// <summary>
@@ -47,19 +50,19 @@ public class ScriptHandler(
     }
 
     string? token = null;
+    ExtractGrant? extract = null;
     if (script.Grants.Contains("llm", StringComparer.OrdinalIgnoreCase))
     {
-      token = tokens.Issue(ctx.Entity.Id, script.Grants, TimeSpan.FromSeconds(options.TimeoutSeconds + 30));
+      token = tokens.Issue(ctx.Entity.Id, script.Grants, _budget.TokenTtl);
+      extract = new ExtractGrant(ExtractEndpoints.CallbackUrl(suoritinOptions.CallbackBaseUrl), token);
     }
 
     var request = new SuoritinRequest(
       script.Source,
       BuildInput(ctx),
-      options.TimeoutSeconds * 1000,
-      script.AllowedHosts,
-      script.Grants,
-      token,
-      token is null ? null : suoritinOptions.CallbackBaseUrl);
+      _budget.ScriptMs,
+      BuildNet(script.AllowedHosts, extract),
+      extract);
 
     SuoritinResult run;
     try
@@ -67,7 +70,7 @@ public class ScriptHandler(
       // Outer watchdog: the scheduler tick holds the advisory tick lock while a
       // handler runs, so even a hung suoritin connection must be bounded.
       run = await suoritin.ExecuteAsync(request, ct)
-        .WaitAsync(TimeSpan.FromSeconds(options.TimeoutSeconds + 10), ct);
+        .WaitAsync(_budget.Watchdog, ct);
     }
     catch (TimeoutException)
     {
@@ -106,7 +109,7 @@ public class ScriptHandler(
     var reserved = script.FromEntity || ctx.Entity.Type == JobTypeName ? ReservedJobFields : [];
     var applied = await applier.ApplyAsync(
       ctx.Entity, effects, script.Grants, reserved,
-      TimeSpan.FromSeconds(options.EffectsTimeoutSeconds), ct);
+      _budget.Effects, ct);
     return new HandlerResult("ran", JsonSerializer.Serialize(new { applied, logs = run.Logs, durationMs = run.DurationMs }));
   }
 
@@ -141,6 +144,25 @@ public class ScriptHandler(
     }
 
     return string.IsNullOrWhiteSpace(source) ? null : new ResolvedScript(source, hosts, grants, enabled, fromEntity);
+  }
+
+  /// <summary>
+  /// The sandbox's entire egress: the script's declared hosts plus — only when
+  /// llm is granted — the extract-callback host. suoritin applies this verbatim
+  /// as the worker's net permission (executor.ts) and must never widen it;
+  /// composing it here keeps the capability vocabulary on this side of the seam.
+  /// Host format mirrors JS URL.host: port only when non-default.
+  /// </summary>
+  private static string[] BuildNet(string[] allowedHosts, ExtractGrant? extract)
+  {
+    if (extract is null)
+    {
+      return allowedHosts;
+    }
+
+    var uri = new Uri(extract.Url);
+    var host = uri.IsDefaultPort ? uri.Host : $"{uri.Host}:{uri.Port}";
+    return allowedHosts.Contains(host) ? allowedHosts : [.. allowedHosts, host];
   }
 
   private static JsonElement BuildInput(HandlerContext ctx)

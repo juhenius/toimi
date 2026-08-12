@@ -33,7 +33,7 @@ public class SuoritinClientTests
   private static SuoritinRequest Request(string code = "export default () => ({})")
   {
     using var input = JsonDocument.Parse(/*lang=json,strict*/ """{"data":{}}""");
-    return new SuoritinRequest(code, input.RootElement.Clone(), 20000, ["api.example.com"], ["setField"], null, null);
+    return new SuoritinRequest(code, input.RootElement.Clone(), 20000, ["api.example.com"], null);
   }
 
   [Fact]
@@ -67,7 +67,7 @@ public class SuoritinClientTests
   }
 
   [Fact]
-  public async Task Sends_camelcase_payload_with_all_fields()
+  public async Task Sends_camelcase_payload_with_net_and_no_capability_vocabulary()
   {
     var stub = new StubHandler(/*lang=json,strict*/ """{"ok":true,"effects":{},"logs":[],"error":null,"stats":{"durationMs":1}}""");
     var client = new SuoritinClient(new StubFactory(stub));
@@ -77,8 +77,30 @@ public class SuoritinClientTests
     using var sent = JsonDocument.Parse(stub.LastRequestBody!);
     Assert.Equal("CODE", sent.RootElement.GetProperty("code").GetString());
     Assert.Equal(20000, sent.RootElement.GetProperty("timeoutMs").GetInt32());
-    Assert.Equal("api.example.com", sent.RootElement.GetProperty("allowedHosts")[0].GetString());
-    Assert.Equal("setField", sent.RootElement.GetProperty("grants")[0].GetString());
+    Assert.Equal("api.example.com", sent.RootElement.GetProperty("net")[0].GetString());
+    // Grants/allowedHosts/runToken/callbackUrl never cross the seam anymore.
+    Assert.False(sent.RootElement.TryGetProperty("grants", out _));
+    Assert.False(sent.RootElement.TryGetProperty("allowedHosts", out _));
+    // Absent extract is OMITTED, not JSON null (suoritin's null-as-absent
+    // tolerance is a backstop, not the contract).
+    Assert.False(sent.RootElement.TryGetProperty("extract", out _));
+  }
+
+  [Fact]
+  public async Task Present_extract_serializes_as_camelcase_url_and_token()
+  {
+    var stub = new StubHandler(/*lang=json,strict*/ """{"ok":true,"effects":{},"logs":[],"error":null,"stats":{"durationMs":1}}""");
+    var client = new SuoritinClient(new StubFactory(stub));
+    using var input = JsonDocument.Parse(/*lang=json,strict*/ """{"data":{}}""");
+
+    await client.ExecuteAsync(new SuoritinRequest(
+      "CODE", input.RootElement.Clone(), 20000, ["h.example"],
+      new ExtractGrant("http://tietue.test/internal/runs/extract", "tok")));
+
+    using var sent = JsonDocument.Parse(stub.LastRequestBody!);
+    var extract = sent.RootElement.GetProperty("extract");
+    Assert.Equal("http://tietue.test/internal/runs/extract", extract.GetProperty("url").GetString());
+    Assert.Equal("tok", extract.GetProperty("token").GetString());
   }
 
   [Fact]

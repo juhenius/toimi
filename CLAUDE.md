@@ -114,7 +114,9 @@ Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers),
 **suoritin — Sandboxed script runner (Deno, not .NET, not MCP).**
 - Owns: executing all AI-authored scripts (`job` entities + inline trigger
   scripts) in per-run Deno Workers. `POST /execute {code, input, timeoutMs,
-  allowedHosts, grants, runToken, callbackUrl}` → `{ok, effects, logs, stats}`.
+  net, extract?: {url, token}}` → `{ok, effects, logs, stats}`. tietue composes
+  `net` (allowedHosts + extract-callback host iff llm granted) and the full
+  extract URL — capability names and route shapes never reach the sandbox.
   Credential-free and stateless; per-script net allowlist enforced by Deno
   worker permissions; egress NetworkPolicy allows DNS + public internet + a
   tietue pinhole (the token-gated `extract()` LLM callback) only; ingress
@@ -209,7 +211,8 @@ tietue's `notify` handler.
   trigger — use `update_trigger`.
 - **Sandboxed scripts** — the `script` handler ships AI-authored JS to the
   credential-free suoritin pod, which runs it in a per-run Deno Worker
-  (worker net permission = the script's `allowedHosts`; timeout/memory/log
+  (worker net permission = the request's `net`, composed by tietue from the script's
+  `allowedHosts` (+ the extract-callback host when `llm` is granted); timeout/memory/log
   caps) as a pure `input → effects` function; tietue applies only granted
   effects — `setField` (reserved job control fields excluded, schema
   re-validated) and `mcpCall` per `mcp:<tool>` grant. The `llm` grant gives

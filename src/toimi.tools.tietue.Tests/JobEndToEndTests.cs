@@ -56,8 +56,8 @@ public class JobEndToEndTests
     // The request carried the entity's own code, hosts, and grants (fromEntity mode).
     var request = Assert.Single(suoritin.Requests);
     Assert.Equal("export default () => ({})", request.Code);
-    Assert.Equal(["api.open-meteo.com"], request.AllowedHosts);
-    Assert.Equal(["setField", "mcp:display_show"], request.Grants);
+    Assert.Equal(["api.open-meteo.com"], request.Net);
+    Assert.Null(request.Extract);
     Assert.Contains("\"status\":\"ran\"", result);
 
     var ev = Assert.Single(db.EntityEvents.Where(x => x.EntityId == e.Id));

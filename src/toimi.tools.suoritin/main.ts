@@ -13,20 +13,27 @@ function isStringArray(v: unknown): v is string[] {
 
 // Returns an error message, or null when the optional fields are well-typed.
 // An explicit JSON null counts as absent (== null covers both), matching the
-// executor's `??` defaults — .NET serializers send optional fields as null.
+// executor's `??` defaults — the counterpart serializer (SuoritinClient.cs,
+// WhenWritingNull) omits absent fields, so null only appears if that drifts.
+// A PRESENT extract must be a complete {url, token}: partial or null-membered
+// objects are rejected, not silently degraded to "no extract".
 function validateOptionalFields(p: Record<string, unknown>): string | null {
   if (p.timeoutMs != null && typeof p.timeoutMs !== "number") {
     return "'timeoutMs' must be a number";
   }
-  if (p.allowedHosts != null && !isStringArray(p.allowedHosts)) {
-    return "'allowedHosts' must be an array of strings";
+  if (p.net != null && !isStringArray(p.net)) {
+    return "'net' must be an array of strings";
   }
-  if (p.grants != null && !isStringArray(p.grants)) {
-    return "'grants' must be an array of strings";
-  }
-  if (p.callbackUrl != null) {
-    if (typeof p.callbackUrl !== "string" || !URL.canParse(p.callbackUrl)) {
-      return "'callbackUrl' must be a valid URL";
+  if (p.extract != null) {
+    if (typeof p.extract !== "object" || Array.isArray(p.extract)) {
+      return "'extract' must be an object";
+    }
+    const e = p.extract as Record<string, unknown>;
+    if (typeof e.url !== "string" || !URL.canParse(e.url)) {
+      return "'extract.url' must be a valid URL";
+    }
+    if (typeof e.token !== "string" || e.token.length === 0) {
+      return "'extract.token' must be a non-empty string";
     }
   }
   return null;

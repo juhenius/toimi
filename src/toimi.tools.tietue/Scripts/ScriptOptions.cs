@@ -5,10 +5,9 @@ public class ScriptOptions
   public bool Enabled { get; set; } = true;
 
   /// <summary>
-  /// Script execution budget, sent to suoritin as timeoutMs. The HTTP client
-  /// timeout is this +5s and the handler watchdog this +10s, so the scheduler
-  /// tick (which holds the tick lock) is always bounded even if suoritin hangs.
-  /// Note: suoritin clamps timeoutMs to 60s, so values above 60 are ineffective.
+  /// Script execution budget in seconds, sent to suoritin as timeoutMs. The
+  /// full timeout ladder (HTTP client, watchdog, token TTL) is derived from
+  /// this in <see cref="ScriptBudget"/> — the single owner of the arithmetic.
   /// </summary>
   public int TimeoutSeconds { get; set; } = 20;
 

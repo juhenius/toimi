@@ -5,6 +5,7 @@ import {
   execute,
   MAX_TIMEOUT_MS,
 } from "./executor.ts";
+import { MAX_LOG_CHARS, MAX_LOGS } from "./limits.ts";
 
 Deno.test("runs a module and returns its effects", async () => {
   const r = await execute({
@@ -105,7 +106,7 @@ Deno.test("fetch to a non-granted host is rejected", async () => {
              return { got: res.status };
            }`,
     input: {},
-    allowedHosts: [],
+    net: [],
     timeoutMs: 5000,
   });
   assertEquals(r.ok, false);
@@ -126,7 +127,7 @@ Deno.test("fetch to a granted host succeeds", async () => {
                return { mcpCall: [{ tool: "display_show", args: { temp: body.temp } }] };
              }`,
       input: {},
-      allowedHosts: [host],
+      net: [host],
       timeoutMs: 5000,
     });
     assert(r.ok, r.error ?? "");
@@ -138,34 +139,40 @@ Deno.test("fetch to a granted host succeeds", async () => {
   }
 });
 
-Deno.test("extract() posts to the callback and returns parsed JSON", async () => {
-  let seen: { path: string; body: unknown } | null = null;
+Deno.test("extract() posts to the given URL with the run-token header", async () => {
+  let seen: { path: string; token: string | null; body: unknown } | null = null;
   const srv = Deno.serve({ port: 0, onListen: () => {} }, async (req) => {
-    seen = { path: new URL(req.url).pathname, body: await req.json() };
+    seen = {
+      path: new URL(req.url).pathname,
+      token: req.headers.get("x-run-token"),
+      body: await req.json(),
+    };
     return Response.json({ price: 19.9 });
   });
   try {
+    const host = `localhost:${srv.addr.port}`;
     const r = await execute({
       code: `export default async function run(input) {
                const out = await input.extract("get the price", "<html>19,90 €</html>", { type: "object" });
                return { setField: [{ path: "lastPrice", value: out.price }] };
              }`,
       input: {},
-      grants: ["llm"],
-      runToken: "tok123",
-      callbackUrl: `http://localhost:${srv.addr.port}`,
+      net: [host],
+      extract: { url: `http://${host}/internal/runs/extract`, token: "tok123" },
       timeoutMs: 5000,
     });
     assert(r.ok, r.error ?? "");
     assertEquals(r.effects, { setField: [{ path: "lastPrice", value: 19.9 }] });
-    assertEquals(seen!.path, "/internal/runs/tok123/extract");
+    // The worker POSTed to the URL verbatim — the route shape is tietue's alone.
+    assertEquals(seen!.path, "/internal/runs/extract");
+    assertEquals(seen!.token, "tok123");
     assertEquals((seen!.body as { prompt: string }).prompt, "get the price");
   } finally {
     await srv.shutdown();
   }
 });
 
-Deno.test("extract() is absent without the llm grant", async () => {
+Deno.test("extract() is absent without an extract grant", async () => {
   const r = await execute({
     code:
       `export default function run(input) { return { has: typeof input.extract }; }`,
@@ -173,6 +180,21 @@ Deno.test("extract() is absent without the llm grant", async () => {
   });
   assert(r.ok);
   assertEquals(r.effects, { has: "undefined" });
+});
+
+Deno.test("extract.url host outside the net allowlist is refused", async () => {
+  const r = await execute({
+    code: `export default async function run(input) {
+             await input.extract("p", "t");
+             return {};
+           }`,
+    input: {},
+    net: [],
+    extract: { url: "http://localhost:1/internal/runs/extract", token: "tok" },
+    timeoutMs: 5000,
+  });
+  assertEquals(r.ok, false);
+  assertStringIncludes(r.error!, "not in the net allowlist");
 });
 
 Deno.test("direct postMessage abuse is clamped host-side", async () => {
@@ -193,9 +215,9 @@ Deno.test("direct postMessage abuse is clamped host-side", async () => {
     timeoutMs: 5000,
   });
   assert(r.ok, r.error ?? "");
-  assert(r.logs.length <= 200, `logs length ${r.logs.length}`);
+  assert(r.logs.length <= MAX_LOGS, `logs length ${r.logs.length}`);
   for (const line of r.logs) {
-    assert(line.length <= 2001, `log line length ${line.length}`);
+    assert(line.length <= MAX_LOG_CHARS + 1, `log line length ${line.length}`);
   }
 });
 
