@@ -25,48 +25,53 @@ public class AggregatorTests
     }
   }
 
+  // Production Toimi:Admin:Tools is ["tietue"] (src/toimi.web/appsettings.json)
+  // — tietue is the only admin-bearing pod since the server consolidation.
+  // "posti" and "kalenteri" below are HYPOTHETICAL future admin-bearing pods:
+  // they exist only so these tests keep proving the multi-tool fan-out a
+  // second real pod would rely on.
   [Fact]
   public async Task Merges_items_by_UpdatedAt_desc_and_collects_errors()
   {
     var now = DateTimeOffset.UtcNow;
-    var muistioItem = new AdminSummaryDto("a", "memory", "older", null, now.AddHours(-2), now.AddHours(-2));
-    var ajastinItem = new AdminSummaryDto("b", "schedule", "newer", null, now.AddHours(-1), now.AddHours(-1));
+    var tietueItem = new AdminSummaryDto("a", "memory", "older", null, now.AddHours(-2), now.AddHours(-2));
+    var postiItem = new AdminSummaryDto("b", "schedule", "newer", null, now.AddHours(-1), now.AddHours(-1));
 
     var handlers = new Dictionary<string, HttpMessageHandler>
     {
-      ["admin-muistio"] = new StubHandler(_ =>
+      ["admin-tietue"] = new StubHandler(_ =>
       {
         var msg = new HttpResponseMessage(HttpStatusCode.OK)
-        { Content = JsonContent.Create(new[] { muistioItem }) };
+        { Content = JsonContent.Create(new[] { tietueItem }) };
         return msg;
       }),
-      ["admin-ajastin"] = new StubHandler(_ =>
+      ["admin-posti"] = new StubHandler(_ =>
       {
         var msg = new HttpResponseMessage(HttpStatusCode.OK)
-        { Content = JsonContent.Create(new[] { ajastinItem }) };
+        { Content = JsonContent.Create(new[] { postiItem }) };
         return msg;
       }),
-      ["admin-muistutin"] = new StubHandler(_ => throw new HttpRequestException("boom")),
+      ["admin-kalenteri"] = new StubHandler(_ => throw new HttpRequestException("boom")),
     };
     var factory = new StubFactory(handlers);
 
     var result = await AdminAggregator.AggregateAsync(
-        ["muistio", "ajastin", "muistutin"], factory, q: null, limit: 50);
+        ["tietue", "posti", "kalenteri"], factory, q: null, limit: 50);
 
     Assert.Equal(2, result.Items.Count);
     Assert.Equal("b", result.Items[0].Id); // newer first
     Assert.Equal("a", result.Items[1].Id);
     var err = Assert.Single(result.Errors);
-    Assert.Equal("muistutin", err.Tool);
+    Assert.Equal("kalenteri", err.Tool);
   }
 
   [Fact]
-  public async Task Null_query_produces_an_empty_q_parameter()
+  public async Task Summary_url_is_the_contract_path_with_an_empty_q_for_null_query()
   {
     Uri? captured = null;
     var handlers = new Dictionary<string, HttpMessageHandler>
     {
-      ["admin-muistio"] = new StubHandler(req =>
+      ["admin-tietue"] = new StubHandler(req =>
       {
         captured = req.RequestUri;
         return new HttpResponseMessage(HttpStatusCode.OK)
@@ -75,10 +80,14 @@ public class AggregatorTests
     };
     var factory = new StubFactory(handlers);
 
-    await AdminAggregator.AggregateAsync(["muistio"], factory, q: null, limit: 50);
+    await AdminAggregator.AggregateAsync(["tietue"], factory, q: null, limit: 50);
 
     Assert.NotNull(captured);
-    Assert.Contains("q=&", captured.PathAndQuery);
+    // Literal on purpose: pins the upstream wire URL byte-for-byte, so an
+    // AdminRoutes edit that would move it fails here instead of shipping.
+    // The serving half of this contract is pinned in tietue's
+    // AdminEndpointsTests (Summary_serves_the_aggregator_url_shape…).
+    Assert.Equal("/admin/summary?q=&limit=50", captured.PathAndQuery);
   }
 
   [Fact]
@@ -86,16 +95,16 @@ public class AggregatorTests
   {
     var handlers = new Dictionary<string, HttpMessageHandler>
     {
-      ["admin-muistio"] = new StubHandler(_ => throw new HttpRequestException("boom1")),
-      ["admin-ajastin"] = new StubHandler(_ => throw new HttpRequestException("boom2")),
+      ["admin-tietue"] = new StubHandler(_ => throw new HttpRequestException("boom1")),
+      ["admin-posti"] = new StubHandler(_ => throw new HttpRequestException("boom2")),
     };
     var factory = new StubFactory(handlers);
 
-    var result = await AdminAggregator.AggregateAsync(["muistio", "ajastin"], factory, q: null, limit: 50);
+    var result = await AdminAggregator.AggregateAsync(["tietue", "posti"], factory, q: null, limit: 50);
 
     Assert.Empty(result.Items);
     Assert.Equal(2, result.Errors.Count);
-    Assert.Equal(["muistio", "ajastin"], result.Errors.Select(e => e.Tool));
+    Assert.Equal(["tietue", "posti"], result.Errors.Select(e => e.Tool));
   }
 }
 
@@ -122,7 +131,7 @@ public class ForwarderTests
   {
     var ctx = new DefaultHttpContext();
     ctx.Request.Method = "GET";
-    var opts = new AdminToolsOptions { Tools = ["muistio"] };
+    var opts = new AdminToolsOptions { Tools = ["tietue"] };
     var factory = new StubFactory(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)));
     var result = await AdminForwarder.ForwardAsync("notreal", "items", ctx, opts, factory);
     Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.NotFound>(result);
@@ -141,10 +150,10 @@ public class ForwarderTests
     var ctx = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
     ctx.Request.Method = "GET";
     ctx.Request.QueryString = new QueryString("?q=foo&page=2");
-    var opts = new AdminToolsOptions { Tools = ["muistio"] };
+    var opts = new AdminToolsOptions { Tools = ["tietue"] };
     var factory = new StubFactory(handler);
 
-    await AdminForwarder.ForwardAsync("muistio", "items", ctx, opts, factory);
+    await AdminForwarder.ForwardAsync("tietue", "items", ctx, opts, factory);
 
     Assert.NotNull(captured);
     Assert.Equal(HttpMethod.Get, captured!.Method);
@@ -165,10 +174,10 @@ public class ForwarderTests
     });
     var ctx = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
     ctx.Request.Method = "GET";
-    var opts = new AdminToolsOptions { Tools = ["muistio"] };
+    var opts = new AdminToolsOptions { Tools = ["tietue"] };
     var factory = new StubFactory(handler);
 
-    await AdminForwarder.ForwardAsync("muistio", "items", ctx, opts, factory);
+    await AdminForwarder.ForwardAsync("tietue", "items", ctx, opts, factory);
 
     Assert.False(
         ctx.Response.Headers.ContainsKey("Transfer-Encoding"),
@@ -190,10 +199,10 @@ public class ForwarderTests
     ctx.Request.ContentType = "application/json";
     var bodyBytes = System.Text.Encoding.UTF8.GetBytes("test-body-payload");
     ctx.Request.Body = new MemoryStream(bodyBytes);
-    var opts = new AdminToolsOptions { Tools = ["muistio"] };
+    var opts = new AdminToolsOptions { Tools = ["tietue"] };
     var factory = new StubFactory(handler);
 
-    await AdminForwarder.ForwardAsync("muistio", "items", ctx, opts, factory);
+    await AdminForwarder.ForwardAsync("tietue", "items", ctx, opts, factory);
 
     Assert.NotNull(captured);
     Assert.Equal(HttpMethod.Put, captured.Method);
@@ -215,10 +224,10 @@ public class ForwarderTests
     });
     var ctx = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
     ctx.Request.Method = "GET";
-    var opts = new AdminToolsOptions { Tools = ["muistio"] };
+    var opts = new AdminToolsOptions { Tools = ["tietue"] };
     var factory = new StubFactory(handler);
 
-    await AdminForwarder.ForwardAsync("muistio", "items", ctx, opts, factory);
+    await AdminForwarder.ForwardAsync("tietue", "items", ctx, opts, factory);
 
     Assert.NotNull(captured);
     Assert.Null(captured.Content);
@@ -238,10 +247,10 @@ public class ForwarderTests
     ctx.Request.Method = "GET";
     ctx.Request.Headers.IfUnmodifiedSince = "Wed, 21 Oct 2015 07:28:00 GMT";
     ctx.Request.Headers["X-Custom"] = "should-not-forward";
-    var opts = new AdminToolsOptions { Tools = ["muistio"] };
+    var opts = new AdminToolsOptions { Tools = ["tietue"] };
     var factory = new StubFactory(handler);
 
-    await AdminForwarder.ForwardAsync("muistio", "items", ctx, opts, factory);
+    await AdminForwarder.ForwardAsync("tietue", "items", ctx, opts, factory);
 
     Assert.NotNull(captured);
     Assert.True(captured.Headers.TryGetValues("If-Unmodified-Since", out var values));
@@ -256,10 +265,10 @@ public class ForwarderTests
     { Content = new StringContent("conflict body", System.Text.Encoding.UTF8, "application/json") });
     var ctx = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
     ctx.Request.Method = "GET";
-    var opts = new AdminToolsOptions { Tools = ["muistio"] };
+    var opts = new AdminToolsOptions { Tools = ["tietue"] };
     var factory = new StubFactory(handler);
 
-    await AdminForwarder.ForwardAsync("muistio", "items", ctx, opts, factory);
+    await AdminForwarder.ForwardAsync("tietue", "items", ctx, opts, factory);
 
     Assert.Equal(409, ctx.Response.StatusCode);
     ctx.Response.Body.Position = 0;
@@ -273,10 +282,10 @@ public class ForwarderTests
     var handler = new StubHandler(_ => throw new HttpRequestException("connection refused"));
     var ctx = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
     ctx.Request.Method = "GET";
-    var opts = new AdminToolsOptions { Tools = ["muistio"] };
+    var opts = new AdminToolsOptions { Tools = ["tietue"] };
     var factory = new StubFactory(handler);
 
-    var result = await AdminForwarder.ForwardAsync("muistio", "items", ctx, opts, factory);
+    var result = await AdminForwarder.ForwardAsync("tietue", "items", ctx, opts, factory);
 
     var problem = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.ProblemHttpResult>(result);
     Assert.Equal(502, problem.StatusCode);

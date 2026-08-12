@@ -39,6 +39,33 @@ public class AdminEndpointsTests : IDisposable
   }
 
   [Fact]
+  public async Task Summary_serves_the_aggregator_url_shape_with_q_and_limit()
+  {
+    var newer = Guid.NewGuid();
+    using (var scope = _factory.Services.CreateScope())
+    {
+      var db = scope.ServiceProvider.GetRequiredService<TietueDbContext>();
+      var now = DateTimeOffset.UtcNow;
+      db.Entities.Add(new Entity { Id = Guid.NewGuid(), Type = "note", Data = JsonDocument.Parse("{}"), CreatedAt = now.AddHours(-2), UpdatedAt = now.AddHours(-2) });
+      db.Entities.Add(new Entity { Id = newer, Type = "note", Data = JsonDocument.Parse("{}"), CreatedAt = now.AddHours(-1), UpdatedAt = now.AddHours(-1) });
+      db.Entities.Add(new Entity { Id = Guid.NewGuid(), Type = "task", Data = JsonDocument.Parse("{}"), CreatedAt = now, UpdatedAt = now });
+      await db.SaveChangesAsync();
+    }
+
+    var client = _factory.CreateClient();
+    // Literal on purpose: byte-identical to the URL toimi.web's AdminAggregator
+    // composes (AdminRoutes.SummaryPath + ?q=&limit=), and deserialized into the
+    // same shared AdminSummaryDto the aggregator parses. The composing half of
+    // this contract is pinned in toimi.web.Tests AggregatorTests
+    // (Summary_url_is_the_contract_path_with_an_empty_q_for_null_query).
+    var rows = await client.GetFromJsonAsync<AdminSummaryDto[]>("/admin/summary?q=note&limit=1");
+
+    var item = Assert.Single(rows!);
+    Assert.Equal(newer.ToString(), item.Id); // q filtered the task out; limit=1 kept the newest note
+    Assert.Equal("note", item.Kind);
+  }
+
+  [Fact]
   public async Task Delete_removes_entity()
   {
     var id = Guid.NewGuid();

@@ -72,7 +72,7 @@ public static class AdminForwarder
     }
 
     var client = http.CreateClient($"admin-{tool}");
-    var upstreamPath = $"/admin/{path}{ctx.Request.QueryString}";
+    var upstreamPath = $"{AdminRoutes.Base}/{path}{ctx.Request.QueryString}";
     var req = new HttpRequestMessage(new HttpMethod(ctx.Request.Method), upstreamPath);
 
     if (ctx.Request.Headers.TryGetValue("If-Unmodified-Since", out var ius))
@@ -131,7 +131,7 @@ public static class AdminAggregator
       {
         var client = http.CreateClient($"admin-{tool}");
         var rows = await client.GetFromJsonAsync<AdminSummaryDto[]>(
-            $"/admin/summary?q={Uri.EscapeDataString(q ?? string.Empty)}&limit={limit}");
+            $"{AdminRoutes.SummaryPath}?q={Uri.EscapeDataString(q ?? string.Empty)}&limit={limit}");
         return (tool, items: (IReadOnlyList<AdminSummaryDto>)(rows ?? []), error: null);
       }
       catch (Exception ex)

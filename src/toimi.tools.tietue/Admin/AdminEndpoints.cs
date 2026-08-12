@@ -26,9 +26,9 @@ public static class AdminEndpoints
 
   public static void MapAdminEndpoints(this IEndpointRouteBuilder app)
   {
-    var admin = app.MapGroup("/admin");
+    var admin = app.MapGroup(AdminRoutes.Base);
 
-    admin.MapGet("/summary", async (TietueDbContext db, string? q, int limit = 0) =>
+    admin.MapGet(AdminRoutes.Summary, async (TietueDbContext db, string? q, int limit = 0) =>
     {
       limit = limit <= 0 ? 50 : Math.Clamp(limit, 1, 200);
       var query = db.Entities.AsQueryable();

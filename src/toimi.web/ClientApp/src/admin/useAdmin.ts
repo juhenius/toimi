@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 
+// counterpart: src/toimi.core/Admin/AdminRoutes.cs — the C# owner of the
+// upstream /admin path contract behind the /api/admin/... prefix used here.
+// TS cannot consume a C# constant: if toimi.web's /api/admin routes move,
+// update the fetch paths here and in useAdminSummary.ts / UsagePage.tsx.
+
 export interface AdminFetchError { status: number; body?: unknown }
 
 export function useAdminList<T>(tool: string, path: string) {
