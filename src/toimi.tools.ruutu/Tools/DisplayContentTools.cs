@@ -54,12 +54,8 @@ public class DisplayContentTools(ContentPushService pusher, ILogger<DisplayConte
 
   private static string? TranslateContentFailure(Exception ex, string template)
   {
-    return ex switch
-    {
-      JsonException json => $"Error: dataJson is not valid JSON: {json.Message}",
-      RenderException render => $"Error rendering '{template}': {render.Message}",
-      InvalidOperationException op => $"Error: {op.Message}",
-      _ => null,
-    };
+    return ex is RenderException render
+      ? $"Error rendering '{template}': {render.Message}"
+      : RuutuErrors.TranslateJson(ex, "dataJson") ?? RuutuErrors.Translate(ex);
   }
 }

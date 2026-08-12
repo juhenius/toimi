@@ -40,4 +40,28 @@ internal static class ConfigValidation
     failure = null;
     return doc;
   }
+
+  /// <summary>
+  /// The "config must be a JSON object with one non-empty string property" shape
+  /// shared by handlers whose only requirement is a single named field
+  /// (MessageHandler's promptTemplate, SetFieldHandler's path). <paramref
+  /// name="requireNonWhitespace"/> additionally rejects an all-whitespace string —
+  /// promptTemplate does (an empty prompt is a silent no-op), path does not.
+  /// </summary>
+  public static ValidationResult RequireNonEmptyString(
+    string? configJson, string property, string requirement, bool requireNonWhitespace = false)
+  {
+    using var cfg = RequireObject(configJson, requirement, out var failure);
+    if (cfg is null)
+    {
+      return failure!;
+    }
+
+    var value = cfg.RootElement.TryGetProperty(property, out var p) && p.ValueKind == JsonValueKind.String
+      ? p.GetString()
+      : null;
+
+    var valid = requireNonWhitespace ? !string.IsNullOrWhiteSpace(value) : !string.IsNullOrEmpty(value);
+    return valid ? ValidationResult.Valid() : ValidationResult.Invalid(requirement);
+  }
 }

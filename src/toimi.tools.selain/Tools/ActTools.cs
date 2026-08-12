@@ -111,7 +111,7 @@ public class ActTools(SelainOptions options, TabManager tabs, BrowserHost host)
     [Description("Seconds to wait (default 15, max 30)")] int? seconds = null)
   {
     var budget = Math.Clamp(seconds ?? 15, 1, 30);
-    return ToolGuard.WithActiveTabAsync(options, tabs, host, async active =>
+    return TabGuard.WithActiveTabAsync(options, tabs, host, async active =>
     {
       var page = ((PlaywrightSession)active.Session).Page;
       if (!string.IsNullOrEmpty(text))
@@ -148,13 +148,13 @@ public class ActTools(SelainOptions options, TabManager tabs, BrowserHost host)
 
   /// <summary>
   /// Guarded action pipeline: kill switch + ActionLock + no-tab check (via
-  /// ToolGuard), the action itself with friendly timeout/failure messages, an
+  /// TabGuard), the action itself with friendly timeout/failure messages, an
   /// optional best-effort settle for actions that trigger navigation, then the
   /// standard page result. A non-null action return short-circuits.
   /// </summary>
   private Task<string> WithPageAsync(Func<IPage, Task<string?>> action, bool settleAfter)
   {
-    return ToolGuard.WithActiveTabAsync(options, tabs, host, async active =>
+    return TabGuard.WithActiveTabAsync(options, tabs, host, async active =>
     {
       var page = ((PlaywrightSession)active.Session).Page;
       try

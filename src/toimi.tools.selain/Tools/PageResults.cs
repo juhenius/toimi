@@ -19,7 +19,7 @@ internal static class PageResults
     }
     catch (Exception ex) when (ex is PlaywrightException or TimeoutException)
     {
-      return ToolGuard.TabLostMessage;
+      return TabGuard.TabLostMessage;
     }
   }
 

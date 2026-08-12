@@ -9,8 +9,8 @@ public class ToolEventJsonTests
   {
     var json = ToolEventJson.Serialize(
     [
-      new ToolCallEvent("c1", "search", /*lang=json,strict*/ """{"query":"milk"}"""),
-      new ToolResultEvent("c1", "found 3", 42),
+      new ToolCallUpdate("c1", "search", /*lang=json,strict*/ """{"query":"milk"}"""),
+      new ToolResultUpdate("c1", "found 3", 42),
     ]);
 
     Assert.NotNull(json);
@@ -35,6 +35,6 @@ public class ToolEventJsonTests
   [Fact]
   public void Unknown_event_objects_are_skipped()
   {
-    Assert.Null(ToolEventJson.Serialize([new object()]));
+    Assert.Null(ToolEventJson.Serialize([new TokenUpdate("x")]));
   }
 }

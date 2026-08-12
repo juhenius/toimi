@@ -30,13 +30,6 @@ public class SetFieldHandler(EntityRepository repository) : INativeHandler
   public ValidationResult ValidateConfig(string? configJson)
   {
     const string Requirement = "set-field config requires 'path' as a non-empty string — without it the handler skips every fire.";
-    using var cfg = ConfigValidation.RequireObject(configJson, Requirement, out var failure);
-    return cfg is null
-      ? failure!
-      : cfg.RootElement.TryGetProperty("path", out var p)
-      && p.ValueKind == JsonValueKind.String
-      && !string.IsNullOrEmpty(p.GetString())
-        ? ValidationResult.Valid()
-        : ValidationResult.Invalid(Requirement);
+    return ConfigValidation.RequireNonEmptyString(configJson, "path", Requirement);
   }
 }

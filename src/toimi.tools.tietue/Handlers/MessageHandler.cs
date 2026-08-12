@@ -36,13 +36,6 @@ public class MessageHandler(IAgentRunner runner) : INativeHandler
   public ValidationResult ValidateConfig(string? configJson)
   {
     const string Requirement = "message config requires 'promptTemplate' as a non-empty string — without it the agent runs with an empty prompt.";
-    using var cfg = ConfigValidation.RequireObject(configJson, Requirement, out var failure);
-    return cfg is null
-      ? failure!
-      : cfg.RootElement.TryGetProperty("promptTemplate", out var p)
-      && p.ValueKind == JsonValueKind.String
-      && !string.IsNullOrWhiteSpace(p.GetString())
-        ? ValidationResult.Valid()
-        : ValidationResult.Invalid(Requirement);
+    return ConfigValidation.RequireNonEmptyString(configJson, "promptTemplate", Requirement, requireNonWhitespace: true);
   }
 }

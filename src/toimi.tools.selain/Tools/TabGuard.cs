@@ -1,10 +1,10 @@
 using Microsoft.Playwright;
+using Toimi.Core.Tools;
 using toimi.tools.selain.Browser;
-using CoreToolGuard = Toimi.Core.Tools.ToolGuard;
 
 namespace toimi.tools.selain.Tools;
 
-internal static class ToolGuard
+internal static class TabGuard
 {
   public const string TabLostMessage = "The tab is no longer available (closed or browser restarted) — use browse to start again.";
   public const string PageBusyMessage = "The page is busy and did not respond in time — try again, or use wait_for.";
@@ -51,7 +51,7 @@ internal static class ToolGuard
     {
       return tabs.Active is not { } active
         ? "No open tab — use browse first."
-        : await CoreToolGuard.RunAsync(() => body(active), translate: TranslatePageFailure);
+        : await ToolGuard.RunAsync(() => body(active), translate: TranslatePageFailure);
     }
     finally
     {

@@ -142,7 +142,7 @@ public sealed class ToimiAgent : IAsyncDisposable
       await _context.CompactIfNeededAsync(_client, _config.MaxContextTokens, ct);
 
       var fullResponse = new StringBuilder();
-      var toolEvents = new List<object>();
+      var toolEvents = new List<TurnUpdate>();
       UsageDetails? usage = null;
 
       await foreach (var update in _client.GetStreamingResponseAsync(_context.ToChatMessages(), _options, ct))
@@ -231,23 +231,24 @@ public sealed class ToimiAgent : IAsyncDisposable
     return _aggregator.DisposeAsync();
   }
 
-  private IEnumerable<TurnUpdate> DrainToolEvents(List<object> accumulated)
+  private IEnumerable<TurnUpdate> DrainToolEvents(List<TurnUpdate> accumulated)
   {
     while (_notifier.TryDequeueEvent(out var evt))
     {
-      switch (evt)
+      TurnUpdate? update = evt switch
       {
-        case ToolCallEvent tc:
-          accumulated.Add(tc);
-          yield return new ToolCallUpdate(tc.CallId, tc.Name, tc.Arguments);
-          break;
-        case ToolResultEvent tr:
-          accumulated.Add(tr);
-          yield return new ToolResultUpdate(tr.CallId, tr.Result, tr.DurationMs);
-          break;
-        default:
-          break;
+        ToolCallEvent tc => new ToolCallUpdate(tc.CallId, tc.Name, tc.Arguments),
+        ToolResultEvent tr => new ToolResultUpdate(tr.CallId, tr.Result, tr.DurationMs),
+        _ => null,
+      };
+
+      if (update is null)
+      {
+        continue;
       }
+
+      accumulated.Add(update);
+      yield return update;
     }
   }
 }

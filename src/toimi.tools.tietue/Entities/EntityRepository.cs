@@ -51,16 +51,10 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, IEn
     {
       await EnforceUniqueOnCreateAsync(entity, ctx.Behaviors.UniqueName, ct);
       db.Entities.Add(entity);
-      foreach (var behavior in pipeline)
-      {
-        await behavior.OnSavingAsync(ctx, ct);
-      }
+      await RunSavingAsync(ctx, ct);
 
       await SaveGuardingUniqueAsync(entity.Type, ct);
-      foreach (var behavior in pipeline)
-      {
-        await behavior.OnSavedAsync(ctx, ct);
-      }
+      await RunSavedAsync(ctx, ct);
 
       if (tx is not null)
       {
@@ -135,16 +129,10 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, IEn
       Now = entity.UpdatedAt,
       DataChanged = data is not null,
     };
-    foreach (var behavior in pipeline)
-    {
-      await behavior.OnSavingAsync(ctx, ct);
-    }
+    await RunSavingAsync(ctx, ct);
 
     await SaveGuardingUniqueAsync(entity.Type, ct);
-    foreach (var behavior in pipeline)
-    {
-      await behavior.OnSavedAsync(ctx, ct);
-    }
+    await RunSavedAsync(ctx, ct);
 
     await RunCommittedAsync(ctx, ct);
     return entity;
@@ -170,19 +158,29 @@ public class EntityRepository(TietueDbContext db, SchemaValidator validator, IEn
       Now = DateTimeOffset.UtcNow,
     };
     db.Entities.Remove(entity);
+    await RunSavingAsync(ctx, ct);
+
+    await db.SaveChangesAsync(ct);
+    await RunSavedAsync(ctx, ct);
+
+    await RunCommittedAsync(ctx, ct);
+    return true;
+  }
+
+  private async Task RunSavingAsync(BehaviorContext ctx, CancellationToken ct)
+  {
     foreach (var behavior in pipeline)
     {
       await behavior.OnSavingAsync(ctx, ct);
     }
+  }
 
-    await db.SaveChangesAsync(ct);
+  private async Task RunSavedAsync(BehaviorContext ctx, CancellationToken ct)
+  {
     foreach (var behavior in pipeline)
     {
       await behavior.OnSavedAsync(ctx, ct);
     }
-
-    await RunCommittedAsync(ctx, ct);
-    return true;
   }
 
   private async Task RunCommittedAsync(BehaviorContext ctx, CancellationToken ct)

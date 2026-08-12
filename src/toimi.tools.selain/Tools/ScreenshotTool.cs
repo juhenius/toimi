@@ -19,7 +19,7 @@ public class ScreenshotTool(SelainOptions options, TabManager tabs, BrowserHost 
   public async Task<CallToolResult> Screenshot(
     [Description("Capture the full scrollable page instead of just the viewport")] bool fullPage = false)
   {
-    if (ToolGuard.Disabled(options) is { } off)
+    if (TabGuard.Disabled(options) is { } off)
     {
       return Text(off);
     }
@@ -47,11 +47,11 @@ public class ScreenshotTool(SelainOptions options, TabManager tabs, BrowserHost 
       }
       catch (PlaywrightException)
       {
-        // Same friendly-error contract as ToolGuard.WithActiveTabAsync — the
+        // Same friendly-error contract as TabGuard.WithActiveTabAsync — the
         // dominant failure is the tab/browser dying mid-capture, and
         // Playwright's TargetClosedException is internal, so it can't be
         // told apart from other failures without string-matching.
-        return Text(ToolGuard.TabLostMessage);
+        return Text(TabGuard.TabLostMessage);
       }
     }
     finally

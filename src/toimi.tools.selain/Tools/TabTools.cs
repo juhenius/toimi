@@ -18,7 +18,7 @@ public class TabTools(SelainOptions options, UrlPolicy policy, TabManager tabs, 
     [Description("Viewport width for the new tab")] int? width = null,
     [Description("Viewport height for the new tab")] int? height = null)
   {
-    if (ToolGuard.Disabled(options) is { } off)
+    if (TabGuard.Disabled(options) is { } off)
     {
       return off;
     }
@@ -124,7 +124,7 @@ public class TabTools(SelainOptions options, UrlPolicy policy, TabManager tabs, 
       }
       catch (PlaywrightException)
       {
-        return ToolGuard.TabLostMessage;
+        return TabGuard.TabLostMessage;
       }
 
       size = $" (viewport {w}x{h})";
@@ -151,7 +151,7 @@ public class TabTools(SelainOptions options, UrlPolicy policy, TabManager tabs, 
     if (tabs.Get(id) is not { } active)
     {
       // The page closed itself during navigation and was reaped.
-      return ToolGuard.TabLostMessage;
+      return TabGuard.TabLostMessage;
     }
 
     var result = await PageResults.ComposeGuardedAsync(tabs, host, active);

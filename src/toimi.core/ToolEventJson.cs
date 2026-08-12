@@ -11,22 +11,22 @@ namespace Toimi.Core;
 /// </summary>
 public static class ToolEventJson
 {
-  public static string? Serialize(IReadOnlyCollection<object> events)
+  public static string? Serialize(IReadOnlyCollection<TurnUpdate> updates)
   {
-    if (events.Count == 0)
+    if (updates.Count == 0)
     {
       return null;
     }
 
-    var wire = new List<object>(events.Count);
-    foreach (var evt in events)
+    var wire = new List<object>(updates.Count);
+    foreach (var update in updates)
     {
-      switch (evt)
+      switch (update)
       {
-        case ToolCallEvent tc:
+        case ToolCallUpdate tc:
           wire.Add(new { type = "call", tc.CallId, tc.Name, tc.Arguments });
           break;
-        case ToolResultEvent tr:
+        case ToolResultUpdate tr:
           wire.Add(new { type = "result", tr.CallId, tr.Result, tr.DurationMs });
           break;
         default:

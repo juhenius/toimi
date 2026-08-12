@@ -74,12 +74,7 @@ public class TemplateTools(TemplateRepository templates, DbTemplateSource source
       JsonDocument.Parse(schemaJson);
       await templates.UpsertAiAsync(name, description, schemaJson, modernHtml, legacyHtml, ct);
       return "ok";
-    }, translate: ex => ex switch
-    {
-      JsonException json => $"Error: schemaJson is not valid JSON: {json.Message}",
-      InvalidOperationException op => $"Error: {op.Message}",
-      _ => null,
-    });
+    }, translate: ex => RuutuErrors.TranslateJson(ex, "schemaJson") ?? RuutuErrors.Translate(ex));
   }
 
   [McpServerTool, Description("Update an existing template. Cannot modify seeded templates. modernHtml and legacyHtml are optional — pass null to keep current value. Linted before save.")]
@@ -118,7 +113,7 @@ public class TemplateTools(TemplateRepository templates, DbTemplateSource source
         legacyHtml ?? existing.LegacyHtml,
         ct);
       return "ok";
-    }, translate: ex => ex is InvalidOperationException op ? $"Error: {op.Message}" : null);
+    }, translate: RuutuErrors.Translate);
   }
 
   [McpServerTool, Description("Delete a non-seeded template. Seeded templates cannot be deleted.")]
@@ -130,7 +125,7 @@ public class TemplateTools(TemplateRepository templates, DbTemplateSource source
     {
       var ok = await templates.DeleteAsync(name, ct);
       return ok ? "ok" : $"Template '{name}' not found.";
-    }, translate: ex => ex is InvalidOperationException op ? $"Error: {op.Message}" : null);
+    }, translate: RuutuErrors.Translate);
   }
 
   [McpServerTool, Description("Render a template+data combination without pushing it to a display. Returns the HTML string. Use to sanity-check a new template's output before saving it.")]
@@ -146,12 +141,7 @@ public class TemplateTools(TemplateRepository templates, DbTemplateSource source
     {
       var data = JsonDocument.Parse(dataJson).RootElement;
       return await ScribanRenderer.RenderAsync(template, data, tier, source, ct);
-    }, translate: ex => ex switch
-    {
-      JsonException json => $"Error: dataJson is not valid JSON: {json.Message}",
-      RenderException render => $"Error: {render.Message}",
-      _ => null,
-    });
+    }, translate: ex => RuutuErrors.TranslateJson(ex, "dataJson") ?? (ex is RenderException render ? $"Error: {render.Message}" : null));
   }
 
   [McpServerTool, Description("Return the full author brief for a capability tier: the rules and constraints to follow when authoring templates for it. Use if you need a refresher beyond the inline create-template description.")]

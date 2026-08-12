@@ -11,7 +11,7 @@ public class BrowseTools(SelainOptions options, UrlPolicy policy, TabManager tab
   [McpServerTool, Description("Open a URL in the browser's active tab (opening a first tab if none) and return an accessibility snapshot with element refs like [ref=e5], usable with click/type/hover/select_option. Prefer verkko's fetch_url for simple static pages — use browse when a page needs JavaScript, interaction, or a display feed.")]
   public async Task<string> Browse([Description("Absolute http(s) URL")] string url)
   {
-    if (ToolGuard.Disabled(options) is { } off)
+    if (TabGuard.Disabled(options) is { } off)
     {
       return off;
     }
@@ -48,7 +48,7 @@ public class BrowseTools(SelainOptions options, UrlPolicy policy, TabManager tab
       if (active is null)
       {
         // The page closed in the instant between adoption and lookup.
-        return ToolGuard.TabLostMessage;
+        return TabGuard.TabLostMessage;
       }
 
       var target = ((PlaywrightSession)active.Session).Page;
@@ -86,13 +86,13 @@ public class BrowseTools(SelainOptions options, UrlPolicy policy, TabManager tab
   [McpServerTool, Description("Re-read the active tab: fresh accessibility snapshot with refs. Use after waiting for dynamic content. Returns '(page unchanged)' if nothing differs from what you last saw.")]
   public Task<string> Snapshot()
   {
-    return ToolGuard.WithActiveTabAsync(options, tabs, host, active => PageResults.ComposeAsync(tabs, host, active));
+    return TabGuard.WithActiveTabAsync(options, tabs, host, active => PageResults.ComposeAsync(tabs, host, active));
   }
 
   [McpServerTool, Description("Plain extracted text of the active tab's page (up to 50K chars) — for reading long articles where the accessibility snapshot is noise.")]
   public Task<string> ReadPage()
   {
-    return ToolGuard.WithActiveTabAsync(options, tabs, host, async active =>
+    return TabGuard.WithActiveTabAsync(options, tabs, host, async active =>
     {
       var page = ((PlaywrightSession)active.Session).Page;
       var text = await page.InnerTextAsync("body", new() { Timeout = 10_000 });
