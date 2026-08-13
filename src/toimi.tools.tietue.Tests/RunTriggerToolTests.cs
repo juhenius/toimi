@@ -66,6 +66,37 @@ public class RunTriggerToolTests
   }
 
   [Fact]
+  public async Task Params_reach_the_handler_templates()
+  {
+    using var db = TestDb.New();
+    var (e, _, _, notifier) = await SetupAsync(db);
+    var triggers = new TriggerRepository(db, TestConfig.Default);
+    var trigger = await triggers.CreateAsync(e.Id, /*lang=json,strict*/ """{"at":"2030-01-01T00:00:00Z"}""", "notify",
+      /*lang=json,strict*/ """{"messageTemplate":"door: {door}"}""", DateTimeOffset.UtcNow);
+    var tool = new RunTriggerTool(db, Runner(db, new NotifyHandler(notifier)));
+
+    await tool.RunTrigger(trigger.Id.ToString(), /*lang=json,strict*/ """{"door":"front"}""");
+
+    Assert.Equal("door: front", notifier.Sent.Single().Message);
+  }
+
+  [Theory]
+  [InlineData("{ not json")]
+  [InlineData("[1]")]
+  [InlineData("\"x\"")]
+  [InlineData("5")]
+  public async Task Non_object_params_return_an_error_without_firing(string @params)
+  {
+    using var db = TestDb.New();
+    var (_, trigger, tool, notifier) = await SetupAsync(db);
+
+    var result = await tool.RunTrigger(trigger.Id.ToString(), @params);
+
+    Assert.Contains("Invalid params", result);
+    Assert.Empty(notifier.Sent);
+  }
+
+  [Fact]
   public async Task Unknown_trigger_returns_message()
   {
     using var db = TestDb.New();

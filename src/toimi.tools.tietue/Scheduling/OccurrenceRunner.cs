@@ -44,7 +44,7 @@ public class OccurrenceRunner(TietueDbContext db, HandlerRegistry handlers, Enti
   private readonly ILogger<OccurrenceRunner> _logger = logger ?? NullLogger<OccurrenceRunner>.Instance;
   private readonly TimeSpan _claimLockRetryDelay = claimLockRetryDelay ?? TimeSpan.FromMilliseconds(500);
 
-  public async Task<OccurrenceOutcome> RunAsync(Trigger trigger, Entity entity, DateTimeOffset occurrence, DateTimeOffset now, ITickLock? claimLock = null, CancellationToken ct = default)
+  public async Task<OccurrenceOutcome> RunAsync(Trigger trigger, Entity entity, DateTimeOffset occurrence, DateTimeOffset now, ITickLock? claimLock = null, JsonElement? @params = null, CancellationToken ct = default)
   {
     var claim = await ClaimAsync(trigger, occurrence, now, claimLock, ct);
     if (claim is null)
@@ -76,7 +76,7 @@ public class OccurrenceRunner(TietueDbContext db, HandlerRegistry handlers, Enti
     string? resultJson;
     try
     {
-      var result = await handler.HandleAsync(new HandlerContext(entity, trigger.HandlerConfig, occurrence), ct);
+      var result = await handler.HandleAsync(new HandlerContext(entity, trigger.HandlerConfig, occurrence, @params), ct);
       status = result.Status;
       resultJson = result.Result;
     }

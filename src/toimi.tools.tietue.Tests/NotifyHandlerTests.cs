@@ -45,6 +45,21 @@ public class NotifyHandlerTests
     Assert.Equal("Standup", notifier.Sent.Single().Message);
   }
 
+  [Fact]
+  public async Task Params_interpolate_into_templates_but_do_not_shadow_data()
+  {
+    var notifier = new FakeNotifier();
+    var handler = new NotifyHandler(notifier);
+    using var doc = JsonDocument.Parse(/*lang=json,strict*/ """{"title":"Mallory's title","door":"front"}""");
+    var config = /*lang=json,strict*/ """{"titleTemplate":"{title}","messageTemplate":"door: {door}"}""";
+
+    await handler.HandleAsync(new HandlerContext(Reminder("Doorbell", ""), config, DateTimeOffset.UtcNow, doc.RootElement.Clone()));
+
+    var (message, title, _, _) = notifier.Sent.Single();
+    Assert.Equal("Doorbell", title);
+    Assert.Equal("door: front", message);
+  }
+
   [Theory]
   [InlineData(null)]
   [InlineData(/*lang=json,strict*/ """{"tags":"bell"}""")]

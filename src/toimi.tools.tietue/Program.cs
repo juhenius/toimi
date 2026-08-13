@@ -79,6 +79,12 @@ builder.Services.AddScoped<toimi.tools.tietue.Agents.IMcpInvoker, toimi.tools.ti
 builder.Services.AddScoped<toimi.tools.tietue.Scripts.ScriptEffectApplier>();
 builder.Services.AddScoped<toimi.tools.tietue.Handlers.INativeHandler, toimi.tools.tietue.Handlers.ScriptHandler>();
 
+builder.Services.AddSingleton(
+  builder.Configuration.GetSection("Webhooks").Get<toimi.tools.tietue.Webhooks.WebhookOptions>() ?? new toimi.tools.tietue.Webhooks.WebhookOptions());
+builder.Services.AddSingleton<toimi.tools.tietue.Webhooks.WebhookRateLimiter>();
+builder.Services.AddSingleton<toimi.tools.tietue.Webhooks.WebhookDispatchChannel>();
+builder.Services.AddHostedService<toimi.tools.tietue.Webhooks.WebhookDispatcher>();
+
 builder.AddToimiToolServer("tietue", typeof(Program).Assembly);
 
 var app = builder.Build();
@@ -105,5 +111,6 @@ app.MapToimiMcp();
 app.MapToimiReadiness<TietueDbContext>();
 toimi.tools.tietue.Admin.AdminEndpoints.MapAdminEndpoints(app);
 toimi.tools.tietue.Scripts.ExtractEndpoints.MapExtractEndpoints(app);
+toimi.tools.tietue.Webhooks.WebhookEndpoints.MapWebhookEndpoints(app);
 
 app.Run();

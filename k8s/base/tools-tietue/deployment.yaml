@@ -69,6 +69,10 @@ spec:
                   key: openai-api-key
             - name: Toimi__OpenAI__Model
               value: "${OPENAI_MODEL}"
+            # http in base (the dev overlay has no TLS); the server overlay patches
+            # this to https alongside its ingress TLS patch.
+            - name: Webhooks__PublicBaseUrl
+              value: "http://${TOIMI_HOST}"
             - name: HOME
               value: /tmp  # readOnlyRootFilesystem: $HOME writes (data-protection keys) land on the emptyDir
           resources:

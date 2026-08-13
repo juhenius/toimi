@@ -4,13 +4,14 @@ using ModelContextProtocol.Server;
 using toimi.tools.tietue.Handlers;
 using toimi.tools.tietue.Scheduling;
 using toimi.tools.tietue.Validation;
+using toimi.tools.tietue.Webhooks;
 
 namespace toimi.tools.tietue.Tools;
 
 [McpServerToolType]
-public class UpdateTriggerTool(TriggerRepository repository, HandlerRegistry handlers)
+public class UpdateTriggerTool(TriggerRepository repository, HandlerRegistry handlers, WebhookOptions webhookOptions)
 {
-  [McpServerTool, Description("Update a trigger's schedule, handler config, and/or enabled flag; recurring schedules without a tz default to the server's user timezone, pass \"tz\":\"UTC\" for fixed-UTC recurrence.")]
+  [McpServerTool, Description("Update a trigger's schedule, handler config, and/or enabled flag; recurring schedules without a tz default to the server's user timezone, pass \"tz\":\"UTC\" for fixed-UTC recurrence. Swapping the anchor to {\"webhook\":{...}} mints a new capability url/secret; swapping away revokes it; editing a webhook anchor's window/rateLimit keeps the existing url.")]
   public async Task<string> UpdateTrigger(
       [Description("Trigger id (GUID)")] string id,
       [Description("New schedule spec JSON (optional)")] string? schedule = null,
@@ -47,7 +48,16 @@ public class UpdateTriggerTool(TriggerRepository repository, HandlerRegistry han
       var t = await repository.UpdateAsync(triggerId, schedule, handlerConfig, enabled, DateTimeOffset.UtcNow);
       return t is null
         ? $"Trigger '{id}' not found."
-        : JsonSerializer.Serialize(new { id = t.Id.ToString(), enabled = t.Enabled, nextFireAt = t.NextFireAt?.ToString("o") });
+        : t.Secret is null
+          ? JsonSerializer.Serialize(new { id = t.Id.ToString(), enabled = t.Enabled, nextFireAt = t.NextFireAt?.ToString("o") })
+          : JsonSerializer.Serialize(new
+          {
+            id = t.Id.ToString(),
+            enabled = t.Enabled,
+            nextFireAt = (string?)null,
+            url = WebhookEndpoints.Url(webhookOptions, t),
+            secret = t.Secret,
+          });
     }
     catch (TietueValidationException ex)
     {

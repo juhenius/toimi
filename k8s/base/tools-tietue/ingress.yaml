@@ -1,0 +1,20 @@
+# Exposes ONLY /hooks (the webhook capability-URL endpoint, ADR 0001) —
+# tietue's MCP, admin, and extract routes stay cluster-internal.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: toimi-tools-tietue
+  namespace: apps
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: ${TOIMI_HOST}
+      http:
+        paths:
+          - path: /hooks
+            pathType: Prefix
+            backend:
+              service:
+                name: toimi-tools-tietue
+                port:
+                  number: 80

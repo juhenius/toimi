@@ -121,6 +121,128 @@ public class TriggerRepositoryTests
   }
 
   [Fact]
+  public async Task Create_webhook_trigger_mints_secret_and_leaves_next_fire_null()
+  {
+    using var db = TestDb.New();
+    var repo = new TriggerRepository(db, TestConfig.Default);
+
+    var t = await repo.CreateAsync(Guid.NewGuid(), /*lang=json,strict*/ """{"webhook":{"rateLimit":6}}""", "notify", null, Now);
+
+    Assert.True(t.Enabled);
+    Assert.Null(t.NextFireAt);
+    Assert.NotNull(t.Secret);
+    Assert.Equal(64, t.Secret.Length);
+  }
+
+  [Fact]
+  public async Task Create_time_trigger_has_no_secret()
+  {
+    using var db = TestDb.New();
+    var repo = new TriggerRepository(db, TestConfig.Default);
+
+    var t = await repo.CreateAsync(Guid.NewGuid(), /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "notify", null, Now);
+
+    Assert.Null(t.Secret);
+  }
+
+  [Fact]
+  public async Task Update_without_schedule_change_leaves_webhook_trigger_enabled()
+  {
+    // The exhausted-re-enable guard treats Enabled && NextFireAt == null as an exhausted
+    // time trigger; a webhook trigger lives in that state permanently and must be exempt.
+    using var db = TestDb.New();
+    var repo = new TriggerRepository(db, TestConfig.Default);
+    var t = await repo.CreateAsync(Guid.NewGuid(), /*lang=json,strict*/ """{"webhook":{}}""", "notify", null, Now);
+
+    var afterConfig = await repo.UpdateAsync(t.Id, null, /*lang=json,strict*/ """{"titleTemplate":"hi"}""", null, Now);
+    Assert.True(afterConfig!.Enabled);
+
+    var afterReEnable = await repo.UpdateAsync(t.Id, null, null, true, Now);
+    Assert.True(afterReEnable!.Enabled);
+    Assert.Null(afterReEnable.NextFireAt);
+    Assert.NotNull(afterReEnable.Secret);
+  }
+
+  [Fact]
+  public async Task Update_swapping_time_anchor_to_webhook_mints_secret()
+  {
+    using var db = TestDb.New();
+    var repo = new TriggerRepository(db, TestConfig.Default);
+    var t = await repo.CreateAsync(Guid.NewGuid(), /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", "notify", null, Now);
+
+    var updated = await repo.UpdateAsync(t.Id, /*lang=json,strict*/ """{"webhook":{}}""", null, null, Now);
+
+    Assert.NotNull(updated!.Secret);
+    Assert.Null(updated.NextFireAt);
+    Assert.True(updated.Enabled);
+  }
+
+  [Fact]
+  public async Task Update_swapping_webhook_to_time_anchor_revokes_secret()
+  {
+    using var db = TestDb.New();
+    var repo = new TriggerRepository(db, TestConfig.Default);
+    var t = await repo.CreateAsync(Guid.NewGuid(), /*lang=json,strict*/ """{"webhook":{}}""", "notify", null, Now);
+
+    var updated = await repo.UpdateAsync(t.Id, /*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z"}""", null, null, Now);
+
+    Assert.Null(updated!.Secret);
+    Assert.Equal(new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), updated.NextFireAt);
+  }
+
+  [Fact]
+  public async Task Update_webhook_schedule_keeps_existing_secret()
+  {
+    // Editing the window/rate limit must not rotate the capability URL callers already hold.
+    using var db = TestDb.New();
+    var repo = new TriggerRepository(db, TestConfig.Default);
+    var t = await repo.CreateAsync(Guid.NewGuid(), /*lang=json,strict*/ """{"webhook":{}}""", "notify", null, Now);
+    var original = t.Secret;
+
+    var updated = await repo.UpdateAsync(t.Id, /*lang=json,strict*/ """{"webhook":{"rateLimit":2}}""", null, null, Now);
+
+    Assert.Equal(original, updated!.Secret);
+  }
+
+  [Fact]
+  public async Task Create_webhook_with_past_active_until_throws()
+  {
+    using var db = TestDb.New();
+    var repo = new TriggerRepository(db, TestConfig.Default);
+
+    var ex = await Assert.ThrowsAsync<TietueValidationException>(
+      () => repo.CreateAsync(Guid.NewGuid(), /*lang=json,strict*/ """{"webhook":{"activeUntil":"2020-01-01T00:00:00Z"}}""", "notify", null, Now));
+
+    Assert.Contains("already in the past", ex.Message);
+    Assert.Empty(db.Triggers);
+  }
+
+  [Fact]
+  public async Task Create_webhook_with_future_window_is_accepted()
+  {
+    using var db = TestDb.New();
+    var repo = new TriggerRepository(db, TestConfig.Default);
+
+    var t = await repo.CreateAsync(Guid.NewGuid(),
+      /*lang=json,strict*/ """{"webhook":{"activeAfter":"2026-07-01T00:00:00Z","activeUntil":"2026-08-01T00:00:00Z"}}""", "notify", null, Now);
+
+    Assert.NotNull(t.Secret);
+  }
+
+  [Fact]
+  public async Task Create_webhook_with_invalid_spec_throws()
+  {
+    using var db = TestDb.New();
+    var repo = new TriggerRepository(db, TestConfig.Default);
+
+    var ex = await Assert.ThrowsAsync<TietueValidationException>(
+      () => repo.CreateAsync(Guid.NewGuid(), /*lang=json,strict*/ """{"webhook":{"rateLimit":0}}""", "notify", null, Now));
+
+    Assert.Contains("rateLimit", ex.Message);
+    Assert.Empty(db.Triggers);
+  }
+
+  [Fact]
   public async Task Create_with_garbage_rrule_throws_instead_of_crashing()
   {
     // Regression: garbage rrule used to escape as an unhandled Ical.Net exception from

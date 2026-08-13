@@ -89,4 +89,24 @@ public class TriggerProvisionerTests
 
     Assert.Empty(await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(e.Id));
   }
+  [Fact]
+  public async Task Provisions_webhook_trigger_unconditionally_with_secret()
+  {
+    using var db = TestDb.New();
+    var provisioner = new TriggerProvisioner(new TriggerRepository(db, TestConfig.Default));
+    var e = Reminder(/*lang=json,strict*/ """{"title":"Ring"}""");
+    const string templates = /*lang=json,strict*/ """
+    [{"when":{"webhook":{"rateLimit":3}},
+      "handler":{"kind":"notify","config":{"titleTemplate":"{title}"}}}]
+    """;
+
+    await provisioner.ProvisionAsync(e, templates, new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+
+    var t = Assert.Single(await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(e.Id));
+    Assert.True(t.Enabled);
+    Assert.Null(t.NextFireAt);
+    Assert.NotNull(t.Secret);
+    Assert.Contains("\"rateLimit\":3", t.Schedule);
+  }
+
 }

@@ -51,6 +51,44 @@ public class OccurrenceRunnerTests
     Assert.Equal("sent", evt.Status);
   }
 
+  [Fact]
+  public async Task Params_arrive_in_the_handler_context()
+  {
+    var (db, entity, trigger, _) = await SetupAsync();
+    using var _ = db;
+    var capturing = new CapturingHandler();
+    using var doc = System.Text.Json.JsonDocument.Parse(/*lang=json,strict*/ """{"door":"front"}""");
+
+    await NewRunner(db, capturing).RunAsync(trigger, entity, Occurrence, Now, @params: doc.RootElement.Clone());
+
+    Assert.Equal("front", capturing.Context!.Params!.Value.GetProperty("door").GetString());
+  }
+
+  [Fact]
+  public async Task Params_default_to_null_in_the_handler_context()
+  {
+    var (db, entity, trigger, _) = await SetupAsync();
+    using var _ = db;
+    var capturing = new CapturingHandler();
+
+    await NewRunner(db, capturing).RunAsync(trigger, entity, Occurrence, Now);
+
+    Assert.Null(capturing.Context!.Params);
+  }
+
+  private sealed class CapturingHandler : INativeHandler
+  {
+    public HandlerContext? Context { get; private set; }
+
+    public string Kind => "notify";
+
+    public Task<HandlerResult> HandleAsync(HandlerContext ctx, CancellationToken ct = default)
+    {
+      Context = ctx;
+      return Task.FromResult(new HandlerResult("sent"));
+    }
+  }
+
   private sealed class ThrowingHandler(string message) : INativeHandler
   {
     public string Kind => "notify";

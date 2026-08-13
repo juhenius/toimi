@@ -40,7 +40,7 @@ public class SchedulerTick(TietueDbContext db, OccurrenceRunner runner, ILogger<
       if (entity is not null)
       {
         // Already inside the tick lock, so the runner claims without re-acquiring it.
-        var outcome = await runner.RunAsync(trigger, entity, occurrence, now, claimLock: null, ct);
+        var outcome = await runner.RunAsync(trigger, entity, occurrence, now, claimLock: null, ct: ct);
         if (!outcome.ShouldAdvance)
         {
           // InProgress: leave the trigger un-advanced so it stays due for retry.

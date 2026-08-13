@@ -6,6 +6,7 @@ using toimi.tools.tietue.Scheduling;
 using toimi.tools.tietue.Tools;
 using toimi.tools.tietue.Types;
 using toimi.tools.tietue.Validation;
+using toimi.tools.tietue.Webhooks;
 using Xunit;
 
 namespace toimi.tools.tietue.Tests;
@@ -22,7 +23,7 @@ public class UpdateTriggerToolTests
     var repo = new EntityRepository(db, new SchemaValidator());
     var e = await repo.CreateAsync("reminder", JsonNode.Parse("""{"title":"Call"}"""), []);
     var triggers = new TriggerRepository(db, TestConfig.Default);
-    var tool = new UpdateTriggerTool(triggers, new HandlerRegistry([new NotifyHandler(new FakeNotifier())]));
+    var tool = new UpdateTriggerTool(triggers, new HandlerRegistry([new NotifyHandler(new FakeNotifier())]), new WebhookOptions());
     return (db, triggers, tool, e.Id);
   }
 
@@ -179,4 +180,53 @@ public class UpdateTriggerToolTests
     Assert.Contains("does not resolve to a future fire time", response);
     Assert.True((await triggers.ListByEntityAsync(entityId))[0].Enabled);
   }
+  [Fact]
+  public async Task Swapping_to_webhook_anchor_returns_url_and_secret()
+  {
+    var (db, triggers, _, entityId) = await SetupAsync();
+    using var _1 = db;
+    var options = new WebhookOptions { PublicBaseUrl = "https://toimi.example" };
+    var tool = new UpdateTriggerTool(triggers, new HandlerRegistry([new NotifyHandler(new FakeNotifier())]), options);
+    var t = await triggers.CreateAsync(entityId, /*lang=json,strict*/ """{"at":"2027-01-01T09:00:00Z"}""", "notify", null, Past);
+
+    var response = await tool.UpdateTrigger(t.Id.ToString(), schedule: /*lang=json,strict*/ """{"webhook":{}}""");
+
+    using var doc = JsonDocument.Parse(response);
+    var secret = doc.RootElement.GetProperty("secret").GetString();
+    Assert.Equal($"https://toimi.example/hooks/{t.Id}/{secret}", doc.RootElement.GetProperty("url").GetString());
+    Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("nextFireAt").ValueKind);
+  }
+
+  [Fact]
+  public async Task Swapping_away_from_webhook_drops_url_and_secret_from_the_response()
+  {
+    var (db, triggers, tool, entityId) = await SetupAsync();
+    using var _1 = db;
+    var t = await triggers.CreateAsync(entityId, /*lang=json,strict*/ """{"webhook":{}}""", "notify",
+      /*lang=json,strict*/ """{"titleTemplate":"hi"}""", Past);
+
+    var response = await tool.UpdateTrigger(t.Id.ToString(), schedule: /*lang=json,strict*/ """{"at":"2027-01-01T09:00:00Z"}""");
+
+    using var doc = JsonDocument.Parse(response);
+    Assert.False(doc.RootElement.TryGetProperty("url", out _));
+    Assert.False(doc.RootElement.TryGetProperty("secret", out _));
+    Assert.Null((await triggers.ListByEntityAsync(entityId))[0].Secret);
+  }
+
+  [Fact]
+  public async Task Webhook_trigger_survives_an_enabled_round_trip()
+  {
+    var (db, triggers, tool, entityId) = await SetupAsync();
+    using var _1 = db;
+    var t = await triggers.CreateAsync(entityId, /*lang=json,strict*/ """{"webhook":{}}""", "notify",
+      /*lang=json,strict*/ """{"titleTemplate":"hi"}""", Past);
+
+    await tool.UpdateTrigger(t.Id.ToString(), enabled: false);
+    var response = await tool.UpdateTrigger(t.Id.ToString(), enabled: true);
+
+    using var doc = JsonDocument.Parse(response);
+    Assert.True(doc.RootElement.GetProperty("enabled").GetBoolean());
+    Assert.True((await triggers.ListByEntityAsync(entityId))[0].Enabled);
+  }
+
 }

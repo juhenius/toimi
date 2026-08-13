@@ -165,6 +165,8 @@ public class ScriptHandler(
     return allowedHosts.Contains(host) ? allowedHosts : [.. allowedHosts, host];
   }
 
+  private static readonly JsonElement EmptyParams = JsonDocument.Parse("{}").RootElement.Clone();
+
   private static JsonElement BuildInput(HandlerContext ctx)
   {
     using var doc = JsonDocument.Parse(JsonSerializer.Serialize(new
@@ -173,6 +175,8 @@ public class ScriptHandler(
       entityId = ctx.Entity.Id.ToString(),
       entityType = ctx.Entity.Type,
       occurrence = ctx.OccurrenceUtc.ToString("o"),
+      // Always present so scripts read input.params identically under any anchor.
+      @params = ctx.Params ?? EmptyParams,
     }));
     return doc.RootElement.Clone();
   }

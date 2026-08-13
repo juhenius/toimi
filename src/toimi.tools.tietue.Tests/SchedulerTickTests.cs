@@ -60,6 +60,23 @@ public class SchedulerTickTests
   }
 
   [Fact]
+  public async Task Never_picks_up_an_enabled_webhook_trigger()
+  {
+    // Call-anchored triggers live with NextFireAt == null; the due query must skip them forever.
+    var (db, notifier, tick, repo) = await SetupAsync();
+    using var _ = db;
+    var e = await repo.CreateAsync("reminder", JsonNode.Parse("""{"title":"Ring"}"""), []);
+    var handlerConfig = /*lang=json,strict*/ """{"titleTemplate":"{title}"}""";
+    await new TriggerRepository(db, TestConfig.Default).CreateAsync(e.Id, /*lang=json,strict*/ """{"webhook":{}}""", "notify", handlerConfig, new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
+
+    await tick.RunDueAsync(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero), default);
+
+    Assert.Empty(notifier.Sent);
+    var trigger = (await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(e.Id))[0];
+    Assert.True(trigger.Enabled);
+  }
+
+  [Fact]
   public async Task Does_not_fire_a_completed_occurrence()
   {
     var (db, notifier, tick, repo) = await SetupAsync();

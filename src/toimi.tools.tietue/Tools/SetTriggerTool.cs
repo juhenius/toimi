@@ -6,13 +6,14 @@ using toimi.tools.tietue.Data;
 using toimi.tools.tietue.Handlers;
 using toimi.tools.tietue.Scheduling;
 using toimi.tools.tietue.Validation;
+using toimi.tools.tietue.Webhooks;
 
 namespace toimi.tools.tietue.Tools;
 
 [McpServerToolType]
-public class SetTriggerTool(TriggerRepository repository, TietueDbContext db, HandlerRegistry handlers)
+public class SetTriggerTool(TriggerRepository repository, TietueDbContext db, HandlerRegistry handlers, WebhookOptions webhookOptions)
 {
-  [McpServerTool, Description("Schedule a trigger on an entity. 'schedule' is JSON: {\"at\":\"<iso utc>\"} for one-shot, or {\"start\":\"<iso utc>\",\"rrule\":\"FREQ=...\",\"tz\":\"Europe/Helsinki\"} for recurring (RFC 5545); recurring schedules without a tz default to the server's user timezone, pass \"tz\":\"UTC\" for fixed-UTC recurrence. 'handlerKind' is one of: notify, set-field, delete, script, message; 'handlerConfig' is its JSON config.")]
+  [McpServerTool, Description("Schedule a trigger on an entity. 'schedule' is JSON with exactly one anchor: {\"at\":\"<iso utc>\"} for one-shot, {\"start\":\"<iso utc>\",\"rrule\":\"FREQ=...\",\"tz\":\"Europe/Helsinki\"} for recurring (RFC 5545), or {\"webhook\":{\"activeAfter\":\"<iso utc>\"?,\"activeUntil\":\"<iso utc>\"?,\"rateLimit\":n?}} for call-anchored — fired by external HTTP calls to the returned capability url (GET or POST), never by the clock; the caller's query/body arrive as params (scripts read input.params, notify/message templates interpolate {key}). Recurring schedules without a tz default to the server's user timezone, pass \"tz\":\"UTC\" for fixed-UTC recurrence. 'handlerKind' is one of: notify, set-field, delete, script, message; 'handlerConfig' is its JSON config.")]
   public async Task<string> SetTrigger(
       [Description("Entity id (GUID)")] string entityId,
       [Description("Schedule spec JSON")] string schedule,
@@ -45,7 +46,15 @@ public class SetTriggerTool(TriggerRepository repository, TietueDbContext db, Ha
       // Stamping + schedule validation live in the repository — the single choke point
       // every trigger-writing path goes through.
       var t = await repository.CreateAsync(id, schedule, handlerKind, handlerConfig, DateTimeOffset.UtcNow);
-      return JsonSerializer.Serialize(new { id = t.Id.ToString(), nextFireAt = t.NextFireAt?.ToString("o") });
+      return t.Secret is null
+        ? JsonSerializer.Serialize(new { id = t.Id.ToString(), nextFireAt = t.NextFireAt?.ToString("o") })
+        : JsonSerializer.Serialize(new
+        {
+          id = t.Id.ToString(),
+          nextFireAt = (string?)null,
+          url = WebhookEndpoints.Url(webhookOptions, t),
+          secret = t.Secret,
+        });
     }
     catch (TietueValidationException ex)
     {

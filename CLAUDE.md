@@ -36,12 +36,19 @@ Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers),
 
 **tietue — Generic typed-entity engine (the core data + behavior store).**
 - Owns: arbitrary user/AI-defined types, entity CRUD, semantic search,
-  time-anchored triggers, a scheduler, and the handlers triggers fire.
+  time- and call-anchored (webhook) triggers, a scheduler, the handlers
+  triggers fire, and the public `/hooks/{triggerId}/{secret}` capability-URL
+  endpoint (doorbell semantics: 202 + occurrence id, async dispatch, uniform
+  404, `Webhooks:Enabled` kill switch — see ADR 0001).
   Functionally subsumes memory, skills, reminders, and scheduled agent runs.
 - **Model:** `Entity { Id, Type, Data (jsonb, validated against the type's
   JSON Schema), Tags }`; `TypeDefinition { Name, JsonSchema, Behaviors,
-  DefaultTriggers }`; `Trigger { EntityId, Schedule (one-shot `{at}` or
-  recurring `{start,rrule,tz}` — grammar owned by the `Schedule` value type; writes validate and reject invalid/exhausted schedules), HandlerKind+Config, NextFireAt }`;
+  DefaultTriggers }`; `Trigger { EntityId, Schedule (exactly one anchor:
+  one-shot `{at}`, recurring `{start,rrule,tz}`, or call-anchored
+  `{webhook:{activeAfter?,activeUntil?,rateLimit?}}` — grammar owned by the
+  `Schedule` value type; writes validate and reject invalid/exhausted
+  schedules), HandlerKind+Config, NextFireAt (null forever for webhook
+  anchors), Secret (server-minted capability-URL secret, webhook only) }`;
   `EntityEvent` (unified occurrence/run/observation log, unique on
   `(entity, occurrence, kind)`).
 - **Declarative behaviors** (passive, per-type): `SemanticIndex` (embed

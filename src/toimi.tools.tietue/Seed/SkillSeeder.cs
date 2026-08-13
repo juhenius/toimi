@@ -149,8 +149,9 @@ public class SkillSeeder(TietueDbContext db, EntityRepository entities)
       - A SCHEDULE runs an agent prompt. create type='schedule' with data {name, prompt, startAt (ISO 8601 UTC), rrule (optional)}.
       RRULE patterns: daily FREQ=DAILY; weekdays FREQ=WEEKLY;BYDAY=MO,WE,FR; monthly FREQ=MONTHLY;BYMONTHDAY=15; yearly FREQ=YEARLY. (RFC 5545 replaces cron.)
       Convert the user's local time to UTC. For a schedule, write a self-contained prompt — the run has no chat context; state exactly what to do and which tools to use. A run can reschedule itself with set_trigger. Confirm the time back in the user's timezone.
+      A trigger can also be CALL-ANCHORED instead of scheduled: set_trigger with schedule {"webhook":{"activeAfter"?,"activeUntil"?,"rateLimit"?}} returns a capability URL to hand to external systems (a Home Assistant automation, curl, a dashboard button). Calls to it fire the handler; the caller's query/body arrive as params — scripts read input.params, notify/message templates interpolate {key} tokens. Test one with run_trigger passing params before handing the URL out.
       """,
-      ["schedule", "reminder", "automation"]
+      ["schedule", "reminder", "automation", "webhook"]
     ),
     (
       "use-displays",

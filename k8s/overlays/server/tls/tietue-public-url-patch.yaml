@@ -1,0 +1,16 @@
+# The server install serves /hooks over TLS (see tietue-ingress-patch.yaml),
+# so the capability URLs tietue hands out must be https; base says http for
+# the TLS-less dev overlay. env entries strategic-merge by name.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: toimi-tools-tietue
+  namespace: apps
+spec:
+  template:
+    spec:
+      containers:
+        - name: toimi-tools-tietue
+          env:
+            - name: Webhooks__PublicBaseUrl
+              value: "https://${TOIMI_HOST}"

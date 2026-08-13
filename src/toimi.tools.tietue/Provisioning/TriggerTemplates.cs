@@ -52,7 +52,13 @@ public static class TriggerTemplates
   {
     if (template["when"] is not JsonObject when)
     {
-      errors.Add($"defaultTriggers[{i}].when must be an object naming an 'atField'.");
+      errors.Add($"defaultTriggers[{i}].when must be an object naming an 'atField', or {{\"webhook\":{{...}}}} for call-anchored.");
+      return;
+    }
+
+    if (when.ContainsKey("webhook"))
+    {
+      ValidateWebhookWhen(when, i, errors);
       return;
     }
 
@@ -67,6 +73,42 @@ public static class TriggerTemplates
       {
         errors.Add($"defaultTriggers[{i}].when.{name} must be a string field name.");
       }
+    }
+  }
+
+  // Unlike atField/rruleField, when.webhook is literal anchor content (nothing to resolve
+  // per-entity), so its content is fully validatable here via the Schedule grammar itself.
+  private static void ValidateWebhookWhen(JsonObject when, int i, List<string> errors)
+  {
+    // All three time-anchor field refs are rejected, not just atField: a co-present
+    // rruleField would validate clean and then be silently discarded at provision time.
+    foreach (var name in (string[])["atField", "rruleField", "tzField"])
+    {
+      if (when.ContainsKey(name))
+      {
+        errors.Add($"defaultTriggers[{i}].when has exactly one anchor: 'atField' (with optional 'rruleField'/'tzField') or 'webhook', not both.");
+        return;
+      }
+    }
+
+    // ContainsKey is true for a JSON null, so the value must be pattern-matched — the
+    // indexer returns a null JsonNode for {"webhook": null}.
+    if (when["webhook"] is not JsonObject webhookContent)
+    {
+      errors.Add($"defaultTriggers[{i}].when.webhook must be an object with optional iso-date 'activeAfter'/'activeUntil' and integer 'rateLimit'.");
+      return;
+    }
+
+    var schedule = Scheduling.Schedule.Parse(new JsonObject { ["webhook"] = webhookContent.DeepClone() }.ToJsonString());
+    if (schedule is null || !schedule.IsWebhook)
+    {
+      errors.Add($"defaultTriggers[{i}].when.webhook must be an object with optional iso-date 'activeAfter'/'activeUntil' and integer 'rateLimit'.");
+      return;
+    }
+
+    if (!schedule.TryValidate(out var error))
+    {
+      errors.Add($"defaultTriggers[{i}].when.webhook: {error}");
     }
   }
 

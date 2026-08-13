@@ -29,4 +29,40 @@ public class TemplateRendererTests
   {
     Assert.Equal("", TemplateRenderer.Render(null, Doc(/*lang=json,strict*/ """{"a":1}""")));
   }
+
+  private static JsonElement Params(string j)
+  {
+    using var doc = JsonDocument.Parse(j);
+    return doc.RootElement.Clone();
+  }
+
+  [Fact]
+  public void Params_fill_tokens_missing_from_data()
+  {
+    var s = TemplateRenderer.Render("Hi {name}, door {door}", Doc(/*lang=json,strict*/ """{"name":"Jari"}"""),
+      Params(/*lang=json,strict*/ """{"door":"front"}"""));
+    Assert.Equal("Hi Jari, door front", s);
+  }
+
+  [Fact]
+  public void Data_wins_over_params_on_collision()
+  {
+    // Params are attacker-controlled (webhook callers); they must not shadow entity fields.
+    var s = TemplateRenderer.Render("{name}", Doc(/*lang=json,strict*/ """{"name":"Jari"}"""),
+      Params(/*lang=json,strict*/ """{"name":"Mallory"}"""));
+    Assert.Equal("Jari", s);
+  }
+
+  [Fact]
+  public void Token_missing_from_both_becomes_empty()
+  {
+    Assert.Equal("Hi ", TemplateRenderer.Render("Hi {name}", Doc("""{}"""), Params("""{}""")));
+  }
+
+  [Fact]
+  public void Non_string_param_renders_raw_json()
+  {
+    var s = TemplateRenderer.Render("{count}", Doc("""{}"""), Params(/*lang=json,strict*/ """{"count":3}"""));
+    Assert.Equal("3", s);
+  }
 }

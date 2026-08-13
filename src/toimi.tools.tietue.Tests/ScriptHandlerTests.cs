@@ -102,6 +102,35 @@ public class ScriptHandlerTests
   }
 
   [Fact]
+  public async Task Input_params_default_to_empty_object()
+  {
+    using var db = TestDb.New();
+    var (e, suoritin, _, _, handler) = await SetupAsync(db);
+    var config = /*lang=json,strict*/ """{"source":"export default () => ({})","capabilities":[]}""";
+
+    await handler.HandleAsync(new HandlerContext(e, config, DateTimeOffset.UtcNow));
+
+    var input = Assert.Single(suoritin.Requests).Input;
+    Assert.Equal(System.Text.Json.JsonValueKind.Object, input.GetProperty("params").ValueKind);
+    Assert.Equal(0, input.GetProperty("params").GetPropertyCount());
+  }
+
+  [Fact]
+  public async Task Input_params_carry_the_firing_arguments()
+  {
+    using var db = TestDb.New();
+    var (e, suoritin, _, _, handler) = await SetupAsync(db);
+    var config = /*lang=json,strict*/ """{"source":"export default () => ({})","capabilities":[]}""";
+    using var doc = System.Text.Json.JsonDocument.Parse(/*lang=json,strict*/ """{"door":"front","count":2}""");
+
+    await handler.HandleAsync(new HandlerContext(e, config, DateTimeOffset.UtcNow, doc.RootElement.Clone()));
+
+    var input = Assert.Single(suoritin.Requests).Input;
+    Assert.Equal("front", input.GetProperty("params").GetProperty("door").GetString());
+    Assert.Equal(2, input.GetProperty("params").GetProperty("count").GetInt32());
+  }
+
+  [Fact]
   public async Task Llm_grant_ships_extract_and_widens_net_to_the_callback_host()
   {
     using var db = TestDb.New();

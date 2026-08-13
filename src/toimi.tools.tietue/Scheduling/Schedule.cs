@@ -6,32 +6,39 @@ using Ical.Net.DataTypes;
 namespace toimi.tools.tietue.Scheduling;
 
 /// <summary>
-/// The single owner of the trigger schedule grammar: one-shot {"at":"&lt;iso utc&gt;"} or recurring
-/// {"start":"&lt;iso utc&gt;","rrule":"FREQ=...","tz":"&lt;iana&gt;"}. Every instance is grammatically
+/// The single owner of the trigger anchor grammar: one-shot {"at":"&lt;iso utc&gt;"}, recurring
+/// {"start":"&lt;iso utc&gt;","rrule":"FREQ=...","tz":"&lt;iana&gt;"}, or call-anchored
+/// {"webhook":{"activeAfter"?,"activeUntil"?,"rateLimit"?}}. Every instance is grammatically
 /// parseable by construction (Parse or the typed factories); TryValidate covers the semantic
-/// rules writers enforce. ToJson returns exactly the JSON the schedule was built from (plus any
-/// stamped tz), so persisted schedules stay compatible with what callers wrote.
+/// rules writers enforce, including that a schedule has exactly one anchor. ToJson returns
+/// exactly the JSON the schedule was built from (plus any stamped tz), so persisted schedules
+/// stay compatible with what callers wrote.
 /// </summary>
 public sealed class Schedule
 {
   private readonly string _json;
 
-  private Schedule(string json, DateTimeOffset? at, DateTimeOffset? start, string? rrule, string? tz)
+  private Schedule(string json, DateTimeOffset? at, DateTimeOffset? start, string? rrule, string? tz, WebhookSpec? webhook)
   {
     _json = json;
     At = at;
     Start = start;
     Rrule = rrule;
     Tz = tz;
+    Webhook = webhook;
   }
 
   public DateTimeOffset? At { get; }
   public DateTimeOffset? Start { get; }
   public string? Rrule { get; }
   public string? Tz { get; }
+  public WebhookSpec? Webhook { get; }
 
   /// <summary>A spec with 'at' is one-shot even when rrule fields are also present ('at' wins in NextOnOrAfter/NextAfter).</summary>
   public bool IsRecurring => At is null && Start is not null && Rrule is not null;
+
+  /// <summary>Call-anchored: fired by inbound HTTP calls to the trigger's endpoint, never by the clock.</summary>
+  public bool IsWebhook => Webhook is not null;
 
   /// <summary>Null when the JSON is not an object or a date field doesn't parse — the grammar is unmet.</summary>
   public static Schedule? Parse(string json)
@@ -42,7 +49,7 @@ public sealed class Schedule
       var root = doc.RootElement;
       return root.ValueKind != JsonValueKind.Object
         ? null
-        : new Schedule(json, Time(root, "at"), Time(root, "start"), Str(root, "rrule"), Str(root, "tz"));
+        : new Schedule(json, Time(root, "at"), Time(root, "start"), Str(root, "rrule"), Str(root, "tz"), ParseWebhook(root));
     }
     catch (Exception ex) when (ex is JsonException or FormatException)
     {
@@ -53,7 +60,7 @@ public sealed class Schedule
   public static Schedule OneShotAt(DateTimeOffset at)
   {
     var utc = at.ToUniversalTime();
-    return new Schedule(new JsonObject { ["at"] = utc.ToString("o") }.ToJsonString(), utc, null, null, null);
+    return new Schedule(new JsonObject { ["at"] = utc.ToString("o") }.ToJsonString(), utc, null, null, null, null);
   }
 
   public static Schedule Recurring(DateTimeOffset start, string rrule, string? tz = null)
@@ -65,7 +72,30 @@ public sealed class Schedule
       node["tz"] = tz;
     }
 
-    return new Schedule(node.ToJsonString(), null, utc, rrule, tz);
+    return new Schedule(node.ToJsonString(), null, utc, rrule, tz, null);
+  }
+
+  public static Schedule ForWebhook(DateTimeOffset? activeAfter = null, DateTimeOffset? activeUntil = null, int? rateLimit = null)
+  {
+    var spec = new JsonObject();
+    if (activeAfter is { } after)
+    {
+      spec["activeAfter"] = after.ToUniversalTime().ToString("o");
+    }
+
+    if (activeUntil is { } until)
+    {
+      spec["activeUntil"] = until.ToUniversalTime().ToString("o");
+    }
+
+    if (rateLimit is { } limit)
+    {
+      spec["rateLimit"] = limit;
+    }
+
+    var json = new JsonObject { ["webhook"] = spec }.ToJsonString();
+    return new Schedule(json, null, null, null, null,
+      new WebhookSpec(activeAfter?.ToUniversalTime(), activeUntil?.ToUniversalTime(), rateLimit));
   }
 
   /// <summary>A schedule with the default tz stamped onto a recurring spec that omits one; otherwise this instance.</summary>
@@ -78,7 +108,7 @@ public sealed class Schedule
 
     var node = JsonNode.Parse(_json)!.AsObject();
     node["tz"] = defaultTz;
-    return new Schedule(node.ToJsonString(), At, Start, Rrule, defaultTz);
+    return new Schedule(node.ToJsonString(), At, Start, Rrule, defaultTz, Webhook);
   }
 
   /// <summary>
@@ -89,9 +119,33 @@ public sealed class Schedule
   /// </summary>
   public bool TryValidate(out string? error)
   {
+    if (IsWebhook)
+    {
+      if (At is not null || Start is not null || Rrule is not null)
+      {
+        error = "A schedule has exactly one anchor: 'at' (one-shot), 'start'+'rrule' (recurring), or 'webhook' (call-anchored).";
+        return false;
+      }
+
+      if (Webhook is { ActiveAfter: { } after, ActiveUntil: { } until } && after >= until)
+      {
+        error = "Webhook 'activeAfter' must be earlier than 'activeUntil'.";
+        return false;
+      }
+
+      if (Webhook is { RateLimit: < 1 })
+      {
+        error = "Webhook 'rateLimit' must be a positive integer (firings per minute).";
+        return false;
+      }
+
+      error = null;
+      return true;
+    }
+
     if (At is null && !IsRecurring)
     {
-      error = "Schedule must be {\"at\":\"<iso utc>\"} (one-shot) or {\"start\":\"<iso utc>\",\"rrule\":\"FREQ=...\"} (recurring).";
+      error = "Schedule must be {\"at\":\"<iso utc>\"} (one-shot), {\"start\":\"<iso utc>\",\"rrule\":\"FREQ=...\"} (recurring), or {\"webhook\":{...}} (call-anchored).";
       return false;
     }
 
@@ -163,4 +217,36 @@ public sealed class Schedule
   {
     return root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
   }
+
+  // A non-object "webhook" value yields null and falls to the TryValidate grammar error.
+  // Wrong-typed members throw (→ Parse returns null) rather than being skipped: a silently
+  // dropped activeUntil or rateLimit would fail OPEN — a never-expiring or under-limited
+  // capability URL — so the whole spec is rejected instead.
+  private static WebhookSpec? ParseWebhook(JsonElement root)
+  {
+    return !root.TryGetProperty("webhook", out var v) || v.ValueKind != JsonValueKind.Object
+      ? null
+      : new WebhookSpec(StrictTime(v, "activeAfter"), StrictTime(v, "activeUntil"), StrictInt(v, "rateLimit"));
+  }
+
+  private static DateTimeOffset? StrictTime(JsonElement e, string name)
+  {
+    return !e.TryGetProperty(name, out var v) || v.ValueKind == JsonValueKind.Null
+      ? null
+      : v.ValueKind == JsonValueKind.String
+        ? DateTimeOffset.Parse(v.GetString()!, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal)
+        : throw new FormatException($"webhook '{name}' must be an ISO 8601 string");
+  }
+
+  private static int? StrictInt(JsonElement e, string name)
+  {
+    return !e.TryGetProperty(name, out var v) || v.ValueKind == JsonValueKind.Null
+      ? null
+      : v.ValueKind == JsonValueKind.Number
+        ? v.GetInt32()
+        : throw new FormatException($"webhook '{name}' must be an integer");
+  }
 }
+
+/// <summary>The call-anchor spec: an optional validity window (checked at request time) and an optional per-webhook rate limit override.</summary>
+public sealed record WebhookSpec(DateTimeOffset? ActiveAfter, DateTimeOffset? ActiveUntil, int? RateLimit);

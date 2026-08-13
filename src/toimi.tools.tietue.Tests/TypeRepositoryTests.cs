@@ -70,6 +70,12 @@ public class TypeRepositoryTests
   [InlineData(/*lang=json,strict*/ """[{"handler":{"kind":"notify","config":{"titleTemplate":"{t}"}}}]""", "atField")]
   [InlineData(/*lang=json,strict*/ """[{"when":{"atField":""},"handler":{"kind":"notify","config":{"titleTemplate":"{t}"}}}]""", "atField")]
   [InlineData(/*lang=json,strict*/ """[{"when":{"atField":"dueAt"}}]""", "handler.kind")]
+  [InlineData(/*lang=json,strict*/ """[{"when":{"webhook":{},"atField":"dueAt"},"handler":{"kind":"notify","config":{"titleTemplate":"{t}"}}}]""", "exactly one anchor")]
+  [InlineData(/*lang=json,strict*/ """[{"when":{"webhook":{},"rruleField":"rrule"},"handler":{"kind":"notify","config":{"titleTemplate":"{t}"}}}]""", "exactly one anchor")]
+  [InlineData(/*lang=json,strict*/ """[{"when":{"webhook":null},"handler":{"kind":"notify","config":{"titleTemplate":"{t}"}}}]""", "webhook")]
+  [InlineData(/*lang=json,strict*/ """[{"when":{"webhook":true},"handler":{"kind":"notify","config":{"titleTemplate":"{t}"}}}]""", "webhook")]
+  [InlineData(/*lang=json,strict*/ """[{"when":{"webhook":{"rateLimit":0}},"handler":{"kind":"notify","config":{"titleTemplate":"{t}"}}}]""", "rateLimit")]
+  [InlineData(/*lang=json,strict*/ """[{"when":{"webhook":{"activeAfter":"soon"}},"handler":{"kind":"notify","config":{"titleTemplate":"{t}"}}}]""", "webhook")]
   public async Task Define_rejects_structurally_broken_default_triggers(string defaultTriggers, string expectedError)
   {
     using var db = TestDb.New();
@@ -80,6 +86,19 @@ public class TypeRepositoryTests
 
     Assert.Contains(expectedError, ex.Message);
     Assert.Null(await repo.GetAsync("broken"));
+  }
+
+  [Fact]
+  public async Task Define_accepts_a_webhook_default_trigger()
+  {
+    using var db = TestDb.New();
+    var repo = new TypeRepository(db);
+
+    var type = await repo.DefineAsync("doorbell", /*lang=json,strict*/ """{"type":"object"}""", null,
+      /*lang=json,strict*/ """[{"when":{"webhook":{"rateLimit":3}},"handler":{"kind":"notify","config":{"titleTemplate":"ring"}}}]""");
+
+    Assert.NotNull(type);
+    Assert.NotNull(await repo.GetAsync("doorbell"));
   }
 
   [Fact]

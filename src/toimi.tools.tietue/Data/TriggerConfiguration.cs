@@ -14,6 +14,7 @@ public class TriggerConfiguration : IEntityTypeConfiguration<Trigger>
     builder.Property(t => t.HandlerKind).IsRequired();
     builder.Property(t => t.HandlerConfig).HasColumnType("jsonb");
     builder.Property(t => t.Source);
+    builder.Property(t => t.Secret);
     builder.Property(t => t.Enabled).HasDefaultValue(true);
     builder.Property(t => t.CreatedAt).HasDefaultValueSql("now()");
     builder.Property(t => t.UpdatedAt).HasDefaultValueSql("now()");

@@ -11,12 +11,33 @@ namespace toimi.tools.tietue.Tools;
 [McpServerToolType]
 public class RunTriggerTool(TietueDbContext db, OccurrenceRunner runner, ITickLock? tickLock = null)
 {
-  [McpServerTool, Description("Fire a trigger immediately, out of schedule, and return the handler result synchronously — including script logs. Use this to test a job or script right after creating or editing it instead of waiting for the scheduler. Does not change the trigger's schedule or NextFireAt. Returns a busy response if a scheduler tick holds the run lock — retry shortly. Note: a message-kind trigger runs a full agent synchronously and may take minutes — do not call run_trigger from within an agent run that was itself started by run_trigger.")]
-  public async Task<string> RunTrigger([Description("Trigger id (GUID)")] string triggerId)
+  [McpServerTool, Description("Fire a trigger immediately, out of schedule, and return the handler result synchronously — including script logs. Use this to test a job or script right after creating or editing it instead of waiting for the scheduler. Does not change the trigger's schedule or NextFireAt. Optional params (a JSON object) reach the handler like a webhook call's would: scripts see input.params, notify/message templates interpolate {key} tokens. Returns a busy response if a scheduler tick holds the run lock — retry shortly. Note: a message-kind trigger runs a full agent synchronously and may take minutes — do not call run_trigger from within an agent run that was itself started by run_trigger.")]
+  public async Task<string> RunTrigger(
+    [Description("Trigger id (GUID)")] string triggerId,
+    [Description("Optional params JSON object for this firing (what a webhook call would carry)")] string? @params = null)
   {
     if (!Guid.TryParse(triggerId, out var id))
     {
       return "Invalid triggerId. Expected a GUID.";
+    }
+
+    JsonElement? parsedParams = null;
+    if (@params is not null)
+    {
+      try
+      {
+        using var doc = JsonDocument.Parse(@params);
+        if (doc.RootElement.ValueKind != JsonValueKind.Object)
+        {
+          return "Invalid params. Expected a JSON object.";
+        }
+
+        parsedParams = doc.RootElement.Clone();
+      }
+      catch (JsonException)
+      {
+        return "Invalid params. Expected a JSON object.";
+      }
     }
 
     var trigger = await db.Triggers.FirstOrDefaultAsync(t => t.Id == id);
@@ -38,7 +59,7 @@ public class RunTriggerTool(TietueDbContext db, OccurrenceRunner runner, ITickLo
     // The tick lock is handed to the runner so the claim itself is serialized
     // against scheduler ticks (see OccurrenceRunner.ClaimAsync).
     var occurrence = DateTimeOffset.UtcNow;
-    var outcome = await runner.RunAsync(trigger, entity, occurrence, occurrence, claimLock: tickLock);
+    var outcome = await runner.RunAsync(trigger, entity, occurrence, occurrence, claimLock: tickLock, @params: parsedParams);
 
     return outcome.State switch
     {

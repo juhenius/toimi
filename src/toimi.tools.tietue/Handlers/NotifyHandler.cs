@@ -21,8 +21,8 @@ public class NotifyHandler(INotifier notifier) : INativeHandler
       tags = Str(root, "tags");
     }
 
-    var title = TemplateRenderer.Render(titleTemplate, ctx.Entity.Data);
-    var message = TemplateRenderer.Render(messageTemplate, ctx.Entity.Data);
+    var title = TemplateRenderer.Render(titleTemplate, ctx.Entity.Data, ctx.Params);
+    var message = TemplateRenderer.Render(messageTemplate, ctx.Entity.Data, ctx.Params);
     if (string.IsNullOrEmpty(message))
     {
       message = title;

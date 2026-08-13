@@ -219,4 +219,114 @@ public class ScheduleTests
     Assert.False(s.TryValidate(out var error));
     Assert.Contains("Invalid rrule 'garbage'", error);
   }
+
+  [Fact]
+  public void Webhook_parses_spec_fields()
+  {
+    var s = Parsed(/*lang=json,strict*/ """{"webhook":{"activeAfter":"2026-06-01T09:00:00Z","activeUntil":"2026-06-02T09:00:00Z","rateLimit":3}}""");
+    Assert.True(s.IsWebhook);
+    Assert.Equal(new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), s.Webhook!.ActiveAfter);
+    Assert.Equal(new DateTimeOffset(2026, 6, 2, 9, 0, 0, TimeSpan.Zero), s.Webhook.ActiveUntil);
+    Assert.Equal(3, s.Webhook.RateLimit);
+  }
+
+  [Fact]
+  public void Webhook_empty_spec_is_valid_and_never_time_resolves()
+  {
+    var s = Parsed(/*lang=json,strict*/ """{"webhook":{}}""");
+    Assert.True(s.IsWebhook);
+    Assert.True(s.TryValidate(out var error));
+    Assert.Null(error);
+    Assert.Null(s.NextOnOrAfter(Now));
+    Assert.Null(s.NextAfter(Now));
+    Assert.False(s.IsRecurring);
+  }
+
+  [Fact]
+  public void Webhook_round_trips_source_including_unknown_keys()
+  {
+    const string json = /*lang=json,strict*/ """{"webhook":{"rateLimit":6,"note":"keep me"}}""";
+    Assert.Equal(json, Parsed(json).ToJson());
+  }
+
+  [Fact]
+  public void Webhook_with_time_anchor_fields_is_rejected()
+  {
+    Assert.False(Parsed(/*lang=json,strict*/ """{"at":"2026-06-01T09:00:00Z","webhook":{}}""").TryValidate(out var error));
+    Assert.Contains("exactly one anchor", error);
+    Assert.False(Parsed(/*lang=json,strict*/ """{"start":"2026-06-01T09:00:00Z","rrule":"FREQ=DAILY","webhook":{}}""").TryValidate(out _));
+  }
+
+  [Fact]
+  public void Webhook_with_inverted_window_is_rejected()
+  {
+    var s = Parsed(/*lang=json,strict*/ """{"webhook":{"activeAfter":"2026-06-02T09:00:00Z","activeUntil":"2026-06-01T09:00:00Z"}}""");
+    Assert.False(s.TryValidate(out var error));
+    Assert.Contains("activeAfter", error);
+  }
+
+  [Fact]
+  public void Webhook_with_non_positive_rate_limit_is_rejected()
+  {
+    Assert.False(Parsed(/*lang=json,strict*/ """{"webhook":{"rateLimit":0}}""").TryValidate(out var error));
+    Assert.Contains("rateLimit", error);
+    Assert.False(Parsed(/*lang=json,strict*/ """{"webhook":{"rateLimit":-1}}""").TryValidate(out _));
+  }
+
+  [Fact]
+  public void Webhook_non_object_value_fails_the_grammar()
+  {
+    var s = Parsed(/*lang=json,strict*/ """{"webhook":true}""");
+    Assert.False(s.IsWebhook);
+    Assert.False(s.TryValidate(out var error));
+    Assert.Contains("webhook", error);
+  }
+
+  [Fact]
+  public void Webhook_with_unparseable_date_yields_null()
+  {
+    Assert.Null(Schedule.Parse(/*lang=json,strict*/ """{"webhook":{"activeAfter":"soon"}}"""));
+  }
+
+  [Theory]
+  [InlineData(/*lang=json,strict*/ """{"webhook":{"activeUntil":1767225600}}""")]
+  [InlineData(/*lang=json,strict*/ """{"webhook":{"activeAfter":true}}""")]
+  [InlineData(/*lang=json,strict*/ """{"webhook":{"rateLimit":"2"}}""")]
+  [InlineData(/*lang=json,strict*/ """{"webhook":{"rateLimit":2.5}}""")]
+  public void Webhook_with_wrong_typed_field_yields_null_instead_of_failing_open(string json)
+  {
+    // A silently dropped activeUntil is a never-expiring URL; a dropped rateLimit is an
+    // unintended default. Wrong types reject the whole spec.
+    Assert.Null(Schedule.Parse(json));
+  }
+
+  [Fact]
+  public void Webhook_null_valued_fields_are_treated_as_absent()
+  {
+    var s = Parsed(/*lang=json,strict*/ """{"webhook":{"activeAfter":null,"rateLimit":null}}""");
+    Assert.Equal(new WebhookSpec(null, null, null), s.Webhook);
+    Assert.True(s.TryValidate(out _));
+  }
+
+  [Fact]
+  public void WithDefaultTz_leaves_webhook_unchanged()
+  {
+    var s = Parsed(/*lang=json,strict*/ """{"webhook":{}}""");
+    Assert.Same(s, s.WithDefaultTz("Europe/Helsinki"));
+  }
+
+  [Fact]
+  public void ForWebhook_factory_round_trips_through_parse()
+  {
+    var after = new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero);
+    var until = new DateTimeOffset(2026, 6, 2, 9, 0, 0, TimeSpan.Zero);
+    var s = Schedule.ForWebhook(after, until, 3);
+    Assert.True(s.IsWebhook);
+
+    var reparsed = Schedule.Parse(s.ToJson());
+    Assert.Equal(new WebhookSpec(after, until, 3), reparsed!.Webhook);
+
+    var bare = Schedule.Parse(Schedule.ForWebhook().ToJson());
+    Assert.Equal(new WebhookSpec(null, null, null), bare!.Webhook);
+  }
 }

@@ -71,6 +71,13 @@ public class TriggerProvisioner(TriggerRepository triggers, ILogger<TriggerProvi
       return null;
     }
 
+    // A webhook template is literal anchor content, not a field reference: every entity of
+    // the type gets a call-anchored trigger unconditionally (CreateAsync mints its secret).
+    if (when["webhook"] is JsonObject webhook)
+    {
+      return Schedule.Parse(new JsonObject { ["webhook"] = webhook.DeepClone() }.ToJsonString());
+    }
+
     var atField = when["atField"]?.GetValue<string>();
     if (atField is null || !data.RootElement.TryGetProperty(atField, out var atVal) || atVal.ValueKind != JsonValueKind.String)
     {
