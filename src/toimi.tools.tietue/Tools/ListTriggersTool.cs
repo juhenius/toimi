@@ -30,15 +30,7 @@ public class ListTriggersTool(TriggerRepository repository, WebhookOptions webho
         ["enabled"] = t.Enabled,
         ["nextFireAt"] = t.NextFireAt?.ToString("o"),
       };
-      if (t.Secret is not null)
-      {
-        // The secret rides along even when no PublicBaseUrl composes a url (ADR 0001:
-        // "retrievable through the trigger tools") — without it, a lost creation
-        // response would make the capability URL unrecoverable.
-        row["url"] = WebhookEndpoints.Url(webhookOptions, t);
-        row["secret"] = t.Secret;
-      }
-
+      WebhookEndpoints.AddCapabilityFields(row, webhookOptions, t);
       return row;
     }).ToArray();
     return JsonSerializer.Serialize(new JsonArray(rows));

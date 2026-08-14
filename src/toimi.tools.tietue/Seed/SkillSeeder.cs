@@ -10,7 +10,8 @@ namespace toimi.tools.tietue.Seed;
 // MAINTAINER NOTE: keep instructions in sync with the live tool surface.
 // Current tool names: tietue create/get/update/delete/list/search,
 // define_type/list_types/get_type/delete_type, set_trigger/update_trigger/
-// delete_trigger/list_triggers, complete_occurrence, activate, list_skills;
+// delete_trigger/list_triggers, complete_occurrence, activate, run_trigger,
+// list_skills;
 // verkko fetch_url/send_notification; koti list_entities/get_entity_state/
 // call_service/get_history; ruutu display_list/display_list_templates/
 // display_show/display_overlay/display_clear/display_get_events/
@@ -149,9 +150,30 @@ public class SkillSeeder(TietueDbContext db, EntityRepository entities)
       - A SCHEDULE runs an agent prompt. create type='schedule' with data {name, prompt, startAt (ISO 8601 UTC), rrule (optional)}.
       RRULE patterns: daily FREQ=DAILY; weekdays FREQ=WEEKLY;BYDAY=MO,WE,FR; monthly FREQ=MONTHLY;BYMONTHDAY=15; yearly FREQ=YEARLY. (RFC 5545 replaces cron.)
       Convert the user's local time to UTC. For a schedule, write a self-contained prompt — the run has no chat context; state exactly what to do and which tools to use. A run can reschedule itself with set_trigger. Confirm the time back in the user's timezone.
-      A trigger can also be CALL-ANCHORED instead of scheduled: set_trigger with schedule {"webhook":{"activeAfter"?,"activeUntil"?,"rateLimit"?}} returns a capability URL to hand to external systems (a Home Assistant automation, curl, a dashboard button). Calls to it fire the handler; the caller's query/body arrive as params — scripts read input.params, notify/message templates interpolate {key} tokens. Test one with run_trigger passing params before handing the URL out.
+      A trigger can also be CALL-ANCHORED instead of scheduled: set_trigger with schedule {"webhook":{"activeAfter"?,"activeUntil"?,"rateLimit"?}} returns a capability URL to hand to external systems (a Home Assistant automation, curl, a display button). Calls to it fire the handler; the caller's query/body arrive as params. URL-handling rules, params contract, and debugging live in the "webhooks" skill — read it before wiring one.
       """,
       ["schedule", "reminder", "automation", "webhook"]
+    ),
+    (
+      "webhooks",
+      "Wire call-anchored (webhook) triggers correctly: capability URL rules, params contract, testing, and debugging",
+      """
+      A webhook is a CALL-ANCHORED trigger: an inbound HTTP call fires its handler (notify / set-field / script / message). Create one with set_trigger using schedule {"webhook":{"activeAfter"?,"activeUntil"?,"rateLimit"?}} on any entity; the response includes the capability URL (/hooks/{triggerId}/{secret}).
+      CAPABILITY URL RULES:
+      - The URL IS the credential. Copy it verbatim from the set_trigger/list_triggers output. NEVER retype or reconstruct it — a URL with a lost character still looks valid and passes validation, but every call answers 404.
+      - When code must contain its own URL (e.g. a script that re-pushes a display scene with its actions), define it exactly ONCE as a constant at the top and reference the constant everywhere. Never paste it per branch.
+      - Hand out the public https form exactly as returned; in-cluster callers (ruutu display actions) reroute it internally themselves.
+      CALL SEMANTICS (doorbell): a valid call returns 202 + an occurrence id immediately; handler output is NEVER in the HTTP response. Anything user-visible must be pushed by the handler (send_notification, display_show). Wrong secret, unknown id, disabled, out of validity window, kill switch — all answer a uniform 404 by design; 429 = over the rate limit (default 6/min).
+      PARAMS: the caller's query string and JSON body merge into params (body wins per key). Scripts read input.params.<key>; notify templates interpolate {key}; message prompts receive params as data, never as instructions. Keep the shape minimal and stable, and branch the handler on one field (e.g. params.target is "on" or "off").
+      SCRIPT HANDLERS ARE EFFECTS-BASED: a script is a pure function of input returning {mcpCall:[{tool,args}...], setField:[...]}; tietue applies the effects AFTER the run. Tool-call results are NEVER available inside the script — do not write code that branches on them. If behavior must depend on live state, get the state into params, or use a message (agent run) handler instead.
+      TEST BEFORE HANDING OUT: run_trigger with the same params exercises the whole chain synchronously — always do this before giving the URL to an external system or wiring a display button.
+      DEBUG IN THIS ORDER (three layers, innermost first):
+      1. Handler — run_trigger with exactly the params the caller would send (e.g. {"target":"on","display":"kitchen"}). Fails here → the problem is the script/handler, not the caller. Verify input.params.<field> actually holds what you expect; past firings record their error text on the entity's events.
+      2. Routing (displays) — run_trigger works but a tap does nothing and shows no overlay → the actionsJson key doesn't match the template's event; display_get_events shows the tap with forwarded=null. Fix the key (see use-displays: the key starts with the data-tap value).
+      3. Transport — the display shows an "Action failed" overlay and display_get_events shows forwarded="error: ..." → the forward left ruutu but failed. The vocabulary: "error: 404" = wrong/stale/mistyped URL (re-copy it from list_triggers) or disabled/revoked trigger; "error: 429" = rate limit; "error: timeout" = tietue too slow; "error: unreachable" = connection/DNS/TLS failure; "error: failed" = anything else (check ruutu logs).
+      DISPLAY BUTTONS are just another caller: display_show's actionsJson maps event selectors to hook URLs, and a tap POSTs {type, target, value, display} as the params. Actions die with every scene push, so a handler that re-pushes the scene must resend actionsJson (using the one URL constant) or the buttons go dead; use params.display as the re-push target. Template contracts and the selector/eventName rule are in the "use-displays" skill.
+      """,
+      ["webhook", "trigger", "automation", "capability-url"]
     ),
     (
       "use-displays",
@@ -164,7 +186,8 @@ public class SkillSeeder(TietueDbContext db, EntityRepository entities)
       4. Transient cards: display_overlay(identifier, template, data) — overlays stack and stay until tapped; the "notification" template is the usual choice.
       5. Reset to idle: display_clear(identifier).
       6. New shapes: display_create_template requires both modern_html and legacy_html (legacy = iOS Safari 9: no flexbox/grid, no CSS variables, no WebP — use tables/floats/system fonts); both are linted. display_get_tier_brief gives the full authoring rules; display_preview sanity-checks output before saving.
-      7. Interaction: when the user taps something, display_get_events(identifier, since optional) returns tap-backs — poll it during an in-progress routine to track progress (taps do not auto-start a session).
+      7. Interaction — wired buttons: a template element declares data-tap="<eventName>" and data-target="<target>" (optional data-value). actionsJson keys are "<eventName>" or "<eventName>:<target>", where eventName is the template's data-tap VALUE — whatever string the template chose, NOT the literal word "tap". Example: <div data-tap="action" data-target="on"> is matched by the key "action:on", or by bare "action" to catch every target of that event; "tap:on" matches nothing. A tap fires the webhook with params {type, target, value, display} (type = the eventName). data-value is JSON-parsed when parseable — "true"/"false"/numbers/objects arrive typed, so a template emitting data-value="false" yields boolean false in params.value; non-JSON text arrives as a string. The handler performs the action and re-pushes the scene INCLUDING actionsJson (actions die with every push). URL rules and debugging order: the "webhooks" skill.
+      8. Interaction — polling: display_get_events(identifier, since optional) returns tap-backs; each carries a forwarded field (null = not wired, "ok", or "error: 404" etc.) that tells you whether a wired forward succeeded.
       """,
       ["displays", "ruutu", "ui", "templates"]
     ),

@@ -15,6 +15,12 @@ builder.Services.AddScoped<toimi.tools.ruutu.Rendering.DbTemplateSource>();
 
 builder.Services.AddSingleton<SseHub>();
 builder.Services.AddScoped<ContentPushService>();
+builder.Services.AddScoped<ActionForwarder>();
+builder.Services.AddSingleton<ActionForwardChannel>();
+builder.Services.AddHostedService<ActionForwardWorker>();
+builder.Services.Configure<ActionOptions>(builder.Configuration.GetSection("Actions"));
+builder.Services.AddHttpClient(ActionForwarder.HttpClientName,
+  client => client.Timeout = TimeSpan.FromSeconds(10));
 
 builder.Services.AddControllers();
 

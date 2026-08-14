@@ -41,6 +41,26 @@ public class WebhookDispatcherTests
   }
 
   [Fact]
+  public async Task Firing_is_dropped_when_the_trigger_is_no_longer_call_anchored()
+  {
+    var (db, entity, trigger) = await SetupAsync();
+    using var _ = db;
+    var notifier = new FakeNotifier();
+
+    // update_trigger swapping webhook→time revokes the URL but leaves Enabled true;
+    // a queued firing must honor the revocation, not run under the new time anchor.
+    trigger.Schedule = /*lang=json,strict*/ """{"at":"2027-01-01T00:00:00Z"}""";
+    await db.SaveChangesAsync();
+
+    await WebhookDispatcher.ProcessAsync(
+      Firing(trigger.Id), db, Runner(db, new NotifyHandler(notifier)),
+      tickLock: null, Now, NullLogger.Instance, default, TimeSpan.Zero);
+
+    Assert.Empty(notifier.Sent);
+    Assert.False(await db.EntityEvents.AnyAsync(e => e.EntityId == entity.Id));
+  }
+
+  [Fact]
   public async Task Runs_the_handler_with_params_and_finalizes_the_firing_occurrence()
   {
     var (db, entity, trigger) = await SetupAsync();

@@ -142,7 +142,7 @@ public class WebhookEndpointsTests
   }
 
   [Fact]
-  public async Task Global_cap_meters_unauthenticated_probes_before_the_lookup()
+  public async Task Global_cap_meters_probes_but_never_starves_valid_calls()
   {
     var (db, trigger) = await SetupAsync();
     using var _ = db;
@@ -151,10 +151,14 @@ public class WebhookEndpointsTests
 
     Assert.IsType<NotFound>(await CallAsync(db, Guid.NewGuid(), "probe", options: options, limiter: limiter));
     Assert.IsType<NotFound>(await CallAsync(db, Guid.NewGuid(), "probe", options: options, limiter: limiter));
-    var third = await CallAsync(db, trigger.Id, trigger.Secret!, options: options, limiter: limiter);
 
-    // Even a VALID call sees 429 once the global window is spent — the meter sits pre-auth.
-    Assert.Equal(429, Assert.IsType<StatusCodeHttpResult>(third).StatusCode);
+    // The window is spent by failed-auth probes: further probes get 429...
+    var probe = await CallAsync(db, Guid.NewGuid(), "probe", options: options, limiter: limiter);
+    Assert.Equal(429, Assert.IsType<StatusCodeHttpResult>(probe).StatusCode);
+
+    // ...but a VALID capability call never touches the global bucket and still lands.
+    var valid = await CallAsync(db, trigger.Id, trigger.Secret!, options: options, limiter: limiter);
+    Assert.IsType<Accepted<WebhookEndpoints.WebhookAccepted>>(valid);
   }
 
   [Fact]

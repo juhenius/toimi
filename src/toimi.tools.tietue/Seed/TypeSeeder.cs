@@ -82,7 +82,7 @@ public class TypeSeeder(TypeRepository repository)
         "rrule":{"type":"string","description":"optional RFC 5545 RRULE for recurrence (e.g. FREQ=MINUTELY;INTERVAL=30). Sub-daily rules (MINUTELY/HOURLY) must use plain INTERVAL form — BY-part filters combined with tz are not supported; use FREQ=DAILY with BYHOUR/BYMINUTE for wall-clock times"},
         "tz":{"type":"string","description":"IANA tz for recurrence, e.g. Europe/Helsinki"},
         "enabled":{"type":"boolean","description":"set false to pause the job"}
-      },"required":["name","code"]}
+      },"required":["name","code"],"dependentRequired":{"rrule":["startAt"]}}
       """,
       /*lang=json,strict*/
                            """[{"behavior":"UniqueName","config":{"field":"name"}}]""",

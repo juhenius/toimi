@@ -24,7 +24,7 @@ public class SkillSeederTests
     var seeder = await SetupAsync(db);
     await seeder.SeedAsync();
     var count = await db.Entities.CountAsync(e => e.Type == "skill");
-    Assert.Equal(12, count);
+    Assert.Equal(13, count);
   }
 
   [Fact]
@@ -34,7 +34,7 @@ public class SkillSeederTests
     var seeder = await SetupAsync(db);
     await seeder.SeedAsync();
     await seeder.SeedAsync();
-    Assert.Equal(12, await db.Entities.CountAsync(e => e.Type == "skill"));
+    Assert.Equal(13, await db.Entities.CountAsync(e => e.Type == "skill"));
   }
 
   [Fact]

@@ -15,12 +15,13 @@ public class DisplayContentTools(ContentPushService pusher, ILogger<DisplayConte
     [Description("The display identifier.")] string identifier,
     [Description("Template name from display_list_templates.")] string template,
     [Description("Data matching the template's schema. Pass as a JSON object string.")] string dataJson,
+    [Description("Optional actions map wiring display events to webhook capability URLs, as a JSON object string: {\"<type>\" or \"<type>:<target>\": \"<hook URL>\"} (e.g. {\"check\": \"http://.../hooks/{id}/{secret}\"}). When a matching event occurs ruutu POSTs {type, target, value, display} to the URL as the firing's params. Replaced with every push; the handler is responsible for re-pushing the scene after it mutates state.")] string? actionsJson = null,
     CancellationToken ct = default)
   {
     return ToolGuard.RunAsync(async () =>
     {
       var data = JsonDocument.Parse(dataJson).RootElement;
-      await pusher.ShowSceneAsync(identifier, template, data, ct);
+      await pusher.ShowSceneAsync(identifier, template, data, actionsJson, ct);
       return "ok";
     }, translate: ex => TranslateContentFailure(ex, template), logger: logger);
   }

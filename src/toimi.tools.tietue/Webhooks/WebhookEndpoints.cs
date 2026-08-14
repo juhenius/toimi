@@ -18,7 +18,7 @@ namespace toimi.tools.tietue.Webhooks;
 /// </summary>
 public static class WebhookEndpoints
 {
-  public const string Base = "/hooks";
+  public const string Base = Toimi.Core.Webhooks.HookRoute.Base;
 
   /// <summary>The full capability URL for a webhook trigger; null for time anchors or when PublicBaseUrl is unset.</summary>
   public static string? Url(WebhookOptions options, Trigger trigger)
@@ -26,6 +26,25 @@ public static class WebhookEndpoints
     return trigger.Secret is null || string.IsNullOrEmpty(options.PublicBaseUrl)
       ? null
       : $"{options.PublicBaseUrl.TrimEnd('/')}{Base}/{trigger.Id}/{trigger.Secret}";
+  }
+
+  /// <summary>
+  /// Adds the capability fields (url + secret) to a trigger tool-response row when the
+  /// trigger is call-anchored. The one shaping site shared by set/update/list, so a
+  /// format or redaction change cannot silently drift between them. The secret rides
+  /// along even when no PublicBaseUrl composes a url (ADR 0001: "retrievable through
+  /// the trigger tools") — without it, a lost creation response would make the
+  /// capability URL unrecoverable.
+  /// </summary>
+  public static void AddCapabilityFields(JsonObject row, WebhookOptions options, Trigger trigger)
+  {
+    if (trigger.Secret is null)
+    {
+      return;
+    }
+
+    row["url"] = Url(options, trigger);
+    row["secret"] = trigger.Secret;
   }
 
   public static void MapWebhookEndpoints(WebApplication app)
@@ -51,18 +70,18 @@ public static class WebhookEndpoints
       return Results.NotFound();
     }
 
-    // Pre-auth global meter (sentinel key Guid.Empty — gen_random_uuid() never mints it):
-    // without this, random-guid floods reach the trigger lookup and cost a DB query each.
-    // 429 here reveals only that /hooks exists, which the repo already makes public.
-    if (!limiter.TryAcquire(Guid.Empty, options.GlobalRateLimitPerMinute))
-    {
-      return Results.StatusCode(StatusCodes.Status429TooManyRequests);
-    }
-
+    // Global meter (sentinel key Guid.Empty — gen_random_uuid() never mints it): charged
+    // ONLY by requests that fail authentication, so a secretless probe stream can never
+    // starve legitimate capability calls — those skip the global bucket entirely and are
+    // governed by their per-webhook limit alone. The accepted price: every probe costs
+    // one indexed PK lookup (trivial at any realistic rate; this deployment is LAN-only).
+    // Over-cap probes get 429, which reveals only that /hooks exists — already public.
     var trigger = await db.Triggers.FirstOrDefaultAsync(t => t.Id == triggerId, ct);
     if (trigger?.Secret is null || !FixedTimeEquals(trigger.Secret, secret))
     {
-      return Results.NotFound();
+      return limiter.TryAcquire(Guid.Empty, options.GlobalRateLimitPerMinute)
+        ? Results.NotFound()
+        : Results.StatusCode(StatusCodes.Status429TooManyRequests);
     }
 
     var spec = Schedule.Parse(trigger.Schedule)?.Webhook;
@@ -89,7 +108,7 @@ public static class WebhookEndpoints
       return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
     }
 
-    JsonElement? @params;
+    JsonElement @params;
     try
     {
       @params = MergeParams(request.Query, body);
@@ -99,15 +118,10 @@ public static class WebhookEndpoints
       return Results.BadRequest(new { error = "Request body must be a JSON object." });
     }
 
-    if (@params is null)
-    {
-      return Results.BadRequest(new { error = "Request body must be a JSON object." });
-    }
-
     var occurrence = now;
     // Accepted micro-race: two calls in the same clock instant collide on the
     // (entity, occurrence, kind) claim and the later one is dropped by the dispatcher.
-    return queue.TryEnqueue(new WebhookFiring(trigger.Id, occurrence, @params.Value))
+    return queue.TryEnqueue(new WebhookFiring(trigger.Id, occurrence, @params))
       ? Results.Accepted(null, new WebhookAccepted(occurrence.ToString("o")))
       : Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
   }
@@ -143,9 +157,10 @@ public static class WebhookEndpoints
   /// <summary>
   /// Params = query string overlaid by the JSON body, body wins per key (the deliberate
   /// interface beats the dumb-caller fallback). Query values are strings, last value per
-  /// key; no type coercion. Null when the body's root is not an object.
+  /// key; no type coercion. Throws JsonException when the body is malformed OR its root
+  /// is not an object — one failure signal, one 400 path.
   /// </summary>
-  private static JsonElement? MergeParams(IQueryCollection query, byte[] body)
+  private static JsonElement MergeParams(IQueryCollection query, byte[] body)
   {
     var merged = new JsonObject();
     foreach (var (key, values) in query)
@@ -158,16 +173,15 @@ public static class WebhookEndpoints
       using var doc = JsonDocument.Parse(body);
       if (doc.RootElement.ValueKind != JsonValueKind.Object)
       {
-        return null;
+        throw new JsonException("Request body root is not a JSON object.");
       }
 
       foreach (var property in doc.RootElement.EnumerateObject())
       {
-        merged[property.Name] = JsonNode.Parse(property.Value.GetRawText());
+        merged[property.Name] = JsonSerializer.SerializeToNode(property.Value);
       }
     }
 
-    using var result = JsonDocument.Parse(merged.ToJsonString());
-    return result.RootElement.Clone();
+    return JsonSerializer.SerializeToElement(merged);
   }
 }

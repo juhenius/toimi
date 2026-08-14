@@ -12,6 +12,7 @@ public class Display
   public string? Orientation { get; set; }              // "landscape" | "portrait" | null
   public string? CurrentTemplate { get; set; }
   public string? CurrentData { get; set; }              // jsonb stored as string
+  public string? CurrentActions { get; set; }           // jsonb: {"<type>[:<target>]": "<webhook url>"}, scene-scoped
   public DateTimeOffset? CurrentPushedAt { get; set; }
   public string OverlayStack { get; set; } = "[]";      // jsonb: array of {template, data, enqueued_at}
   public string? IdleTemplate { get; set; }

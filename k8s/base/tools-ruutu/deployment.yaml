@@ -33,6 +33,12 @@ spec:
                   key: ruutu-connection-string
             - name: HOME
               value: /tmp  # readOnlyRootFilesystem: $HOME writes (data-protection keys) land on the emptyDir
+            # Action forwards to ${TOIMI_HOST}/hooks/... are rewritten onto the
+            # cluster-internal tietue service: no ingress hop, no TLS trust needed.
+            - name: Actions__PublicHookHost
+              value: ${TOIMI_HOST}
+            - name: Actions__InternalHookBase
+              value: "http://toimi-tools-tietue.apps.svc.cluster.local"
           resources:
             requests:
               cpu: 100m

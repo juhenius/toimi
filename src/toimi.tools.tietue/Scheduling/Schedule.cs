@@ -219,14 +219,25 @@ public sealed class Schedule
   }
 
   // A non-object "webhook" value yields null and falls to the TryValidate grammar error.
-  // Wrong-typed members throw (→ Parse returns null) rather than being skipped: a silently
-  // dropped activeUntil or rateLimit would fail OPEN — a never-expiring or under-limited
-  // capability URL — so the whole spec is rejected instead.
+  // Wrong-typed AND wrong-named members throw (→ Parse returns null) rather than being
+  // skipped: a silently dropped or misspelled activeUntil/rateLimit would fail OPEN — a
+  // never-expiring or under-limited capability URL — so the whole spec is rejected instead.
   private static WebhookSpec? ParseWebhook(JsonElement root)
   {
-    return !root.TryGetProperty("webhook", out var v) || v.ValueKind != JsonValueKind.Object
-      ? null
-      : new WebhookSpec(StrictTime(v, "activeAfter"), StrictTime(v, "activeUntil"), StrictInt(v, "rateLimit"));
+    if (!root.TryGetProperty("webhook", out var v) || v.ValueKind != JsonValueKind.Object)
+    {
+      return null;
+    }
+
+    foreach (var member in v.EnumerateObject())
+    {
+      if (member.Name is not ("activeAfter" or "activeUntil" or "rateLimit"))
+      {
+        throw new FormatException($"webhook has unknown member '{member.Name}' (valid: activeAfter, activeUntil, rateLimit)");
+      }
+    }
+
+    return new WebhookSpec(StrictTime(v, "activeAfter"), StrictTime(v, "activeUntil"), StrictInt(v, "rateLimit"));
   }
 
   private static DateTimeOffset? StrictTime(JsonElement e, string name)

@@ -45,3 +45,21 @@ must not become agent instructions. Always present: for a webhook firing it
 is the merge of the caller's query string and JSON body (body wins per key);
 for time-anchored and manual firings it is empty unless supplied explicitly.
 _Avoid_: payload, args, query
+
+### Displays
+
+**Scene**:
+The template + data currently showing on a display, replaced wholesale by
+each push.
+_Avoid_: page, view, screen (a screen is the physical device)
+
+**Display event**:
+The `{type, target, value}` record a display emits when the user interacts
+with it (tap, check, dismiss).
+_Avoid_: tap-back, interaction, click
+
+**Action**:
+An entry in a scene mapping a display event to a webhook; when the event
+occurs, ruutu forwards it — the event becomes the firing's params, and no
+data comes back. Actions live and die with their scene.
+_Avoid_: binding, callback, button-handler

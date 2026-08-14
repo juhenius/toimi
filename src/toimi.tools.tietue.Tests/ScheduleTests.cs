@@ -243,10 +243,13 @@ public class ScheduleTests
   }
 
   [Fact]
-  public void Webhook_round_trips_source_including_unknown_keys()
+  public void Webhook_with_unknown_member_is_rejected()
   {
-    const string json = /*lang=json,strict*/ """{"webhook":{"rateLimit":6,"note":"keep me"}}""";
-    Assert.Equal(json, Parsed(json).ToJson());
+    // A misspelled activeUntil/rateLimit must not fail open into a never-expiring
+    // or default-limited capability URL — the whole spec is rejected instead.
+    Assert.Null(Schedule.Parse(/*lang=json,strict*/ """{"webhook":{"rateLimit":6,"note":"keep me"}}"""));
+    Assert.Null(Schedule.Parse(/*lang=json,strict*/ """{"webhook":{"activeuntil":"2026-08-20T00:00:00Z"}}"""));
+    Assert.Null(Schedule.Parse(/*lang=json,strict*/ """{"webhook":{"ratelimit":2}}"""));
   }
 
   [Fact]

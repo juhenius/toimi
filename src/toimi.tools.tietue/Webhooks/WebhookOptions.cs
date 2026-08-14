@@ -18,4 +18,14 @@ public class WebhookOptions
   public int GlobalRateLimitPerMinute { get; set; } = 120;
 
   public int MaxBodyBytes { get; set; } = 65536;
+
+  /// <summary>Parallel dispatch consumers — one slow (agent-run) firing must not head-of-line block unrelated webhooks.</summary>
+  public int DispatchConcurrency { get; set; } = 4;
+
+  /// <summary>
+  /// How long an accepted firing keeps retrying a Busy claim before being dropped. Must
+  /// outlast the longest legitimate scheduler tick, which runs its handlers inline while
+  /// holding the tick lock — several agent runs can hold it for many minutes.
+  /// </summary>
+  public int BusyRetryWindowMinutes { get; set; } = 60;
 }

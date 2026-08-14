@@ -136,6 +136,7 @@ public class DisplayApiController(
     [FromBody] EventRequest req,
     [FromServices] DisplayEventRepository events,
     [FromServices] ContentPushService pusher,
+    [FromServices] ActionForwardChannel forwards,
     CancellationToken ct)
   {
     var display = await displays.GetAsync(identifier, ct);
@@ -149,11 +150,22 @@ public class DisplayApiController(
     var valueJson = req.Value is null ? null
       : System.Text.Json.JsonSerializer.Serialize(req.Value);
 
-    await events.AppendAsync(display.Id, req.Type, req.Target, valueJson, ct);
+    var evt = await events.AppendAsync(display.Id, req.Type, req.Target, valueJson, ct);
 
     if (req.Type == "dismiss" && req.Target == "overlay")
     {
+      // Overlay dismissal is shell plumbing, not a scene event — it must not
+      // resolve against the scene's actions, or a bare "dismiss" wiring would
+      // fire on ruutu's own failure overlay.
       await pusher.DismissTopOverlayAsync(identifier, ct);
+      return Ok();
+    }
+
+    var actionUrl = SceneActions.Resolve(display.CurrentActions, req.Type, req.Target);
+    if (actionUrl is not null
+      && !forwards.TryEnqueue(new ActionForward(identifier, evt.Id, actionUrl)))
+    {
+      logger.LogWarning("Action forward queue full; dropping forward for display '{Identifier}'.", identifier);
     }
 
     return Ok();

@@ -14,7 +14,9 @@ k8s/base|overlays      Kustomize; overlays = secretGenerator only
 infrastructure/        PostgreSQL (Helm), Qdrant, Adminer, registry, namespaces
 scripts/               dev-setup.sh, server-setup.sh, deploy.sh, deploy-all.sh, lint.sh
 config.env(.example)   non-secret per-env values (gitignored real file)
-docs/superpowers/      design specs + phase implementation plans (e.g. the tietue effort)
+docs/specs/            design specs (all new specs go here)
+docs/adr/              architecture decision records; CONTEXT.md at root = glossary
+docs/superpowers/      historical specs + phase plans (pre-2026-08-14; frozen, don't add)
 ```
 
 ## Pods (1:1:1 convention)
@@ -103,7 +105,14 @@ Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers),
   extension).
 
 **ruutu — Display/dashboard surfaces (embed external web pages on a display).**
-- Owns: dashboard/webview templates seeded into its DB; rendering surfaces.
+- Owns: dashboard/webview templates seeded into its DB; rendering surfaces;
+  display events, and scene-scoped *actions* that forward wired events
+  server-side to webhook capability URLs (two-way interaction, ADR 0002 —
+  the event `{type,target,value,display}` becomes the firing's params,
+  doorbell only; the trigger's handler re-pushes the scene). Ruutu's only
+  outbound HTTP call; failures surface as a notification overlay. Public
+  `${TOIMI_HOST}/hooks/...` URLs are rewritten to the cluster-internal
+  tietue service at forward time (`Actions__*` env in the base deployment).
 - Extend when: adding display/template behavior.
 
 **selain — Headless browser (Playwright/Chromium).**

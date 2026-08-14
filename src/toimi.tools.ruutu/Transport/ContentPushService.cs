@@ -14,8 +14,13 @@ public class ContentPushService(
 {
   private readonly DbTemplateSource _source = new(templates);
 
-  public async Task ShowSceneAsync(string identifier, string template, JsonElement data, CancellationToken ct = default)
+  public async Task ShowSceneAsync(string identifier, string template, JsonElement data, string? actionsJson = null, CancellationToken ct = default)
   {
+    if (actionsJson is not null)
+    {
+      SceneActions.Validate(actionsJson);
+    }
+
     var display = await displays.GetAsync(identifier, ct)
       ?? throw new InvalidOperationException($"Display '{identifier}' not registered");
 
@@ -24,6 +29,7 @@ public class ContentPushService(
 
     display.CurrentTemplate = template;
     display.CurrentData = data.GetRawText();
+    display.CurrentActions = actionsJson;
     display.CurrentPushedAt = DateTimeOffset.UtcNow;
     await db.SaveChangesAsync(ct);
 
@@ -106,6 +112,7 @@ public class ContentPushService(
 
     display.CurrentTemplate = display.IdleTemplate;
     display.CurrentData = display.IdleData;
+    display.CurrentActions = null;
     display.CurrentPushedAt = DateTimeOffset.UtcNow;
     display.OverlayStack = "[]";
     await db.SaveChangesAsync(ct);

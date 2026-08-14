@@ -1,5 +1,7 @@
+using toimi.tools.tietue.Entities;
 using toimi.tools.tietue.Seed;
 using toimi.tools.tietue.Types;
+using toimi.tools.tietue.Validation;
 using Xunit;
 
 namespace toimi.tools.tietue.Tests;
@@ -70,6 +72,21 @@ public class TypeSeederTests
   }
 
   [Fact]
+  public async Task Job_with_rrule_but_no_startAt_is_rejected_loudly()
+  {
+    using var db = TestDb.New();
+    var repo = new TypeRepository(db);
+    await new TypeSeeder(repo).SeedAsync();
+    var entities = new EntityRepository(db, new SchemaValidator());
+
+    // Without the dependentRequired guard this saved fine and sat silently inert:
+    // TriggerProvisioner bails on the missing startAt and never reads the rrule.
+    await Assert.ThrowsAsync<TietueValidationException>(() =>
+      entities.CreateAsync("job", System.Text.Json.Nodes.JsonNode.Parse(
+        /*lang=json,strict*/ """{"name":"hourly","code":"export default async function(){return {};}","rrule":"FREQ=HOURLY"}"""), []));
+  }
+
+  [Fact]
   public async Task Seeds_schedule_with_default_message_trigger()
   {
     using var db = TestDb.New();
@@ -87,7 +104,7 @@ public class TypeSeederTests
   public async Task Seeded_types_pass_full_default_trigger_validation()
   {
     using var db = TestDb.New();
-    var entities = new Entities.EntityRepository(db, new Validation.SchemaValidator());
+    var entities = new EntityRepository(db, new SchemaValidator());
     var registry = new Handlers.HandlerRegistry(
     [
       new Handlers.NotifyHandler(new FakeNotifier()),

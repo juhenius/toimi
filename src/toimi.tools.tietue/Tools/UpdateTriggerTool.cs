@@ -1,5 +1,5 @@
 using System.ComponentModel;
-using System.Text.Json;
+using System.Text.Json.Nodes;
 using ModelContextProtocol.Server;
 using toimi.tools.tietue.Handlers;
 using toimi.tools.tietue.Scheduling;
@@ -46,18 +46,19 @@ public class UpdateTriggerTool(TriggerRepository repository, HandlerRegistry han
     try
     {
       var t = await repository.UpdateAsync(triggerId, schedule, handlerConfig, enabled, DateTimeOffset.UtcNow);
-      return t is null
-        ? $"Trigger '{id}' not found."
-        : t.Secret is null
-          ? JsonSerializer.Serialize(new { id = t.Id.ToString(), enabled = t.Enabled, nextFireAt = t.NextFireAt?.ToString("o") })
-          : JsonSerializer.Serialize(new
-          {
-            id = t.Id.ToString(),
-            enabled = t.Enabled,
-            nextFireAt = (string?)null,
-            url = WebhookEndpoints.Url(webhookOptions, t),
-            secret = t.Secret,
-          });
+      if (t is null)
+      {
+        return $"Trigger '{id}' not found.";
+      }
+
+      var row = new JsonObject
+      {
+        ["id"] = t.Id.ToString(),
+        ["enabled"] = t.Enabled,
+        ["nextFireAt"] = t.NextFireAt?.ToString("o"),
+      };
+      WebhookEndpoints.AddCapabilityFields(row, webhookOptions, t);
+      return row.ToJsonString();
     }
     catch (TietueValidationException ex)
     {

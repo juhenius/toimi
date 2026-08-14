@@ -37,6 +37,7 @@ public class DisplayEventsTools(DisplayRepository displays, DisplayEventReposito
       type = e.EventType,
       target = e.Target,
       value = e.Value is null ? (object?)null : JsonDocument.Parse(e.Value).RootElement,
+      forwarded = e.ForwardOutcome,
       timestamp = e.CreatedAt.ToString("o")
     });
     return JsonSerializer.Serialize(view);

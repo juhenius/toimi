@@ -51,7 +51,8 @@
 
     function postEvent(type, target, value) {
       if (!type) return;
-      xhrPost(API + "/events", { type: type, target: target || null, value: value || null });
+      /* value === undefined guard, not || : parsed false/0/"" are real values. */
+      xhrPost(API + "/events", { type: type, target: target || null, value: value === undefined ? null : value });
     }
 
     function connectStream() {
@@ -96,11 +97,19 @@
       }
     }
 
+    /* HTML attributes are always strings; JSON-parse data-value when possible so
+       "true"/"false"/numbers/objects reach handlers typed (the documented params
+       contract), falling back to the raw string for plain text values. */
+    function parseValue(raw) {
+      if (raw === null) return null;
+      try { return JSON.parse(raw); } catch (err) { return raw; }
+    }
+
     document.addEventListener("click", function(e) {
       var el = e.target;
       while (el && el !== document.body && !el.getAttribute("data-tap")) el = el.parentNode;
       if (!el || el === document.body) return;
-      postEvent(el.getAttribute("data-tap"), el.getAttribute("data-target"), el.getAttribute("data-value"));
+      postEvent(el.getAttribute("data-tap"), el.getAttribute("data-target"), parseValue(el.getAttribute("data-value")));
       applyOptimisticUpdate(el);
     });
 

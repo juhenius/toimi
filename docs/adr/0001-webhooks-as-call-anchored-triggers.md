@@ -62,6 +62,14 @@ null, so the scheduler never sees them.
   would let a capability-URL holder inject instructions into an agent run
   that reaches every MCP tool. Scripts never see raw request
   bodies/queries/headers, so the same script runs unchanged under any anchor.
+- **Notify templates render caller params**: a `{token}` absent from the
+  entity's `Data` falls through to the firing's params, so the holder of a
+  capability URL can shape a push notification's text (`?who=Postman` →
+  "Postman at the door"). Accepted deliberately (2026-08-15): possession of
+  the URL already grants firing the notification at will; the deployment is
+  single-user and LAN-only; and param interpolation is the notify handler's
+  main webhook use. `Data` wins on collision, and agent prompts stay fenced —
+  params never become instructions.
 - **Exposure**: a path-scoped `/hooks` Ingress on `${TOIMI_HOST}` routes to
   the tietue pod (the ruutu/selain precedent); tietue's MCP and admin
   surfaces stay cluster-internal. A global `Webhooks:Enabled` kill switch

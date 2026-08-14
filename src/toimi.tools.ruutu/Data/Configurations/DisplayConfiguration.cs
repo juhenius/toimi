@@ -15,6 +15,7 @@ public class DisplayConfiguration : IEntityTypeConfiguration<Display>
     builder.Property(d => d.Identifier).IsRequired();
 
     builder.Property(d => d.CurrentData).HasColumnType("jsonb");
+    builder.Property(d => d.CurrentActions).HasColumnType("jsonb");
     builder.Property(d => d.OverlayStack).HasColumnType("jsonb").HasDefaultValue("[]");
     builder.Property(d => d.IdleData).HasColumnType("jsonb");
 
