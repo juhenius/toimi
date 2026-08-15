@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "lint": "oxlint --deny-warnings",
     "preview": "vite preview",
     "test": "vitest run"
   },
@@ -21,7 +21,6 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
@@ -29,14 +28,10 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
-    "eslint": "^10.8.1",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.3",
-    "globals": "^17.9.0",
     "jsdom": "^30.0.1",
+    "oxlint": "^1.78.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.9.3",
-    "typescript-eslint": "^8.66.0",
     "vite": "^8.2.1",
     "vitest": "^4.1.10"
   }
