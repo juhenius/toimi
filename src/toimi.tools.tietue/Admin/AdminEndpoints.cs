@@ -135,6 +135,7 @@ public static class AdminEndpoints
           // Guard per row: one malformed/non-object Result must not 500 the whole report.
           var prompt = 0L;
           var completion = 0L;
+          string? model = null;
           try
           {
             using var doc = System.Text.Json.JsonDocument.Parse(e.Result!);
@@ -142,13 +143,14 @@ public static class AdminEndpoints
             {
               prompt = doc.RootElement.TryGetProperty("promptTokens", out var p) && p.ValueKind == System.Text.Json.JsonValueKind.Number ? p.GetInt64() : 0L;
               completion = doc.RootElement.TryGetProperty("completionTokens", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.Number ? c.GetInt64() : 0L;
+              model = doc.RootElement.TryGetProperty("model", out var m) && m.ValueKind == System.Text.Json.JsonValueKind.String ? m.GetString() : null;
             }
           }
           catch (System.Text.Json.JsonException)
           {
             // jsonb should make this unreachable; count the row as zero tokens.
           }
-          return (Date: DateOnly.FromDateTime(e.CreatedAt.UtcDateTime), Prompt: prompt, Completion: completion);
+          return (Date: DateOnly.FromDateTime(e.CreatedAt.UtcDateTime), Prompt: prompt, Completion: completion, Model: model);
         })
         .GroupBy(r => r.Date)
         .Select(g => new
@@ -156,8 +158,13 @@ public static class AdminEndpoints
           date = g.Key,
           promptTokens = g.Sum(r => r.Prompt),
           completionTokens = g.Sum(r => r.Completion),
-          costUsd = (g.Sum(r => r.Prompt) / 1_000_000m * config.TokenPriceInputPer1M)
-            + (g.Sum(r => r.Completion) / 1_000_000m * config.TokenPriceOutputPer1M),
+          // Priced per run by its attributed model (runs pinned smart bill at
+          // smart rates; unattributed rows predate attribution and price fast).
+          costUsd = g.Sum(r =>
+          {
+            var (inputPer1M, outputPer1M) = config.PricesForModel(r.Model);
+            return (r.Prompt / 1_000_000m * inputPer1M) + (r.Completion / 1_000_000m * outputPer1M);
+          }),
         })
         .OrderBy(r => r.date)
         .ToList();

@@ -57,10 +57,15 @@ public class AgentRunnerTests
 
   private sealed class FakeLlmProvider(IChatClient chat) : ILlmClientProvider
   {
-    public LlmSession Create()
+    public string ResolveModel(ModelTier tier)
+    {
+      return "fake-model";
+    }
+
+    public LlmSession Create(ModelTier tier = ModelTier.Fast)
     {
       var notifier = new ToolCallNotifier(chat);
-      return new LlmSession(notifier, notifier);
+      return new LlmSession(notifier, notifier, ResolveModel(tier));
     }
   }
 
@@ -167,7 +172,7 @@ public class AgentRunnerTests
     using var cts = new CancellationTokenSource();
     cts.Cancel();
 
-    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(SomeEntity(), "x", cts.Token));
+    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(SomeEntity(), "x", ct: cts.Token));
   }
 
   [Fact]

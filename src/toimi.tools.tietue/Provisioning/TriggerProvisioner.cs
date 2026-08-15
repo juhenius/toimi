@@ -49,7 +49,7 @@ public class TriggerProvisioner(TriggerRepository triggers, ILogger<TriggerProvi
         continue;
       }
 
-      var config = handler?["config"]?.ToJsonString();
+      var config = ResolveConfigFields(handler?["config"]?.AsObject(), entity.Data);
       try
       {
         await triggers.CreateAsync(entity.Id, schedule, kind, config, now, ct: ct);
@@ -62,6 +62,35 @@ public class TriggerProvisioner(TriggerRepository triggers, ILogger<TriggerProvi
           kind, entity.Id, entity.Type, string.Join("; ", ex.Errors));
       }
     }
+  }
+
+  /// <summary>
+  /// Copy-down for handler config, mirroring the atField convention in the "when"
+  /// block: a template's "modelField" names an entity data field whose value is
+  /// written into the config as "model" at create time (create-time only, like
+  /// every copy-down — later edits need update_trigger). An absent or non-string
+  /// field just drops the key, leaving the handler's fast default.
+  /// </summary>
+  private static string? ResolveConfigFields(JsonObject? config, JsonDocument data)
+  {
+    if (config is null)
+    {
+      return null;
+    }
+
+    if (config["modelField"]?.GetValue<string>() is not string modelField)
+    {
+      return config.ToJsonString();
+    }
+
+    var resolved = config.DeepClone().AsObject();
+    resolved.Remove("modelField");
+    if (data.RootElement.TryGetProperty(modelField, out var value) && value.ValueKind == JsonValueKind.String)
+    {
+      resolved["model"] = value.GetString();
+    }
+
+    return resolved.ToJsonString();
   }
 
   private static Schedule? BuildSchedule(JsonObject? when, JsonDocument data)

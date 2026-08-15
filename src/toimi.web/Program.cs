@@ -40,6 +40,7 @@ foreach (var tool in adminToolsOptions.Tools)
 builder.AddToimiDatabase<ToimiDbContext>("Toimi");
 
 builder.Services.AddScoped<ConversationRepository>();
+builder.Services.AddSingleton<Toimi.Core.ISubtaskStore, Toimi.Web.Hubs.ScopedSubtaskStore>();
 
 if (builder.Environment.IsDevelopment())
 {

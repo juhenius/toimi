@@ -80,14 +80,35 @@ public class ToimiHubTests
     }
   }
 
+  private sealed class FakeSubtaskStore : ISubtaskStore
+  {
+    public Task<Guid> CreateAsync(Guid? parentConversationId, string title, CancellationToken ct = default)
+    {
+      return Task.FromResult(Guid.NewGuid());
+    }
+
+    public Task AddMessageAsync(
+      Guid subtaskConversationId, string role, string content, string? toolCallsJson = null,
+      int? promptTokens = null, int? completionTokens = null, int? totalTokens = null,
+      string? model = null, CancellationToken ct = default)
+    {
+      return Task.CompletedTask;
+    }
+  }
+
   private sealed class FakeLlmProvider : ILlmClientProvider
   {
     public StreamingFakeChatClient ChatClient { get; } = new();
 
-    public LlmSession Create()
+    public string ResolveModel(ModelTier tier)
+    {
+      return "fake-model";
+    }
+
+    public LlmSession Create(ModelTier tier = ModelTier.Fast)
     {
       var notifier = new ToolCallNotifier(ChatClient);
-      return new LlmSession(notifier, notifier);
+      return new LlmSession(notifier, notifier, ResolveModel(tier));
     }
   }
 
@@ -221,6 +242,7 @@ public class ToimiHubTests
       config ?? new ToimiConfiguration { OpenAI = new OpenAIOptions { ApiKey = "test" } }, // empty McpServers: aggregator connects to nothing, fully offline
       llm,
       new ConversationRepository(db),
+      new FakeSubtaskStore(),
       NullLogger<ToimiHub>.Instance)
     {
       Clients = new FakeHubCallerClients(),

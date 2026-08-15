@@ -6,6 +6,7 @@ namespace Toimi.Core.Tests;
 public sealed class FakeChatClient : IChatClient
 {
   public List<List<ChatMessage>> Requests { get; } = [];
+  public ChatOptions? LastOptions { get; private set; }
   public string NextResponseText { get; set; } = "summary text";
   public ChatMessage? NextResponseMessage { get; set; }
   public List<ChatResponseUpdate> StreamUpdates { get; set; } = [];
@@ -23,6 +24,7 @@ public sealed class FakeChatClient : IChatClient
   public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
   {
     Requests.Add([.. messages]);
+    LastOptions = options;
     var emitted = 0;
     foreach (var update in StreamUpdates)
     {

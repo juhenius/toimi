@@ -12,15 +12,21 @@ namespace toimi.tools.tietue.Tools;
 [McpServerToolType]
 public class ActivateTool(EntityRepository entities, IAgentRunner runner, EntityEventStore events, TriggerRepository triggers)
 {
-  [McpServerTool, Description("Activate an entity's agent: run a prompt against it now (omit 'when'), or schedule it for later ('when' = ISO 8601 UTC). The agent can act on the entity and schedule its own next run via set_trigger.")]
+  [McpServerTool, Description("Activate an entity's agent: run a prompt against it now (omit 'when'), or schedule it for later ('when' = ISO 8601 UTC). The agent can act on the entity and schedule its own next run via set_trigger. 'model' pins the run to the fast or smart tier (default fast).")]
   public async Task<string> Activate(
       [Description("Entity id (GUID)")] string entityId,
       [Description("The prompt/message for the agent")] string message,
-      [Description("Optional ISO 8601 UTC time to schedule it for; omit to run now")] string? when = null)
+      [Description("Optional ISO 8601 UTC time to schedule it for; omit to run now")] string? when = null,
+      [Description("Optional model tier for the run: \"fast\" (default) or \"smart\"")] string? model = null)
   {
     if (!Guid.TryParse(entityId, out var id))
     {
       return "Invalid entityId. Expected a GUID.";
+    }
+
+    if (!Toimi.Core.Llm.ModelTiers.TryParse(model, out var tier))
+    {
+      return "Invalid 'model'. Use \"fast\" or \"smart\".";
     }
 
     if (when is not null)
@@ -30,7 +36,13 @@ public class ActivateTool(EntityRepository entities, IAgentRunner runner, Entity
         return "Invalid 'when'. Use ISO 8601 (e.g. 2026-07-01T09:00:00Z).";
       }
 
-      var config = new JsonObject { ["promptTemplate"] = message }.ToJsonString();
+      var configObject = new JsonObject { ["promptTemplate"] = message };
+      if (model is not null)
+      {
+        configObject["model"] = model.ToLowerInvariant();
+      }
+
+      var config = configObject.ToJsonString();
       // OneShotAt is valid by construction and a one-shot always resolves (a past 'at' is
       // immediately due), so CreateAsync cannot throw here.
       var t = await triggers.CreateAsync(id, Schedule.OneShotAt(at), "message", config, DateTimeOffset.UtcNow);
@@ -44,9 +56,9 @@ public class ActivateTool(EntityRepository entities, IAgentRunner runner, Entity
     }
 
     var now = DateTimeOffset.UtcNow;
-    var run = await runner.RunAsync(entity, message, default);
+    var run = await runner.RunAsync(entity, message, tier, default);
     await events.RecordAsync(id, now, "message", run.Success ? "ran" : "error",
-      JsonSerializer.Serialize(new { run.Response, run.Success, run.Error, promptTokens = run.PromptTokens, completionTokens = run.CompletionTokens }));
+      JsonSerializer.Serialize(new { run.Response, run.Success, run.Error, promptTokens = run.PromptTokens, completionTokens = run.CompletionTokens, model = run.Model }));
     return JsonSerializer.Serialize(new { ran = true, run.Success, run.Response, run.Error });
   }
 }

@@ -30,7 +30,7 @@ public class ActivateToolTests
 
     var result = await tool.Activate(id.ToString(), "do the thing", null);
 
-    var (Entity, Prompt) = Assert.Single(runner.Runs);
+    var (Entity, Prompt, _) = Assert.Single(runner.Runs);
     Assert.Equal("do the thing", Prompt);
     Assert.Contains("ok", result);
   }
@@ -48,6 +48,44 @@ public class ActivateToolTests
     var t = Assert.Single(await triggers.ListByEntityAsync(id));
     Assert.Equal("message", t.HandlerKind);
     Assert.Contains("later thing", t.HandlerConfig);
+  }
+
+  [Fact]
+  public async Task Activate_now_with_smart_model_pins_the_run()
+  {
+    using var db = TestDb.New();
+    var (entities, runner, events, triggers, id) = await SetupAsync(db);
+    var tool = new ActivateTool(entities, runner, events, triggers);
+
+    await tool.Activate(id.ToString(), "hard task", null, "smart");
+
+    Assert.Equal(Toimi.Core.Llm.ModelTier.Smart, Assert.Single(runner.Runs).Tier);
+  }
+
+  [Fact]
+  public async Task Activate_rejects_an_unknown_model()
+  {
+    using var db = TestDb.New();
+    var (entities, runner, events, triggers, id) = await SetupAsync(db);
+    var tool = new ActivateTool(entities, runner, events, triggers);
+
+    var result = await tool.Activate(id.ToString(), "task", null, "cheap");
+
+    Assert.Contains("Invalid 'model'", result);
+    Assert.Empty(runner.Runs);
+  }
+
+  [Fact]
+  public async Task Activate_scheduled_with_model_writes_the_pin_into_the_trigger_config()
+  {
+    using var db = TestDb.New();
+    var (entities, runner, events, triggers, id) = await SetupAsync(db);
+    var tool = new ActivateTool(entities, runner, events, triggers);
+
+    await tool.Activate(id.ToString(), "nightly analysis", "2026-07-01T09:00:00Z", "SMART");
+
+    var t = Assert.Single(await triggers.ListByEntityAsync(id));
+    Assert.Contains("\"model\":\"smart\"", t.HandlerConfig);
   }
 
   [Fact]

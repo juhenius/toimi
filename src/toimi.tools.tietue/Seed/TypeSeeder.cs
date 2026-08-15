@@ -61,12 +61,13 @@ public class TypeSeeder(TypeRepository repository)
         "name":{"type":"string","description":"short schedule name"},
         "prompt":{"type":"string","description":"the instruction the agent runs each time"},
         "startAt":{"type":"string","description":"first run time, ISO 8601 UTC"},
-        "rrule":{"type":"string","description":"optional RFC 5545 RRULE for recurrence (e.g. FREQ=DAILY)"}
+        "rrule":{"type":"string","description":"optional RFC 5545 RRULE for recurrence (e.g. FREQ=DAILY)"},
+        "model":{"type":"string","enum":["fast","smart"],"description":"optional model tier pin for the runs; default fast. Copied to the trigger at create — edit later with update_trigger, not by editing this field"}
       },"required":["name","prompt","startAt"]}
       """,
       null,
       /*lang=json,strict*/
-                           """[{"when":{"atField":"startAt","rruleField":"rrule"},"handler":{"kind":"message","config":{"promptTemplate":"{prompt}"}}}]"""
+                           """[{"when":{"atField":"startAt","rruleField":"rrule"},"handler":{"kind":"message","config":{"promptTemplate":"{prompt}","modelField":"model"}}}]"""
     ),
     (
       ScriptHandler.JobTypeName,

@@ -152,8 +152,12 @@ Deployable pods: **tietue, koti, verkko, ruutu, selain** (tool servers),
 **toimi.core — Shared cross-cutting AI behavior (library).**
 - Owns: the conversation-turn engine (`ToimiAgent`: MCP bootstrap, streaming
   turn, tool-event capture, budget anchoring + compaction, the unified
-  tool-call wire JSON via `ToolEventJson`), LLM client factory (with
-  `ToolCallNotifier`), MCP tool aggregation (`McpToolAggregator`),
+  tool-call wire JSON via `ToolEventJson`), model tiers + delegation
+  (`ModelTier` fast/smart, the built-in `delegate` tool in `Delegation` —
+  fresh-context subtasks, depth-capped at 2, persisted via the host's
+  `ISubtaskStore` when one exists; see ADR 0003), LLM client factory (with
+  `ToolCallNotifier`, tier-aware `ILlmClientProvider.Create`), MCP tool
+  aggregation (`McpToolAggregator`),
   conversation persistence (`ToimiDbContext`), the transcript + context-window
   management (`ConversationContext`: owns the system-prompt/dynamic-context/
   summary slots, catalog injection, compaction, and `ContextBudget` anchoring),
@@ -174,7 +178,9 @@ seam it implements), used by `verkko` and by tietue's `notify` handler.
 
 - **Single source of truth** → root `toimi.env` (gitignored; template
   `toimi.env.example`). Holds every per-machine value: hostnames,
-  `IMAGE_REGISTRY`, `OPENAI_MODEL`/`OPENAI_API_KEY`, `HOMEASSISTANT_BASE_URL`/
+  `IMAGE_REGISTRY`, `OPENAI_MODEL_FAST`/`OPENAI_MODEL_SMART` (optional; the
+  fast/smart tiers) + the per-tier `OPENAI_PRICE_*` pairs, `OPENAI_API_KEY`,
+  `HOMEASSISTANT_BASE_URL`/
   `HA_BEARER_TOKEN`, `POSTGRES_PASSWORD` (set ONCE), ntfy creds, and
   `ADMIN_USER`/`ADMIN_PASSWORD`.
 - `scripts/render-config.sh <dev|server>` (run first by dev-setup/server-setup/

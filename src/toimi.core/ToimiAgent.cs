@@ -19,7 +19,9 @@ public sealed class ToimiAgent : IAsyncDisposable
   private readonly ToimiConfiguration _config;
   private readonly McpToolAggregator _aggregator;
   private readonly IChatClient _client;
+  private readonly IChatClient _summaryClient;
   private readonly ToolCallNotifier _notifier;
+  private readonly string _model;
   private readonly ChatOptions _options;
   private readonly ConversationContext _context;
   private int _turnState; // 0 = idle, 1 = turn in progress (CAS-guarded)
@@ -30,13 +32,15 @@ public sealed class ToimiAgent : IAsyncDisposable
   public IReadOnlyList<ChatMessage> Messages => _context.ToChatMessages();
 
   private ToimiAgent(
-    ToimiConfiguration config, McpToolAggregator aggregator, LlmSession llm, ChatOptions options,
-    ConversationContext context, string? skillSummary, string? typeCatalog, int toolCount)
+    ToimiConfiguration config, McpToolAggregator aggregator, LlmSession llm, IChatClient summaryClient,
+    ChatOptions options, ConversationContext context, string? skillSummary, string? typeCatalog, int toolCount)
   {
     _config = config;
     _aggregator = aggregator;
     _client = llm.Client;
+    _summaryClient = summaryClient;
     _notifier = llm.Notifier;
+    _model = llm.Model;
     _options = options;
     _context = context;
     SkillSummary = skillSummary;
@@ -46,12 +50,15 @@ public sealed class ToimiAgent : IAsyncDisposable
 
   /// <summary>
   /// Bootstraps a session: connects all configured MCP servers, discovers tools,
-  /// fetches the skill/type catalogs, builds the LLM pipeline, and assembles the
-  /// initial system messages. Owns the aggregator it creates — disposed here on
-  /// bootstrap failure, otherwise in <see cref="DisposeAsync"/>.
+  /// fetches the skill/type catalogs, builds the LLM pipeline on the requested
+  /// tier, adds the delegate tool (until the delegation depth cap), and assembles
+  /// the initial system messages. Compaction always summarizes on the fast tier,
+  /// whatever tier the turn runs on. Owns the aggregator it creates — disposed
+  /// here on bootstrap failure, otherwise in <see cref="DisposeAsync"/>.
   /// </summary>
   public static async Task<ToimiAgent> StartAsync(
     ToimiConfiguration config, ILlmClientProvider llmProvider,
+    ModelTier tier = ModelTier.Fast, SubtaskOptions? subtasks = null,
     ContextBudget? budget = null, ILogger? logger = null, CancellationToken ct = default)
   {
     var aggregator = new McpToolAggregator(logger);
@@ -61,10 +68,22 @@ public sealed class ToimiAgent : IAsyncDisposable
       var tools = aggregator.GetAllTools();
       var skillSummary = await aggregator.CallToolAsync("list_skills", ct: ct);
       var typeCatalog = await aggregator.CallToolAsync("list_types", ct: ct);
-      var llm = llmProvider.Create();
-      var options = new ChatOptions { Tools = [.. tools] };
+      var llm = llmProvider.Create(tier);
+
+      // Summarization never needs the smart model; reuse the turn client when the
+      // turn already runs fast so a plain session costs no second pipeline.
+      var summaryClient = tier == ModelTier.Fast ? llm.Client : llmProvider.Create(ModelTier.Fast).Client;
+
+      var allTools = new List<AITool>(tools);
+      var subtaskOptions = subtasks ?? new SubtaskOptions();
+      if (subtaskOptions.Depth < Delegation.MaxDepth)
+      {
+        allTools.Add(Delegation.CreateTool(config, llmProvider, subtaskOptions, logger));
+      }
+
+      var options = new ChatOptions { Tools = allTools };
       var context = new ConversationContext(skillSummary, typeCatalog, budget ?? new ContextBudget());
-      return new ToimiAgent(config, aggregator, llm, options, context, skillSummary, typeCatalog, tools.Count);
+      return new ToimiAgent(config, aggregator, llm, summaryClient, options, context, skillSummary, typeCatalog, tools.Count);
     }
     catch
     {
@@ -139,7 +158,7 @@ public sealed class ToimiAgent : IAsyncDisposable
       // A summarization failure degrades gracefully inside CompactIfNeededAsync;
       // anything it does throw propagates to the host with the transcript
       // unchanged past the user message.
-      await _context.CompactIfNeededAsync(_client, _config.MaxContextTokens, ct);
+      await _context.CompactIfNeededAsync(_summaryClient, _config.MaxContextTokens, ct);
 
       var fullResponse = new StringBuilder();
       var toolEvents = new List<TurnUpdate>();
@@ -186,7 +205,7 @@ public sealed class ToimiAgent : IAsyncDisposable
       var completionTokens = (int?)usage?.OutputTokenCount ?? (responseText.Length / 4);
       var totalTokens = (int?)usage?.TotalTokenCount ?? (promptTokens + completionTokens);
 
-      yield return new TurnCompleted(responseText, ToolEventJson.Serialize(toolEvents), promptTokens, completionTokens, totalTokens);
+      yield return new TurnCompleted(responseText, ToolEventJson.Serialize(toolEvents), promptTokens, completionTokens, totalTokens, _model);
     }
     finally
     {

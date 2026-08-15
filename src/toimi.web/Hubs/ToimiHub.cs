@@ -9,12 +9,13 @@ using Microsoft.Extensions.AI;
 
 namespace Toimi.Web.Hubs;
 
-public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider, ConversationRepository repository, ILogger<ToimiHub> logger) : Hub
+public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider, ConversationRepository repository, ISubtaskStore subtaskStore, ILogger<ToimiHub> logger) : Hub
 {
   private static readonly ConcurrentDictionary<string, ToimiSession> Sessions = new();
   private readonly ToimiConfiguration _config = config;
   private readonly ILlmClientProvider _llmProvider = llmProvider;
   private readonly ConversationRepository _repository = repository;
+  private readonly ISubtaskStore _subtaskStore = subtaskStore;
 
   public override async Task OnConnectedAsync()
   {
@@ -22,7 +23,13 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
     var registered = false;
     try
     {
-      agent = await ToimiAgent.StartAsync(_config, _llmProvider, logger: logger, ct: Context.ConnectionAborted);
+      // The holder outlives session-record replacement: delegation resolves the
+      // parent conversation id through it at delegation time, so subtasks link
+      // correctly even though the conversation row is created lazily.
+      var conversationIdHolder = new ConversationIdHolder();
+      agent = await ToimiAgent.StartAsync(_config, _llmProvider,
+        subtasks: new SubtaskOptions(_subtaskStore, () => conversationIdHolder.Id),
+        logger: logger, ct: Context.ConnectionAborted);
 
       // Check for conversationId query parameter
       var conversationIdParam = Context.GetHttpContext()?.Request.Query["conversationId"].ToString();
@@ -32,14 +39,12 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
       // (or an unknown/deleted id) starts with a null ConversationId and no row.
       // The row is created on the first message (see SendMessage), which then emits
       // ConversationCreated so the client can learn its id for reconnect-resync.
-      Guid? conversationId = null;
-
       if (!string.IsNullOrEmpty(conversationIdParam) && Guid.TryParse(conversationIdParam, out var existingId))
       {
         var conversation = await _repository.GetByIdAsync(existingId);
         if (conversation is not null)
         {
-          conversationId = conversation.Id;
+          conversationIdHolder.Id = conversation.Id;
 
           // Replay stored messages into the agent's transcript
           foreach (var msg in conversation.Messages)
@@ -58,7 +63,7 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
       // No-param connect is lazy too: no send, no row. The client's fresh view
       // (empty messages, no id) already reflects this state.
 
-      Sessions[Context.ConnectionId] = new ToimiSession(agent, conversationId);
+      Sessions[Context.ConnectionId] = new ToimiSession(agent, conversationIdHolder);
       registered = true;
 
       await Clients.Caller.SendAsync("Connected", agent.ToolCount);
@@ -118,8 +123,7 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
       if (session.ConversationId is null)
       {
         var created = await _repository.CreateAsync();
-        session = session with { ConversationId = created.Id };
-        Sessions[Context.ConnectionId] = session;
+        session.ConversationIdHolder.Id = created.Id;
         await Clients.Caller.SendAsync("ConversationCreated", created.Id);
       }
 
@@ -166,7 +170,8 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
         await _repository.AddMessageAsync(session.ConversationId.Value, "assistant", turn.ResponseText, turn.ToolCallsJson,
           promptTokens: turn.PromptTokens,
           completionTokens: turn.CompletionTokens,
-          totalTokens: turn.TotalTokens);
+          totalTokens: turn.TotalTokens,
+          model: turn.Model);
       }
       catch
       {
@@ -217,7 +222,7 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
     // write no DB row. The row is created on the first message (ConversationCreated
     // then tells the client its id), so an abandoned "New" never leaves an orphan row.
     session.Agent.Reset();
-    Sessions[Context.ConnectionId] = session with { ConversationId = null };
+    session.ConversationIdHolder.Id = null;
 
     // Distinct "new/empty" signal (not a ConversationLoaded with a real id): the
     // client resets its view and forgets any current id until the first message.
@@ -234,5 +239,15 @@ public class ToimiHub(ToimiConfiguration config, ILlmClientProvider llmProvider,
     }));
   }
 
-  private sealed record ToimiSession(ToimiAgent Agent, Guid? ConversationId);
+  private sealed record ToimiSession(ToimiAgent Agent, ConversationIdHolder ConversationIdHolder)
+  {
+    /// <summary>Single source of truth is the holder — the same cell the delegation wiring reads — so the id cannot desynchronize.</summary>
+    public Guid? ConversationId => ConversationIdHolder.Id;
+  }
+
+  /// <summary>Mutable cell holding the session's current conversation id (set lazily on first message, cleared on New).</summary>
+  private sealed class ConversationIdHolder
+  {
+    public Guid? Id { get; set; }
+  }
 }

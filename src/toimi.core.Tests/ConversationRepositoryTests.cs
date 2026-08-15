@@ -135,4 +135,35 @@ public class ConversationRepositoryTests
       m => m.Id == message.Id);
     Assert.Null(await repository.GetByIdAsync(unknownId));
   }
+
+  [Fact]
+  public async Task Subtask_conversations_carry_kind_parent_and_title_but_stay_out_of_the_recent_list()
+  {
+    await using var db = NewContext();
+    var repository = new ConversationRepository(db);
+
+    var chat = await repository.CreateAsync();
+    var subtask = await repository.CreateAsync(Conversation.SubtaskKind, chat.Id, "fetch the page");
+
+    Assert.Equal(Conversation.SubtaskKind, subtask.Kind);
+    Assert.Equal(chat.Id, subtask.ParentConversationId);
+    Assert.Equal("fetch the page", subtask.Title);
+
+    var recent = await repository.ListRecentAsync();
+    Assert.Contains(recent, c => c.Id == chat.Id);
+    Assert.DoesNotContain(recent, c => c.Id == subtask.Id);
+  }
+
+  [Fact]
+  public async Task Messages_persist_their_attributed_model()
+  {
+    await using var db = NewContext();
+    var repository = new ConversationRepository(db);
+    var conversation = await repository.CreateAsync();
+
+    await repository.AddMessageAsync(conversation.Id, "assistant", "hi", model: "fast-m");
+
+    var loaded = await repository.GetByIdAsync(conversation.Id);
+    Assert.Equal("fast-m", Assert.Single(loaded!.Messages).Model);
+  }
 }

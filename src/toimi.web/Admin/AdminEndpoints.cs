@@ -24,7 +24,7 @@ public static class AdminEndpoints
       var messages = await db.ConversationMessages
         .Where(m => m.CreatedAt >= since)
         .ToListAsync();
-      return Results.Ok(UsageReport.Build(messages, config.TokenPriceInputPer1M, config.TokenPriceOutputPer1M));
+      return Results.Ok(UsageReport.Build(messages, config));
     });
 
     app.Map("/api/admin/{tool}/{**path}", AdminForwarder.ForwardAsync);
@@ -35,7 +35,7 @@ public record UsageRow(DateOnly Date, long PromptTokens, long CompletionTokens, 
 
 public static class UsageReport
 {
-  public static List<UsageRow> Build(IEnumerable<ConversationMessage> messages, decimal inputPricePer1M, decimal outputPricePer1M)
+  public static List<UsageRow> Build(IEnumerable<ConversationMessage> messages, ToimiConfiguration config)
   {
     return [.. messages
       .GroupBy(m => DateOnly.FromDateTime(m.CreatedAt.UtcDateTime))
@@ -43,7 +43,13 @@ public static class UsageReport
       {
         var prompt = g.Sum(m => (long)(m.PromptTokens ?? 0));
         var completion = g.Sum(m => (long)(m.CompletionTokens ?? 0));
-        var cost = (prompt / 1_000_000m * inputPricePer1M) + (completion / 1_000_000m * outputPricePer1M);
+        // Cost is priced per message by its attributed model, so fast and smart
+        // tokens on the same day bill at their own rates.
+        var cost = g.Sum(m =>
+        {
+          var (inputPer1M, outputPer1M) = config.PricesForModel(m.Model);
+          return ((m.PromptTokens ?? 0) / 1_000_000m * inputPer1M) + ((m.CompletionTokens ?? 0) / 1_000_000m * outputPer1M);
+        });
         return new UsageRow(g.Key, prompt, completion, cost);
       })
       .OrderBy(r => r.Date)];

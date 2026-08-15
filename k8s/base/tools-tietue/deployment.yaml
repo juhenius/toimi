@@ -67,8 +67,37 @@ spec:
                 secretKeyRef:
                   name: toimi-secrets
                   key: openai-api-key
-            - name: Toimi__OpenAI__Model
-              value: "${OPENAI_MODEL}"
+            - name: Toimi__OpenAI__FastModel
+              value: "${OPENAI_MODEL_FAST}"
+            # Smart model (may be empty) + prices come from toimi-secrets, not
+            # envsubst: kustomize strips the quotes around substituted values,
+            # so a number/empty would stop being a YAML string and the apply
+            # would be rejected. Secret values are strings by construction.
+            - name: Toimi__OpenAI__SmartModel
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-model-smart
+            - name: Toimi__FastPriceInputPer1M
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-price-fast-input-per-1m
+            - name: Toimi__FastPriceOutputPer1M
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-price-fast-output-per-1m
+            - name: Toimi__SmartPriceInputPer1M
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-price-smart-input-per-1m
+            - name: Toimi__SmartPriceOutputPer1M
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-price-smart-output-per-1m
             # http in base (the dev overlay has no TLS); the server overlay patches
             # this to https alongside its ingress TLS patch.
             - name: Webhooks__PublicBaseUrl

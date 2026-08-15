@@ -31,8 +31,37 @@ spec:
                 secretKeyRef:
                   name: toimi-secrets
                   key: openai-api-key
-            - name: TOIMI__OPENAI__MODEL
-              value: "${OPENAI_MODEL}"
+            - name: TOIMI__OPENAI__FASTMODEL
+              value: "${OPENAI_MODEL_FAST}"
+            # Smart model (may be empty) + prices come from toimi-secrets, not
+            # envsubst: kustomize strips the quotes around substituted values,
+            # so a number/empty would stop being a YAML string and the apply
+            # would be rejected. Secret values are strings by construction.
+            - name: TOIMI__OPENAI__SMARTMODEL
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-model-smart
+            - name: TOIMI__FASTPRICEINPUTPER1M
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-price-fast-input-per-1m
+            - name: TOIMI__FASTPRICEOUTPUTPER1M
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-price-fast-output-per-1m
+            - name: TOIMI__SMARTPRICEINPUTPER1M
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-price-smart-input-per-1m
+            - name: TOIMI__SMARTPRICEOUTPUTPER1M
+              valueFrom:
+                secretKeyRef:
+                  name: toimi-secrets
+                  key: openai-price-smart-output-per-1m
             - name: ConnectionStrings__Toimi
               valueFrom:
                 secretKeyRef:

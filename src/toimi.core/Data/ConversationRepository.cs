@@ -4,9 +4,9 @@ namespace Toimi.Core.Data;
 
 public class ConversationRepository(ToimiDbContext dbContext)
 {
-  public async Task<Conversation> CreateAsync()
+  public async Task<Conversation> CreateAsync(string kind = Conversation.ChatKind, Guid? parentConversationId = null, string? title = null)
   {
-    var conversation = new Conversation();
+    var conversation = new Conversation { Kind = kind, ParentConversationId = parentConversationId, Title = title };
     dbContext.Conversations.Add(conversation);
     await dbContext.SaveChangesAsync();
     return conversation;
@@ -21,7 +21,10 @@ public class ConversationRepository(ToimiDbContext dbContext)
 
   public async Task<List<Conversation>> ListRecentAsync(int limit = 20)
   {
+    // Subtask transcripts are debugging/accounting records, not chats — keep them
+    // out of the conversation sidebar.
     return await dbContext.Conversations
+      .Where(c => c.Kind == Conversation.ChatKind)
       .OrderByDescending(c => c.LastMessageAt)
       .Take(limit)
       .ToListAsync();
@@ -30,7 +33,8 @@ public class ConversationRepository(ToimiDbContext dbContext)
   public async Task<ConversationMessage> AddMessageAsync(
     Guid conversationId, string role, string content,
     string? toolCallsJson = null,
-    int? promptTokens = null, int? completionTokens = null, int? totalTokens = null)
+    int? promptTokens = null, int? completionTokens = null, int? totalTokens = null,
+    string? model = null)
   {
     var message = new ConversationMessage
     {
@@ -41,6 +45,7 @@ public class ConversationRepository(ToimiDbContext dbContext)
       PromptTokens = promptTokens,
       CompletionTokens = completionTokens,
       TotalTokens = totalTokens,
+      Model = model,
     };
 
     dbContext.ConversationMessages.Add(message);

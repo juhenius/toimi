@@ -37,6 +37,23 @@ while IFS='=' read -r _key _val || [ -n "$_key" ]; do
 done < "$SRC"
 
 : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD missing from toimi.env}"
+
+# The single OPENAI_MODEL was split into fast/smart tiers; fail loudly so an
+# un-migrated toimi.env cannot silently deploy pods missing their model config.
+if [ -n "${OPENAI_MODEL:-}" ]; then
+  echo "ERROR: OPENAI_MODEL is no longer used. Replace it in toimi.env with OPENAI_MODEL_FAST" >&2
+  echo "       (+ optional OPENAI_MODEL_SMART and the OPENAI_PRICE_* pairs — see toimi.env.example)." >&2
+  exit 1
+fi
+: "${OPENAI_MODEL_FAST:?OPENAI_MODEL_FAST missing from toimi.env (see toimi.env.example)}"
+
+# Optional tier settings default here so the rendered env vars are never empty
+# where the .NET config binder expects a number.
+OPENAI_MODEL_SMART="${OPENAI_MODEL_SMART:-}"
+OPENAI_PRICE_FAST_INPUT_PER_1M="${OPENAI_PRICE_FAST_INPUT_PER_1M:-2.50}"
+OPENAI_PRICE_FAST_OUTPUT_PER_1M="${OPENAI_PRICE_FAST_OUTPUT_PER_1M:-10.00}"
+OPENAI_PRICE_SMART_INPUT_PER_1M="${OPENAI_PRICE_SMART_INPUT_PER_1M:-2.50}"
+OPENAI_PRICE_SMART_OUTPUT_PER_1M="${OPENAI_PRICE_SMART_OUTPUT_PER_1M:-10.00}"
 if [ "$ENV" = "server" ]; then
   : "${ADMIN_USER:?ADMIN_USER missing from toimi.env}"
   : "${ADMIN_PASSWORD:?ADMIN_PASSWORD missing from toimi.env}"
@@ -52,16 +69,26 @@ ADMINER_HOST=${ADMINER_HOST}
 QDRANT_HOST=${QDRANT_HOST}
 IMAGE_REGISTRY=${IMAGE_REGISTRY}
 HOMEASSISTANT_BASE_URL=${HOMEASSISTANT_BASE_URL}
-OPENAI_MODEL=${OPENAI_MODEL}
+OPENAI_MODEL_FAST=${OPENAI_MODEL_FAST}
 EOF
 
 # --- App secrets (toimi-secrets secretGenerator) ---
 conn() { echo "Host=postgresql.data.svc.cluster.local;Port=5432;Database=$1;Username=postgres;Password=${POSTGRES_PASSWORD}"; }
 APP_SECRETS="$ROOT_DIR/k8s/overlays/$ENV/secrets.env"
 mkdir -p "$(dirname "$APP_SECRETS")"
+# The smart model (may be empty) and the price numbers ride in toimi-secrets
+# instead of envsubst-ed manifest env values: kustomize re-serializes manifests
+# and strips quotes, so a numeric or empty substitution would turn a k8s env
+# `value:` into a YAML number/null and the apply would be rejected. Secret
+# values are always strings.
 cat > "$APP_SECRETS" <<EOF
 $GEN_HEADER
 openai-api-key=${OPENAI_API_KEY}
+openai-model-smart=${OPENAI_MODEL_SMART}
+openai-price-fast-input-per-1m=${OPENAI_PRICE_FAST_INPUT_PER_1M}
+openai-price-fast-output-per-1m=${OPENAI_PRICE_FAST_OUTPUT_PER_1M}
+openai-price-smart-input-per-1m=${OPENAI_PRICE_SMART_INPUT_PER_1M}
+openai-price-smart-output-per-1m=${OPENAI_PRICE_SMART_OUTPUT_PER_1M}
 ha-bearer-token=${HA_BEARER_TOKEN}
 toimi-connection-string=$(conn toimi)
 ruutu-connection-string=$(conn ruutu)

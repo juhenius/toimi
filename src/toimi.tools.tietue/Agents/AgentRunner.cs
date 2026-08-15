@@ -8,7 +8,7 @@ namespace toimi.tools.tietue.Agents;
 
 public class AgentRunner(ToimiConfiguration config, ILlmClientProvider llmProvider, ILogger<AgentRunner>? logger = null) : IAgentRunner
 {
-  public async Task<AgentRunResult> RunAsync(Entity entity, string prompt, CancellationToken ct = default)
+  public async Task<AgentRunResult> RunAsync(Entity entity, string prompt, ModelTier tier = ModelTier.Fast, CancellationToken ct = default)
   {
     // A hung LLM call or MCP connect must not stall the scheduler tick indefinitely.
     using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -19,11 +19,11 @@ public class AgentRunner(ToimiConfiguration config, ILlmClientProvider llmProvid
     {
       // Per-run session with an agent-internal ContextBudget, so long runs get
       // real-usage-anchored compaction instead of blind chars/4 estimation.
-      await using var agent = await ToimiAgent.StartAsync(config, llmProvider, logger: logger, ct: token);
+      await using var agent = await ToimiAgent.StartAsync(config, llmProvider, tier, logger: logger, ct: token);
       agent.AppendMessage(ChatRole.System, BuildEntityContext(entity));
 
       var turn = await agent.RunTurnAsync(prompt, token);
-      return new AgentRunResult(true, turn.ResponseText, turn.ToolCallsJson, null, turn.PromptTokens, turn.CompletionTokens);
+      return new AgentRunResult(true, turn.ResponseText, turn.ToolCallsJson, null, turn.PromptTokens, turn.CompletionTokens, turn.Model);
     }
     catch (OperationCanceledException) when (!ct.IsCancellationRequested)
     {

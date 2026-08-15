@@ -13,7 +13,14 @@ namespace Toimi.Core.Llm;
 /// </summary>
 public sealed class OpenAiLlmClientProvider(ToimiConfiguration config) : ILlmClientProvider
 {
-  public LlmSession Create()
+  public string ResolveModel(ModelTier tier)
+  {
+    return tier == ModelTier.Smart && !string.IsNullOrWhiteSpace(config.OpenAI.SmartModel)
+      ? config.OpenAI.SmartModel
+      : config.OpenAI.FastModel;
+  }
+
+  public LlmSession Create(ModelTier tier = ModelTier.Fast)
   {
     var options = new OpenAIClientOptions
     {
@@ -21,14 +28,23 @@ public sealed class OpenAiLlmClientProvider(ToimiConfiguration config) : ILlmCli
       RetryPolicy = new ClientRetryPolicy(config.OpenAI.MaxRetries),
     };
 
+    var model = ResolveModel(tier);
     var openAiClient = new OpenAIClient(new ApiKeyCredential(config.OpenAI.ApiKey), options);
-    var inner = openAiClient.GetChatClient(config.OpenAI.Model).AsIChatClient();
+
+    // Responses API, not chat completions: reasoning-capable models (gpt-5.x)
+    // reject function tools on /v1/chat/completions unless reasoning is forced
+    // off, which would waste the smart tier. /v1/responses supports both.
+    // OPENAI001: the SDK marks the Responses client experimental, but it is the
+    // endpoint OpenAI's own 400 directs these models to — accepted deliberately.
+#pragma warning disable OPENAI001
+    var inner = openAiClient.GetResponsesClient().AsIChatClient(model);
+#pragma warning restore OPENAI001
     var notifier = new ToolCallNotifier(inner);
 
     var client = new ChatClientBuilder(notifier)
         .UseFunctionInvocation()
         .Build();
 
-    return new LlmSession(client, notifier);
+    return new LlmSession(client, notifier, model);
   }
 }

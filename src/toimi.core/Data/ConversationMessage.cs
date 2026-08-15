@@ -10,6 +10,9 @@ public class ConversationMessage
   public int? PromptTokens { get; set; }
   public int? CompletionTokens { get; set; }
   public int? TotalTokens { get; set; }
+
+  /// <summary>Concrete model name that served this message (assistant messages only), for per-model cost attribution.</summary>
+  public string? Model { get; set; }
   public DateTimeOffset CreatedAt { get; set; }
   public Conversation Conversation { get; set; } = null!;
 }

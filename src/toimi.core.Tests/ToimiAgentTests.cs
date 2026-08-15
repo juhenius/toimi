@@ -9,10 +9,15 @@ public class ToimiAgentTests
 {
   private sealed class FakeLlmProvider(FakeChatClient chat) : ILlmClientProvider
   {
-    public LlmSession Create()
+    public string ResolveModel(ModelTier tier)
+    {
+      return "fake-model";
+    }
+
+    public LlmSession Create(ModelTier tier = ModelTier.Fast)
     {
       var notifier = new ToolCallNotifier(chat);
-      return new LlmSession(notifier, notifier);
+      return new LlmSession(notifier, notifier, ResolveModel(tier));
     }
   }
 
@@ -25,7 +30,7 @@ public class ToimiAgentTests
 
   private static Task<ToimiAgent> StartAsync(FakeChatClient chat, ContextBudget? budget = null)
   {
-    return ToimiAgent.StartAsync(Config(), new FakeLlmProvider(chat), budget);
+    return ToimiAgent.StartAsync(Config(), new FakeLlmProvider(chat), budget: budget);
   }
 
   private static async Task<List<TurnUpdate>> CollectAsync(ToimiAgent agent, string text)

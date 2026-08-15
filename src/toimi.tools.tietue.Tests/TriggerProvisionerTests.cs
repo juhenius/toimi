@@ -109,4 +109,35 @@ public class TriggerProvisionerTests
     Assert.Contains("\"rateLimit\":3", t.Schedule);
   }
 
+  private const string ScheduleTriggers = /*lang=json,strict*/ """
+  [{"when":{"atField":"startAt"},
+    "handler":{"kind":"message","config":{"promptTemplate":"{prompt}","modelField":"model"}}}]
+  """;
+
+  [Fact]
+  public async Task ModelField_copies_the_entity_model_pin_into_the_handler_config()
+  {
+    using var db = TestDb.New();
+    var provisioner = new TriggerProvisioner(new TriggerRepository(db, TestConfig.Default));
+    var e = Reminder(/*lang=json,strict*/ """{"prompt":"analyze","startAt":"2026-06-20T09:00:00Z","model":"smart"}""");
+
+    await provisioner.ProvisionAsync(e, ScheduleTriggers, new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+
+    var t = Assert.Single(await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(e.Id));
+    Assert.Contains("\"model\":\"smart\"", t.HandlerConfig);
+    Assert.DoesNotContain("modelField", t.HandlerConfig);
+  }
+
+  [Fact]
+  public async Task Absent_model_field_drops_the_key_and_leaves_the_fast_default()
+  {
+    using var db = TestDb.New();
+    var provisioner = new TriggerProvisioner(new TriggerRepository(db, TestConfig.Default));
+    var e = Reminder(/*lang=json,strict*/ """{"prompt":"analyze","startAt":"2026-06-20T09:00:00Z"}""");
+
+    await provisioner.ProvisionAsync(e, ScheduleTriggers, new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+
+    var t = Assert.Single(await new TriggerRepository(db, TestConfig.Default).ListByEntityAsync(e.Id));
+    Assert.DoesNotContain("model", t.HandlerConfig);
+  }
 }

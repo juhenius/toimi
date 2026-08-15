@@ -108,4 +108,48 @@ public class MessageHandlerTests
     Assert.True(new MessageHandler(new FakeAgentRunner())
       .ValidateConfig(/*lang=json,strict*/ """{"promptTemplate":"{prompt}"}""").IsValid);
   }
+
+  [Fact]
+  public async Task Config_model_smart_pins_the_run_to_the_smart_tier()
+  {
+    var runner = new FakeAgentRunner();
+    var handler = new MessageHandler(runner);
+
+    await handler.HandleAsync(new HandlerContext(Schedule("x"), /*lang=json,strict*/ """{"promptTemplate":"{prompt}","model":"smart"}""", DateTimeOffset.UtcNow));
+
+    Assert.Equal(Toimi.Core.Llm.ModelTier.Smart, runner.Runs.Single().Tier);
+  }
+
+  [Fact]
+  public async Task Runs_default_to_the_fast_tier()
+  {
+    var runner = new FakeAgentRunner();
+    var handler = new MessageHandler(runner);
+
+    await handler.HandleAsync(new HandlerContext(Schedule("x"), /*lang=json,strict*/ """{"promptTemplate":"{prompt}"}""", DateTimeOffset.UtcNow));
+
+    Assert.Equal(Toimi.Core.Llm.ModelTier.Fast, runner.Runs.Single().Tier);
+  }
+
+  [Fact]
+  public async Task Serializes_the_run_model_into_result_json()
+  {
+    var runner = new FakeAgentRunner { Result = new(true, "done", null, null, Model: "smart-model") };
+    var handler = new MessageHandler(runner);
+
+    var result = await handler.HandleAsync(new HandlerContext(Schedule("x"), /*lang=json,strict*/ """{"promptTemplate":"{prompt}"}""", DateTimeOffset.UtcNow));
+
+    Assert.Contains("\"model\":\"smart-model\"", result.Result);
+  }
+
+  [Theory]
+  [InlineData(/*lang=json,strict*/ """{"promptTemplate":"p","model":"fast"}""", true)]
+  [InlineData(/*lang=json,strict*/ """{"promptTemplate":"p","model":"smart"}""", true)]
+  [InlineData(/*lang=json,strict*/ """{"promptTemplate":"p","modelField":"model"}""", true)]
+  [InlineData(/*lang=json,strict*/ """{"promptTemplate":"p","model":"cheap"}""", false)]
+  [InlineData(/*lang=json,strict*/ """{"promptTemplate":"p","model":42}""", false)]
+  public void ValidateConfig_vets_the_model_pin(string config, bool expected)
+  {
+    Assert.Equal(expected, new MessageHandler(new FakeAgentRunner()).ValidateConfig(config).IsValid);
+  }
 }

@@ -81,15 +81,21 @@ public class LlmExtractorTests
     await extractor.ExtractAsync("get price", "some html", null);
 
     Assert.NotNull(client.LastOptions);
-    Assert.Equal(0, client.LastOptions.Temperature);
+    // No sampling params: reasoning-tier models reject Temperature outright.
+    Assert.Null(client.LastOptions.Temperature);
     Assert.Equal(4096, client.LastOptions.MaxOutputTokens);
   }
 
   private sealed class FakeProvider(IChatClient client) : ILlmClientProvider
   {
-    public LlmSession Create()
+    public string ResolveModel(ModelTier tier)
     {
-      return new LlmSession(client, new ToolCallNotifier(client));
+      return "fake-model";
+    }
+
+    public LlmSession Create(ModelTier tier = ModelTier.Fast)
+    {
+      return new LlmSession(client, new ToolCallNotifier(client), ResolveModel(tier));
     }
   }
 

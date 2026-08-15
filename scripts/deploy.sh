@@ -17,7 +17,7 @@ set -a; # shellcheck disable=SC1090
 source "$CONFIG_FILE"; set +a
 REGISTRY="${IMAGE_REGISTRY:?IMAGE_REGISTRY missing from config.env}"
 # shellcheck disable=SC2016
-SUBST='${TOIMI_HOST} ${ADMINER_HOST} ${QDRANT_HOST} ${IMAGE_REGISTRY} ${HOMEASSISTANT_BASE_URL} ${OPENAI_MODEL}'
+SUBST='${TOIMI_HOST} ${ADMINER_HOST} ${QDRANT_HOST} ${IMAGE_REGISTRY} ${HOMEASSISTANT_BASE_URL} ${OPENAI_MODEL_FAST}'
 command -v envsubst >/dev/null || { echo "ERROR: envsubst not installed (gettext)"; exit 1; }
 
 ENV="$1"

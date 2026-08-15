@@ -12,6 +12,14 @@ public class ConversationConfiguration : IEntityTypeConfiguration<Conversation>
     builder.Property(c => c.Id)
       .HasDefaultValueSql("gen_random_uuid()");
 
+    builder.Property(c => c.Kind)
+      .IsRequired()
+      .HasDefaultValue(Conversation.ChatKind);
+
+    // Deliberately no FK: a parent chat may be deleted while its subtask
+    // transcripts remain useful for cost accounting; the link is navigational.
+    builder.HasIndex(c => c.ParentConversationId);
+
     builder.Property(c => c.CreatedAt)
       .HasDefaultValueSql("now()");
 

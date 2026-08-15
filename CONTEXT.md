@@ -46,6 +46,30 @@ is the merge of the caller's query string and JSON body (body wins per key);
 for time-anchored and manual firings it is empty unless supplied explicitly.
 _Avoid_: payload, args, query
 
+### Models
+
+**Fast model**:
+The default LLM every agent turn runs on; chosen for cost, always configured.
+_Avoid_: cheap model, small model
+
+**Smart model**:
+The more capable LLM used for harder work; optional — when unconfigured, the
+fast model stands in wherever the smart model is asked for.
+_Avoid_: expensive model, large model, flagship
+
+**Delegate**:
+The act of an agent handing a self-contained task to a subtask running in a
+fresh context, instead of doing it in its own. Three habits: fast→smart
+(escalation), smart→fast (cheap chores), same→same (context isolation).
+_Avoid_: escalate (only one of the three habits), spawn
+
+**Subtask**:
+An agent run created by delegation. It sees only the brief it was given —
+never the parent's history — runs on the requested model, and returns its
+result to the parent as a tool result. A subtask may delegate once more; a
+subtask's subtask may not.
+_Avoid_: subagent (names the worker, not the work)
+
 ### Displays
 
 **Scene**:

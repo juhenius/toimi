@@ -16,6 +16,7 @@ public sealed record ToolResultUpdate(string CallId, string Result, long Duratio
 /// Terminal update of a successful turn — everything a host needs to persist.
 /// ToolCallsJson is the unified wire shape (see <see cref="ToolEventJson"/>).
 /// Token counts are the provider's real usage when reported, otherwise the same
-/// chars-based estimates the web host has always persisted.
+/// chars-based estimates the web host has always persisted. Model is the concrete
+/// model name that served the turn, for per-message usage attribution.
 /// </summary>
-public sealed record TurnCompleted(string ResponseText, string? ToolCallsJson, int PromptTokens, int CompletionTokens, int TotalTokens) : TurnUpdate;
+public sealed record TurnCompleted(string ResponseText, string? ToolCallsJson, int PromptTokens, int CompletionTokens, int TotalTokens, string? Model = null) : TurnUpdate;

@@ -10,7 +10,7 @@ CONFIG_FILE="$ROOT_DIR/config.env"
 set -a; # shellcheck disable=SC1090
 source "$CONFIG_FILE"; set +a
 # shellcheck disable=SC2016
-SUBST='${TOIMI_HOST} ${ADMINER_HOST} ${QDRANT_HOST} ${IMAGE_REGISTRY} ${HOMEASSISTANT_BASE_URL} ${OPENAI_MODEL}'
+SUBST='${TOIMI_HOST} ${ADMINER_HOST} ${QDRANT_HOST} ${IMAGE_REGISTRY} ${HOMEASSISTANT_BASE_URL} ${OPENAI_MODEL_FAST}'
 
 RESET=false
 if [ "${1:-}" = "--reset" ]; then
