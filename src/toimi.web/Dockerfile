@@ -7,7 +7,7 @@ RUN npm ci
 COPY src/toimi.web/ClientApp/ .
 RUN npm run build
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0.302 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.400 AS build
 WORKDIR /src
 COPY toimi.sln .
 COPY src/toimi.core/toimi.core.csproj src/toimi.core/
@@ -22,7 +22,7 @@ COPY src/ src/
 COPY --from=frontend /wwwroot src/toimi.web/wwwroot/
 RUN dotnet publish src/toimi.web/toimi.web.csproj -c Release -o /app
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.10
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.11
 WORKDIR /app
 COPY --from=build /app .
 ENV ASPNETCORE_URLS=http://+:8080

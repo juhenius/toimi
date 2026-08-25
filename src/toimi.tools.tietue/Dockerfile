@@ -1,6 +1,6 @@
 # Build context = REPO ROOT (this file COPYs toimi.sln and src/).
 # Build: docker build -f src/toimi.tools.tietue/Dockerfile -t <registry>/<image>:latest .
-FROM mcr.microsoft.com/dotnet/sdk:10.0.302 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.400 AS build
 WORKDIR /src
 COPY toimi.sln .
 COPY src/toimi.core/toimi.core.csproj src/toimi.core/
@@ -15,7 +15,7 @@ RUN dotnet restore src/toimi.tools.tietue/toimi.tools.tietue.csproj
 COPY src/ src/
 RUN dotnet publish src/toimi.tools.tietue/toimi.tools.tietue.csproj -c Release -o /app
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.10
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.11
 WORKDIR /app
 COPY --from=build /app .
 ENV ASPNETCORE_URLS=http://+:8080
